@@ -398,16 +398,16 @@ public class CornerEspOverlay implements HudElement {
 		Font font = mc.font;
 		int x = 6;
 		int y = 96;
-		graphics.text(font, Component.literal("ESP PIPELINE " + status), x, y, 0xFFFFFF00, true);
+		graphics.text(font, Component.literal("ESP PIPELINE " + status), x, y, GuiTheme.WARNING, true);
 		graphics.text(font, Component.literal(String.format(Locale.ROOT,
 				"entries=%d projected=%d drawn=%d", entries, projected, drawn)),
-				x, y + 12, 0xFFE0E0E0, true);
+				x, y + 12, GuiTheme.TEXT_SECONDARY, true);
 		graphics.text(font, Component.literal(String.format(Locale.ROOT,
 				"behind=%d corner=%d off=%d rng=%d dead=%d",
 				cornersBehind, rejectedNoCorner, rejectedOffscreen, rejectedRange, rejectedDead)),
-				x, y + 24, 0xFFE0E0E0, true);
+				x, y + 24, GuiTheme.TEXT_SECONDARY, true);
 		// 固定位置の小さな矩形(HUD登録経路の疎通確認用)
-		graphics.fill(x, y + 40, x + 20, y + 60, 0xFF9F44FF);
+		graphics.fill(x, y + 40, x + 20, y + 60, GuiTheme.ACCENT);
 	}
 
 	/**
