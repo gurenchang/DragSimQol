@@ -5,6 +5,9 @@ build/
 out/
 classes/
 
+# local development tools (JDK, downloads)
+.tools/
+
 # archives
 
 *.zip
