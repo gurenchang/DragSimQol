@@ -1,34 +1,40 @@
 package com.dragsim.macro.client;
 
-import java.util.Locale;
+import com.dragsim.macro.client.gui.GuiTheme;
 
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
 /**
- * Phase 6.5: DEBUG path renderer(DEBUG esp時のみ)。
+ * DEBUG path renderer(DEBUG esp時のみ)。
  * Player → node → node → Goal をWorld上に細いlineで表示。
  * node type(WALK/JUMP/DROP/GOAL)を色で区別(派手にしない)。
  * 投影はPhase 3.2のworld-to-screen pipeline(vanilla camera行列)を再利用。
+ *
+ * 性能: Matrix4f/Vector4f/投影結果はfieldで使い回し(毎フレームのnewなし)。
  */
 public class PathDebugOverlay implements HudElement {
-	private static final int COLOR_WALK = 0x7055E6FF;
-	private static final int COLOR_JUMP = 0xB0FFD24A;
-	private static final int COLOR_DROP = 0x9055AAFF;
-	private static final int COLOR_GOAL = 0xC055FF88;
+	// 色はGuiThemeトークンから参照(黒×紫テーマ)
+	private static final int COLOR_WALK = withAlpha(GuiTheme.ACCENT_DIM, 0xB0);
+	private static final int COLOR_JUMP = withAlpha(GuiTheme.WARNING, 0xB0);
+	private static final int COLOR_DROP = withAlpha(GuiTheme.ACCENT_BRIGHT, 0x90);
+	private static final int COLOR_GOAL = withAlpha(GuiTheme.SUCCESS, 0xC0);
 	private static final int MAX_DOTS_PER_SEGMENT = 24;
 
 	private final MacroController controller;
 	private final ApproachPlanner approachPlanner;
+
+	// 毎フレーム使い回すバッファ(アロケーション削減)
+	private final Matrix4f viewProjection = new Matrix4f();
+	private final Vector4f clip = new Vector4f();
+	private final double[] scratchA = new double[2];
+	private final double[] scratchB = new double[2];
 
 	public PathDebugOverlay(MacroController controller, ApproachPlanner approachPlanner) {
 		this.controller = controller;
@@ -53,7 +59,7 @@ public class PathDebugOverlay implements HudElement {
 		if (camera == null || camera.position() == null) {
 			return;
 		}
-		Matrix4f viewProjection = camera.getViewRotationProjectionMatrix(new Matrix4f());
+		camera.getViewRotationProjectionMatrix(viewProjection);
 		Vec3 camPos = camera.position();
 		int guiW = mc.getWindow().getGuiScaledWidth();
 		int guiH = mc.getWindow().getGuiScaledHeight();
@@ -61,10 +67,10 @@ public class PathDebugOverlay implements HudElement {
 		Vec3 prev = mc.player.getEyePosition();
 		for (PathNode node : path.nodes()) {
 			Vec3 p = node.center().add(0, 1.0, 0);
-			double[] a = projectToGui(viewProjection, camPos, prev, guiW, guiH);
-			double[] b = projectToGui(viewProjection, camPos, p, guiW, guiH);
-			if (a != null && b != null) {
-				drawSegment(graphics, a[0], a[1], b[0], b[1], colorFor(node.edgeType()));
+			if (projectInto(prev, camPos, guiW, guiH, scratchA)
+					&& projectInto(p, camPos, guiW, guiH, scratchB)) {
+				drawSegment(graphics, scratchA[0], scratchA[1], scratchB[0], scratchB[1],
+						colorFor(node.edgeType()));
 			}
 			prev = p;
 		}
@@ -79,26 +85,26 @@ public class PathDebugOverlay implements HudElement {
 		};
 	}
 
-	/** world 1点 → GUI scaled coordinate(CornerEspOverlayと同一pipeline) */
-	private double[] projectToGui(Matrix4f viewProjection, Vec3 camPos, Vec3 world, int guiW, int guiH) {
-		Vector4f clip = new Vector4f(
+	/** world 1点 → GUI scaled coordinateをoutへ書き込む(CornerEspOverlayと同一pipeline) */
+	private boolean projectInto(Vec3 world, Vec3 camPos, int guiW, int guiH, double[] out) {
+		clip.set(
 				(float) (world.x - camPos.x),
 				(float) (world.y - camPos.y),
 				(float) (world.z - camPos.z),
 				1.0F);
 		viewProjection.transform(clip);
 		if (clip.w <= 1.0E-3F || !Float.isFinite(clip.w)) {
-			return null;
+			return false;
 		}
 		float invW = 1.0F / clip.w;
 		float ndcX = clip.x * invW;
 		float ndcY = clip.y * invW;
 		if (!Float.isFinite(ndcX) || !Float.isFinite(ndcY)) {
-			return null;
+			return false;
 		}
-		return new double[] {
-				(ndcX + 1.0F) * 0.5 * guiW,
-				(1.0F - ndcY) * 0.5 * guiH };
+		out[0] = (ndcX + 1.0F) * 0.5 * guiW;
+		out[1] = (1.0F - ndcY) * 0.5 * guiH;
+		return true;
 	}
 
 	/** 細いline(1pxのfill dot列。派手にしない) */
@@ -116,5 +122,9 @@ public class PathDebugOverlay implements HudElement {
 			int y = (int) Math.round(y1 + (y2 - y1) * t);
 			graphics.fill(x, y, x + 1, y + 1, color);
 		}
+	}
+
+	private static int withAlpha(int rgb, int alpha) {
+		return (alpha << 24) | (rgb & 0xFFFFFF);
 	}
 }

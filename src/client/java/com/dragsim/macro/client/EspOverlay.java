@@ -2,6 +2,8 @@ package com.dragsim.macro.client;
 
 import java.util.Locale;
 
+import com.dragsim.macro.client.gui.GuiTheme;
+
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -9,29 +11,45 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Phase 3.1: ESP/debug overlay。
+ * DEBUG ESP(詳細表示)。NORMAL表示はCornerEspOverlayが担当。
  * 各Zealotについて
  *  - BoundingBoxのワイヤーフレーム(visible/targetで色分け)
  *  - center/upper/lower の3点レイの可視化(起点=カメラ=画面中央)
  *  - entityId / name / distance / C・U・L結果 / visible / score のラベル
  * をゲーム内描画する。座標系はHudElement(GUIスケール空間)上で、
  * カメラからの手動投影でワールド座標を画面座標へ変換する。
+ *
+ * 性能: 投影結果は使い回しバッファへ書き込み(毎フレームの配列生成なし)、
+ * 描画対象は最大 MAX_DEBUG_ENTITIES 体。
  */
 public class EspOverlay implements HudElement {
-	private static final int COLOR_BOX_VISIBLE = 0xFF44FF44;
-	private static final int COLOR_BOX_INVISIBLE = 0xFFFF5555;
-	private static final int COLOR_BOX_TARGET = 0xFFFFEE44;
-	private static final int COLOR_RAY_CLEAR = 0xB044FF44;
-	private static final int COLOR_RAY_BLOCKED = 0xB0FF5555;
-	private static final int COLOR_RAY_REST = 0x80AAAAAA;
+	// 色はGuiThemeトークンから参照(黒×紫テーマ)
+	private static final int COLOR_BOX_VISIBLE = GuiTheme.SUCCESS;
+	private static final int COLOR_BOX_INVISIBLE = GuiTheme.DANGER;
+	private static final int COLOR_BOX_TARGET = GuiTheme.ACCENT_BRIGHT;
+	private static final int COLOR_RAY_CLEAR = withAlpha(GuiTheme.SUCCESS, 0xB0);
+	private static final int COLOR_RAY_BLOCKED = withAlpha(GuiTheme.DANGER, 0xB0);
+	private static final int COLOR_RAY_REST = withAlpha(GuiTheme.TEXT_DISABLED, 0x80);
 	private static final double BOX_HALF_WIDTH = 0.3;
+	/** DEBUG描画の最大体数(定数) */
+	private static final int MAX_DEBUG_ENTITIES = 24;
+
+	/** 12辺(下面4 + 上面4 + 縦4)。static固定(毎フレーム生成しない) */
+	private static final int[][] EDGES = {
+			{0, 1}, {1, 2}, {2, 3}, {3, 0},
+			{4, 5}, {5, 6}, {6, 7}, {7, 4},
+			{0, 4}, {1, 5}, {2, 6}, {3, 7}
+	};
 
 	private final MacroController controller;
 	private final AimSolver aimSolver;
+
+	// 毎フレーム使い回す投影バッファ(x,y,depth × 8隅 / 単点scratch)
+	private final double[] cornerScreen = new double[8 * 3];
+	private final double[] scratch = new double[3];
 
 	public EspOverlay(MacroController controller, AimSolver aimSolver) {
 		this.controller = controller;
@@ -78,7 +96,12 @@ public class EspOverlay implements HudElement {
 		Font font = mc.font;
 
 		TargetCandidate currentTarget = controller.getTarget();
+		int processed = 0;
 		for (TargetCandidate candidate : controller.getTargetSelector().getLastEvaluated()) {
+			if (processed >= MAX_DEBUG_ENTITIES) {
+				break;
+			}
+			processed++;
 			EntitySnapshot snapshot = candidate.snapshot();
 			int boxColor;
 			if (currentTarget != null && currentTarget.entityId() == candidate.entityId()) {
@@ -89,39 +112,27 @@ public class EspOverlay implements HudElement {
 				boxColor = COLOR_BOX_INVISIBLE;
 			}
 
-			AABB box = new AABB(
-					snapshot.x() - BOX_HALF_WIDTH, snapshot.boxMinY(), snapshot.z() - BOX_HALF_WIDTH,
-					snapshot.x() + BOX_HALF_WIDTH, snapshot.boxMaxY(), snapshot.z() + BOX_HALF_WIDTH);
-			Vec3[] corners = {
-					new Vec3(box.minX, box.minY, box.minZ),
-					new Vec3(box.maxX, box.minY, box.minZ),
-					new Vec3(box.maxX, box.minY, box.maxZ),
-					new Vec3(box.minX, box.minY, box.maxZ),
-					new Vec3(box.minX, box.maxY, box.minZ),
-					new Vec3(box.maxX, box.maxY, box.minZ),
-					new Vec3(box.maxX, box.maxY, box.maxZ),
-					new Vec3(box.minX, box.maxY, box.maxZ)
-			};
-
-			// 12辺のインデックス(下面4 + 上面4 + 縦4)
-			int[][] edges = {
-					{0, 1}, {1, 2}, {2, 3}, {3, 0},
-					{4, 5}, {5, 6}, {6, 7}, {7, 4},
-					{0, 4}, {1, 5}, {2, 6}, {3, 7}
-			};
-
+			// 8隅をワールド座標から直接投影(cornerScreenへ書き込み。配列生成なし)
+			double x0 = snapshot.x() - BOX_HALF_WIDTH;
+			double x1 = snapshot.x() + BOX_HALF_WIDTH;
+			double y0 = snapshot.boxMinY();
+			double y1 = snapshot.boxMaxY();
+			double z0 = snapshot.z() - BOX_HALF_WIDTH;
+			double z1 = snapshot.z() + BOX_HALF_WIDTH;
 			boolean allFront = true;
-			Vec3[] projected = new Vec3[8];
-			for (int i = 0; i < corners.length; i++) {
-				projected[i] = project(eye, forward, right, up, tanHalf, aspect, guiW, guiH, corners[i]);
-				if (projected[i] == null) {
+			for (int i = 0; i < 8; i++) {
+				double cx = (i & 1) == 0 ? x0 : x1;
+				double cy = (i & 2) == 0 ? y0 : y1;
+				double cz = (i & 4) == 0 ? z0 : z1;
+				if (!projectInto(eye, forward, right, up, tanHalf, aspect, guiW, guiH, cx, cy, cz,
+						cornerScreen, i * 3)) {
 					allFront = false;
 				}
 			}
 
 			if (allFront) {
-				for (int[] edge : edges) {
-					drawSegment(graphics, projected[edge[0]], projected[edge[1]], boxColor);
+				for (int[] edge : EDGES) {
+					drawSegment(graphics, cornerScreen, edge[0] * 3, cornerScreen, edge[1] * 3, boxColor);
 				}
 			}
 
@@ -137,12 +148,11 @@ public class EspOverlay implements HudElement {
 			}
 
 			// ラベル(箱の上端付近)
-			Vec3 labelAnchor = new Vec3(snapshot.x(), snapshot.boxMaxY() + 0.25, snapshot.z());
-			Vec3 label = project(eye, forward, right, up, tanHalf, aspect, guiW, guiH, labelAnchor);
-			if (label != null) {
+			if (projectInto(eye, forward, right, up, tanHalf, aspect, guiW, guiH,
+					snapshot.x(), snapshot.boxMaxY() + 0.25, snapshot.z(), scratch, 0)) {
 				int textColor = candidate.visible() ? COLOR_BOX_VISIBLE : COLOR_BOX_INVISIBLE;
-				int x = (int) Math.round(label.x);
-				int y = (int) Math.round(label.y);
+				int x = (int) Math.round(scratch[0]);
+				int y = (int) Math.round(scratch[1]);
 				String line1 = "id=" + candidate.entityId() + " " + candidate.name();
 				String rayText = (rays != null
 						? "C=" + (rays.centerClear() ? "ok" : "ng")
@@ -166,32 +176,38 @@ public class EspOverlay implements HudElement {
 							aim.yawDelta(), aim.pitchDelta(), aim.rotationDifference());
 					graphics.text(font, Component.literal(line3), x, y + font.lineHeight * 2, textColor, true);
 					// Aim Pointに小さな十字マーカー
-					Vec3 aim2d = project(eye, forward, right, up, tanHalf, aspect, guiW, guiH,
-							new Vec3(aim.aimX(), aim.aimY(), aim.aimZ()));
-					if (aim2d != null) {
-						drawSegment(graphics, aim2d.x - 3, aim2d.y, aim2d.x + 3, aim2d.y, COLOR_BOX_TARGET);
-						drawSegment(graphics, aim2d.x, aim2d.y - 3, aim2d.x, aim2d.y + 3, COLOR_BOX_TARGET);
+					if (projectInto(eye, forward, right, up, tanHalf, aspect, guiW, guiH,
+							aim.aimX(), aim.aimY(), aim.aimZ(), scratch, 0)) {
+						drawSegment(graphics, scratch[0] - 3, scratch[1], scratch[0] + 3, scratch[1],
+								COLOR_BOX_TARGET);
+						drawSegment(graphics, scratch[0], scratch[1] - 3, scratch[0], scratch[1] + 3,
+								COLOR_BOX_TARGET);
 					}
 				}
 			}
 		}
 	}
 
-	private Vec3 project(Vec3 eye, Vec3 forward, Vec3 right, Vec3 up,
-			double tanHalf, double aspect, double guiW, double guiH, Vec3 point) {
-		Vec3 rel = point.subtract(eye);
-		double depth = rel.dot(forward);
+	/** world 1点 → GUI scaled coordinateをout[off..off+2]へ書き込む。カメラ後方/画面外遠方はfalse */
+	private boolean projectInto(Vec3 eye, Vec3 forward, Vec3 right, Vec3 up,
+			double tanHalf, double aspect, double guiW, double guiH,
+			double px, double py, double pz, double[] out, int off) {
+		double rx = px - eye.x;
+		double ry = py - eye.y;
+		double rz = pz - eye.z;
+		double depth = rx * forward.x + ry * forward.y + rz * forward.z;
 		if (depth <= 0.05) {
-			return null;
+			return false;
 		}
-		double ndcX = (rel.dot(right) / (tanHalf * aspect)) / depth;
-		double ndcY = (rel.dot(up) / tanHalf) / depth;
+		double ndcX = ((rx * right.x + ry * right.y + rz * right.z) / (tanHalf * aspect)) / depth;
+		double ndcY = ((rx * up.x + ry * up.y + rz * up.z) / tanHalf) / depth;
 		if (Math.abs(ndcX) > 1.6 || Math.abs(ndcY) > 1.6) {
-			return null;
+			return false;
 		}
-		double x = (ndcX + 1) / 2 * guiW;
-		double y = (1 - ndcY) / 2 * guiH;
-		return new Vec3(x, y, depth);
+		out[off] = (ndcX + 1) / 2 * guiW;
+		out[off + 1] = (1 - ndcY) / 2 * guiH;
+		out[off + 2] = depth;
+		return true;
 	}
 
 	private void drawRay(GuiGraphicsExtractor graphics, double centerX, double centerY,
@@ -199,27 +215,29 @@ public class EspOverlay implements HudElement {
 			double tanHalf, double aspect, double guiW, double guiH,
 			Vec3 point, Vec3 hit, boolean clear) {
 		Vec3 endpoint = hit != null ? hit : point;
-		Vec3 end2d = project(eye, forward, right, up, tanHalf, aspect, guiW, guiH, endpoint);
-		if (end2d == null) {
+		if (!projectInto(eye, forward, right, up, tanHalf, aspect, guiW, guiH,
+				endpoint.x, endpoint.y, endpoint.z, scratch, 0)) {
 			return;
 		}
+		double endX = scratch[0];
+		double endY = scratch[1];
 		int rayColor = clear ? COLOR_RAY_CLEAR : COLOR_RAY_BLOCKED;
-		drawSegment(graphics, centerX, centerY, end2d.x, end2d.y, rayColor);
+		drawSegment(graphics, centerX, centerY, endX, endY, rayColor);
 
 		if (hit != null) {
-			Vec3 target2d = project(eye, forward, right, up, tanHalf, aspect, guiW, guiH, point);
-			if (target2d != null) {
-				drawSegment(graphics, end2d.x, end2d.y, target2d.x, target2d.y, COLOR_RAY_REST);
+			if (projectInto(eye, forward, right, up, tanHalf, aspect, guiW, guiH,
+					point.x, point.y, point.z, scratch, 0)) {
+				drawSegment(graphics, endX, endY, scratch[0], scratch[1], COLOR_RAY_REST);
 			}
 			// 遮蔽点に小さなマーカー
-			int mx = (int) Math.round(end2d.x);
-			int my = (int) Math.round(end2d.y);
+			int mx = (int) Math.round(endX);
+			int my = (int) Math.round(endY);
 			graphics.fill(mx - 2, my - 2, mx + 2, my + 2, COLOR_RAY_BLOCKED);
 		}
 	}
 
-	private void drawSegment(GuiGraphicsExtractor graphics, Vec3 a, Vec3 b, int color) {
-		drawSegment(graphics, a.x, a.y, b.x, b.y, color);
+	private void drawSegment(GuiGraphicsExtractor graphics, double[] a, int aOff, double[] b, int bOff, int color) {
+		drawSegment(graphics, a[aOff], a[aOff + 1], b[bOff], b[bOff + 1], color);
 	}
 
 	private void drawSegment(GuiGraphicsExtractor graphics, double x1, double y1, double x2, double y2, int color) {
@@ -236,5 +254,9 @@ public class EspOverlay implements HudElement {
 			int y = (int) Math.round(y1 + (y2 - y1) * t);
 			graphics.fill(x, y, x + 1, y + 1, color);
 		}
+	}
+
+	private static int withAlpha(int rgb, int alpha) {
+		return (alpha << 24) | (rgb & 0xFFFFFF);
 	}
 }

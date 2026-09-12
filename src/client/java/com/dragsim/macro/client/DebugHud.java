@@ -3,6 +3,8 @@ package com.dragsim.macro.client;
 import java.util.List;
 import java.util.Locale;
 
+import com.dragsim.macro.client.gui.GuiTheme;
+
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -48,11 +50,12 @@ public class DebugHud implements HudElement {
 		}
 
 		Font font = mc.font;
-		int color = 0xFFFFFFFF;
+		int color = GuiTheme.TEXT_PRIMARY;
+		int accent = GuiTheme.ACCENT_BRIGHT;
 		int x = 6;
 		int y = 6;
 		graphics.text(font, Component.literal("[ZealotDebug] " + controller.getState()
-				+ " range=" + (int) controller.getRange()), x, y, color, true);
+				+ " range=" + (int) controller.getRange()), x, y, accent, true);
 		graphics.text(font, Component.literal("Entities: " + snapshots.size()
 				+ "  Zealots: " + summary.zealots() + " (+ " + summary.bruisers() + " bruiser)"),
 				x, y + 12, color, true);
@@ -104,7 +107,7 @@ public class DebugHud implements HudElement {
 				boolean smooth = rotationController.getSmoothing() == RotationSmoothing.DYNAMIC_SMOOTH;
 				graphics.text(font, Component.literal("Rotation: ON mode=" + rotationController.getSmoothing()
 						+ (rotationController.isManualOverrideActive() ? " [MANUAL]" : "")
-						+ (rotationController.isActive() ? "" : " (inactive)")), x, ry, color, true);
+						+ (rotationController.isActive() ? "" : " (inactive)")), x, ry, accent, true);
 				graphics.text(font, Component.literal(String.format(Locale.ROOT,
 						" Target raw: yaw=%.1f pitch=%.1f",
 						rotationController.getTargetRawYaw(), rotationController.getTargetRawPitch())),
@@ -149,14 +152,14 @@ public class DebugHud implements HudElement {
 						rotationController.getCameraYawVelocity(),
 						rotationController.getCameraPitchVelocity())), x, ry + 108, color, true);
 			} else {
-				graphics.text(font, Component.literal("Rotation: OFF (/zealotrotation on)"), x, y + 132, color, true);
+				graphics.text(font, Component.literal("Rotation: OFF (/zealotrotation on)"), x, y + 132, accent, true);
 			}
 		}
 		// Phase 5.2b: Attack Gate状態(DEBUG esp時のみ)
 		if (controller.getEspMode() == EspMode.DEBUG) {
 			AttackReadiness gate = attackGate.getReadiness();
 			int ay = y + 228;
-			graphics.text(font, Component.literal("Attack Gate"), x, ay, color, true);
+			graphics.text(font, Component.literal("Attack Gate"), x, ay, accent, true);
 			graphics.text(font, Component.literal(" Target: #" + gate.entityId()
 					+ " Ready: " + (gate.ready() ? "TRUE" : "FALSE") + " reason=" + gate.reason()),
 					x, ay + 12, color, true);
@@ -183,7 +186,7 @@ public class DebugHud implements HudElement {
 			// Phase 5.2: Combat状態
 			int kx = y + 312 + 24;
 			CombatController combat = combatController;
-			graphics.text(font, Component.literal("Combat"), x, kx, color, true);
+			graphics.text(font, Component.literal("Combat"), x, kx, accent, true);
 			graphics.text(font, Component.literal(" State: " + combat.getState()
 					+ " Target: #" + combat.getSessionTargetId()), x, kx + 12, color, true);
 			graphics.text(font, Component.literal(" Weapon: " + combat.getWeaponProfile().name()
@@ -203,7 +206,7 @@ public class DebugHud implements HudElement {
 			if (loadout == null) {
 				loadout = CombatLoadout.from(MacroConfig.get());
 			}
-			graphics.text(font, Component.literal("Approach"), x, ax, color, true);
+			graphics.text(font, Component.literal("Approach"), x, ax, accent, true);
 			graphics.text(font, Component.literal(" State: " + approachPlanner.getState()
 					+ "  Decision: " + approachPlanner.getLastDecision()
 					+ "  Target: #" + combat.getSessionTargetId()), x, ax + 12, color, true);
@@ -257,7 +260,7 @@ public class DebugHud implements HudElement {
 			int nx = ax + 144;
 			PathResult path = approachPlanner.getCurrentPath();
 			PathFollower follower = approachPlanner.getPathFollower();
-			graphics.text(font, Component.literal("Navigation"), x, nx, color, true);
+			graphics.text(font, Component.literal("Navigation"), x, nx, accent, true);
 			graphics.text(font, Component.literal(" Path: " + pathStateLabel(path)
 					+ "  Nodes: " + (path != null ? path.nodes().size() : 0)
 					+ "  Current: " + follower.getCursor() + "/"
@@ -285,7 +288,7 @@ public class DebugHud implements HudElement {
 			TargetSelector selector = controller.getTargetSelector();
 			TargetCandidate currentTarget = selector.getTarget();
 			MacroController.ScanSummary scanSummary = controller.getLastSummary();
-			graphics.text(font, Component.literal("Target Selector V2"), x, tx, color, true);
+			graphics.text(font, Component.literal("Target Selector V2"), x, tx, accent, true);
 			graphics.text(font, Component.literal(String.format(Locale.ROOT,
 					" Range: %.0fm  scanTime=%dms  entities=%d zealots=%d",
 					controller.getRange(), scanSummary.scanTimeMs(),
@@ -331,7 +334,7 @@ public class DebugHud implements HudElement {
 			List<TargetFailureMemory.FailureSnapshot> failures = selector.getIgnoredTargets();
 			graphics.text(font, Component.literal("Bad Target Memory  Ignored: " + failures.size()
 					+ "  entries=" + selector.getFailureMemoryEntryCount()),
-					x, phase8Y + 24, color, true);
+					x, phase8Y + 24, accent, true);
 			int memoryY = phase8Y + 36;
 			for (TargetFailureMemory.FailureSnapshot failure : failures) {
 				graphics.text(font, Component.literal(String.format(Locale.ROOT,
@@ -352,7 +355,7 @@ public class DebugHud implements HudElement {
 			// Phase 8.3: Motion Quality(DEBUG専用)
 			MotionMetrics motion = MotionMetrics.get();
 			int motionY = candY + 12;
-			graphics.text(font, Component.literal("Motion Quality"), x, motionY, color, true);
+			graphics.text(font, Component.literal("Motion Quality"), x, motionY, accent, true);
 			graphics.text(font, Component.literal(String.format(Locale.ROOT,
 					" handoff=%dms acquire=%s stops=%d (%.1f/min) stopTime=%.1fs unexpected=%d%s",
 					selector.getLastHandoffDelayMs(),
