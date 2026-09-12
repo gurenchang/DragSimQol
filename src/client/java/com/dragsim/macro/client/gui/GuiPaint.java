@@ -3,11 +3,32 @@ package com.dragsim.macro.client.gui;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
- * Phase 7.0: rounded rect / toggle / slider等の共通描画ヘルパ。
- * Minecraft native rendering(GuiGraphicsExtractor.fill)の範囲でrounded風を実装。
+ * rounded rect / toggle / slider等の共通描画ヘルパ。
+ * Minecraft native rendering(GuiGraphicsExtractor.fill)の範囲でrounded rectを実装。
+ * 角inset表はstatic初期化のみ(毎フレームのアロケーションなし)。
  */
 public final class GuiPaint {
 	private GuiPaint() {
+	}
+
+	/** roundedRectが使用する最大半径。それ以上はclamp */
+	private static final int MAX_RADIUS = 8;
+
+	/** 半径ごとの角の行inset表(CORNER_INSETS[r][dy] = r行目の左右inset)。起動時に一度だけ計算 */
+	private static final int[][] CORNER_INSETS = buildCornerInsets();
+
+	private static int[][] buildCornerInsets() {
+		int[][] insets = new int[MAX_RADIUS + 1][];
+		for (int r = 1; r <= MAX_RADIUS; r++) {
+			int[] rows = new int[r];
+			for (int dy = 0; dy < r; dy++) {
+				double yy = r - dy - 0.5;
+				double dx = Math.sqrt((double) r * r - yy * yy);
+				rows[dy] = Math.max(0, Math.min(r, r - (int) Math.round(dx)));
+			}
+			insets[r] = rows;
+		}
+		return insets;
 	}
 
 	/** 半透明dark overlayを全画面へ */
@@ -15,17 +36,26 @@ public final class GuiPaint {
 		g.fill(0, 0, screenW, screenH, GuiTheme.OVERLAY);
 	}
 
-	/** 角の丸い矩形(近似: 中央fill + 4隅の小fill削り)。高コストshaderは使わない */
+	/**
+	 * 角の丸い矩形。中央の帯+上下の角行(r行ずつ、円弧近似のinset付き)。
+	 * 1rectあたり最大 1+2*MAX_RADIUS のfill。小矩形の大量生成はしない。
+	 */
 	public static void roundedRect(GuiGraphicsExtractor g, int x, int y, int w, int h, int radius, int color) {
 		if (w <= 0 || h <= 0) {
 			return;
 		}
-		int r = Math.min(radius, Math.min(w, h) / 2);
-		// 中央帯
-		g.fill(x, y + radius, x + w, y + h - radius, color);
-		// 上/下帯(radius分を内側に)
-		g.fill(x + radius, y, x + w - radius, y + radius, color);
-		g.fill(x + radius, y + h - radius, x + w - radius, y + h, color);
+		int r = Math.min(Math.min(radius, MAX_RADIUS), Math.min(w, h) / 2);
+		if (r <= 0) {
+			g.fill(x, y, x + w, y + h, color);
+			return;
+		}
+		int[] insets = CORNER_INSETS[r];
+		g.fill(x, y + r, x + w, y + h - r, color);
+		for (int dy = 0; dy < r; dy++) {
+			int inset = insets[dy];
+			g.fill(x + inset, y + dy, x + w - inset, y + dy + 1, color);
+			g.fill(x + inset, y + h - 1 - dy, x + w - inset, y + h - dy, color);
+		}
 	}
 
 	/** 1px枠 */
@@ -46,10 +76,10 @@ public final class GuiPaint {
 		g.fill(x, y, x + w, y + 1, GuiTheme.ACCENT);
 	}
 
-	/** modern switch(仕様#11): OFF=左knob dark / ON=右knob cyan */
+	/** modern switch: OFF=左knob / ON=右knob(ACCENT_DIM trackへの補間) */
 	public static void toggle(GuiGraphicsExtractor g, int x, int y, int w, int h, boolean on, float animT) {
 		int trackColor = lerpColor(GuiTheme.TOGGLE_TRACK_OFF, GuiTheme.ACCENT_DIM, animT);
-		int knobColor = lerpColor(GuiTheme.TOGGLE_KNOB_OFF, 0xFFFFFFFF, animT);
+		int knobColor = lerpColor(GuiTheme.TOGGLE_KNOB_OFF, GuiTheme.ACCENT_BRIGHT, animT);
 		int knob = h - 4;
 		int travel = w - h;
 		int knobX;

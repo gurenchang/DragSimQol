@@ -60,7 +60,7 @@ public final class GuiWidgets {
 		@Override
 		public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
 			if (hovered) {
-				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.CARD_HOVER);
+				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.SURFACE_HOVER);
 			}
 			g.text(font, name, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY);
 			if (!description.isEmpty()) {
@@ -71,9 +71,9 @@ public final class GuiWidgets {
 			int toggleX = x + w - toggleW - GuiTheme.PADDING;
 			int toggleY = y + (GuiTheme.ROW_HEIGHT - toggleH) / 2;
 			GuiPaint.toggle(g, toggleX, toggleY, toggleW, toggleH, getter.getAsBoolean(), animT);
-			// ON/OFF status色(#33)
+			// ON/OFF status色(明確な状態表示)
 			g.text(font, getter.getAsBoolean() ? "ON" : "OFF",
-					toggleX - 24, toggleY + 3, getter.getAsBoolean() ? GuiTheme.STATUS_ON : GuiTheme.STATUS_OFF);
+					toggleX - 24, toggleY + 3, getter.getAsBoolean() ? GuiTheme.SUCCESS : GuiTheme.TEXT_DISABLED);
 		}
 
 		@Override
@@ -148,23 +148,23 @@ public final class GuiWidgets {
 		@Override
 		public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
 			if (hovered || dragging) {
-				g.fill(x, y, x + w, y + height(), GuiTheme.CARD_HOVER);
+				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
 			double value = getter.getAsDouble();
 			g.text(font, name, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
 			String valueText = valueFormatter.apply(value);
 			int valueW = font.width(valueText);
-			g.text(font, valueText, x + w - valueW - GuiTheme.PADDING, y + 3, GuiTheme.ACCENT);
-			// slider(#12)
+			g.text(font, valueText, x + w - valueW - GuiTheme.PADDING, y + 3, GuiTheme.ACCENT_BRIGHT);
+			// slider
 			int sliderX = x + GuiTheme.PADDING;
 			int sliderW = w - GuiTheme.PADDING * 2;
 			int sliderY = y + GuiTheme.ROW_HEIGHT - 6;
 			int sliderH = 6;
-			g.fill(sliderX, sliderY, sliderX + sliderW, sliderY + sliderH, GuiTheme.TOGGLE_TRACK_OFF);
+			g.fill(sliderX, sliderY, sliderX + sliderW, sliderY + sliderH, GuiTheme.SLIDER_TRACK);
 			double t = Math.max(0.0, Math.min(1.0, (value - min) / (max - min)));
 			g.fill(sliderX, sliderY, sliderX + (int) (sliderW * t), sliderY + sliderH, GuiTheme.ACCENT);
 			int knobX = sliderX + Math.round(sliderW * (float) t) - 3;
-			g.fill(knobX, sliderY - 2, knobX + 6, sliderY + sliderH + 2, 0xFFFFFFFF);
+			g.fill(knobX, sliderY - 2, knobX + 6, sliderY + sliderH + 2, GuiTheme.ACCENT_BRIGHT);
 		}
 
 		private boolean inSliderArea(double mx, double my, int x, int y, int w) {
@@ -281,18 +281,18 @@ public final class GuiWidgets {
 		@Override
 		public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
 			if (hovered && !open) {
-				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.CARD_HOVER);
+				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.SURFACE_HOVER);
 			}
 			g.text(font, name, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY);
 			int ddX = dropdownX(x, w);
 			int ddW = dropdownW(x, w);
 			int ddY = y + 3;
 			int ddH = GuiTheme.ROW_HEIGHT - 6;
-			GuiPaint.roundedRect(g, ddX, ddY, ddW, ddH, 4, GuiTheme.CARD);
-			GuiPaint.border(g, ddX, ddY, ddW, ddH, open ? GuiTheme.ACCENT_DIM : GuiTheme.SEPARATOR);
+			GuiPaint.roundedRect(g, ddX, ddY, ddW, ddH, 4, GuiTheme.SURFACE);
+			GuiPaint.border(g, ddX, ddY, ddW, ddH, open ? GuiTheme.ACCENT_DIM : GuiTheme.BORDER);
 			String current = getter.get();
 			g.text(font, current, ddX + 6, ddY + (ddH - 8) / 2, GuiTheme.TEXT_PRIMARY, false);
-			g.text(font, "▾", ddX + ddW - 10, ddY + (ddH - 8) / 2, GuiTheme.ACCENT, false);
+			g.text(font, "▾", ddX + ddW - 10, ddY + (ddH - 8) / 2, GuiTheme.ACCENT_BRIGHT, false);
 			if (open) {
 				String[] options = optionsSupplier.get();
 				for (int i = 0; i < options.length; i++) {
@@ -301,12 +301,12 @@ public final class GuiWidgets {
 					boolean isHover = openHoverIndex == i;
 					GuiPaint.roundedRect(g, ddX, oy, ddW, GuiTheme.ROW_HEIGHT - 2, 4,
 							isCurrent ? GuiTheme.SIDEBAR_SELECTED
-									: (isHover ? GuiTheme.CARD_HOVER : GuiTheme.CARD));
+									: (isHover ? GuiTheme.SURFACE_HOVER : GuiTheme.SURFACE));
 					if (isCurrent) {
 						GuiPaint.accentBar(g, ddX, oy, GuiTheme.ROW_HEIGHT - 2);
 					}
 					g.text(font, options[i], ddX + 8, oy + 5,
-							isCurrent ? GuiTheme.ACCENT : GuiTheme.TEXT_PRIMARY, false);
+							isCurrent ? GuiTheme.ACCENT_BRIGHT : GuiTheme.TEXT_PRIMARY, false);
 				}
 				openHoverIndex = -1;
 			}
@@ -398,16 +398,16 @@ public final class GuiWidgets {
 		@Override
 		public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
 			if (hovered) {
-				g.fill(x, y, x + w, y + height(), GuiTheme.CARD_HOVER);
+				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
 			g.text(font, name, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
-			g.text(font, valueSupplier.get(), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT);
+			g.text(font, valueSupplier.get(), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT_BRIGHT);
 			int btnW = 72;
 			int btnH = height() - 8;
 			int btnX = x + w - btnW - GuiTheme.PADDING;
 			int btnY = y + 5;
-			GuiPaint.roundedRect(g, btnX, btnY, btnW, btnH, 4, GuiTheme.CARD_HOVER);
-			GuiPaint.border(g, btnX, btnY, btnW, btnH, GuiTheme.SEPARATOR);
+			GuiPaint.roundedRect(g, btnX, btnY, btnW, btnH, 4, GuiTheme.SURFACE_HOVER);
+			GuiPaint.border(g, btnX, btnY, btnW, btnH, GuiTheme.BORDER);
 			String label = "Bind Held";
 			g.text(font, label, btnX + (btnW - font.width(label)) / 2, btnY + (btnH - 8) / 2,
 					GuiTheme.TEXT_PRIMARY, false);
@@ -465,16 +465,16 @@ public final class GuiWidgets {
 		@Override
 		public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
 			if (hovered) {
-				g.fill(x, y, x + w, y + height(), GuiTheme.CARD_HOVER);
+				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
 			g.text(font, name, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
-			g.text(font, valueSupplier.get(), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT);
+			g.text(font, valueSupplier.get(), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT_BRIGHT);
 			int btnW = 84;
 			int btnH = height() - 10;
 			int btnX = x + w - btnW - GuiTheme.PADDING;
 			int btnY = y + 5;
-			GuiPaint.roundedRect(g, btnX, btnY, btnW, btnH, 4, GuiTheme.CARD_HOVER);
-			GuiPaint.border(g, btnX, btnY, btnW, btnH, GuiTheme.SEPARATOR);
+			GuiPaint.roundedRect(g, btnX, btnY, btnW, btnH, 4, GuiTheme.SURFACE_HOVER);
+			GuiPaint.border(g, btnX, btnY, btnW, btnH, GuiTheme.BORDER);
 			String label = "Bind Held";
 			g.text(font, label, btnX + (btnW - font.width(label)) / 2, btnY + (btnH - 8) / 2,
 					GuiTheme.TEXT_PRIMARY, false);

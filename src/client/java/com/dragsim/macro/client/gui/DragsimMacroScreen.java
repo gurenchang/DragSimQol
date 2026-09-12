@@ -59,6 +59,15 @@ public class DragsimMacroScreen extends Screen {
 	private int windowY;
 	private int windowW;
 	private int windowH;
+	private int sidebarW;
+	// scrollbar geometry(render時确定、click判定から参照。render/click分離)
+	private boolean scrollbarDragging;
+	private int scrollbarX1;
+	private int scrollbarX2;
+	private int trackTop;
+	private int trackBottom;
+	private int barHeight;
+	private int maxScroll;
 	private final Map<Integer, Integer> scrollPerCategory = new HashMap<>();
 	private final Map<Integer, List<Setting>> settingsPerCategory = new HashMap<>();
 	private final List<DropdownSetting> activeDropdowns = new ArrayList<>();
@@ -79,6 +88,9 @@ public class DragsimMacroScreen extends Screen {
 		windowH = Math.min(GuiTheme.WINDOW_HEIGHT_DEFAULT, this.height - 30);
 		windowX = (this.width - windowW) / 2;
 		windowY = (this.height - windowH) / 2;
+		// 小さい画面(GUI scale大/低解像度)でも設定が切れないようsidebarを縮小
+		sidebarW = Math.min(GuiTheme.SIDEBAR_WIDTH,
+				Math.max(GuiTheme.SIDEBAR_WIDTH_MIN, windowW / 4));
 	}
 
 	@Override
@@ -91,7 +103,7 @@ public class DragsimMacroScreen extends Screen {
 				GuiTheme.CORNER_RADIUS + 2, GuiTheme.SHADOW);
 		GuiPaint.roundedRect(graphics, windowX, windowY, windowW, windowH, GuiTheme.CORNER_RADIUS, GuiTheme.PANEL);
 
-		// header(#7)
+		// header(#7): title + version + macro state
 		graphics.text(font, "DragSim Macro", windowX + GuiTheme.PADDING, windowY + 9,
 				GuiTheme.TEXT_PRIMARY, true);
 		graphics.text(font, "v1.5.0", windowX + GuiTheme.PADDING + 96, windowY + 11,
@@ -99,50 +111,51 @@ public class DragsimMacroScreen extends Screen {
 		boolean macroOn = controller.getState() != MacroController.State.IDLE;
 		int chipW = 96;
 		int chipX = windowX + windowW - chipW - 44;
-		GuiPaint.roundedRect(graphics, chipX, windowY + 5, chipW, 20, 4, GuiTheme.CARD);
+		GuiPaint.roundedRect(graphics, chipX, windowY + 5, chipW, 20, 4, GuiTheme.SURFACE);
 		graphics.text(font, "Macro", chipX + 8, windowY + 11, GuiTheme.TEXT_SECONDARY, false);
 		graphics.text(font, macroOn ? "ON" : "OFF", chipX + chipW - 32, windowY + 11,
-				macroOn ? GuiTheme.STATUS_ON : GuiTheme.STATUS_OFF, false);
+				macroOn ? GuiTheme.SUCCESS : GuiTheme.TEXT_DISABLED, false);
 		// close button(#7): ×
 		boolean closeHover = mouseX >= windowX + windowW - 36 && mouseX <= windowX + windowW - 6
 				&& mouseY >= windowY + 4 && mouseY <= windowY + 26;
 		if (closeHover) {
-			GuiPaint.roundedRect(graphics, windowX + windowW - 30, windowY + 5, 24, 20, 4, GuiTheme.CARD_HOVER);
+			GuiPaint.roundedRect(graphics, windowX + windowW - 30, windowY + 5, 24, 20, 4, GuiTheme.SURFACE_HOVER);
 		}
 		graphics.text(font, "✕", windowX + windowW - 22, windowY + 10,
-				closeHover ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY, false);
+				closeHover ? GuiTheme.DANGER : GuiTheme.TEXT_SECONDARY, false);
 
 		// separator
-		graphics.fill(windowX, windowY + 27, windowX + windowW, windowY + 28, GuiTheme.SEPARATOR);
+		graphics.fill(windowX, windowY + 27, windowX + windowW, windowY + 28, GuiTheme.BORDER);
 
 		// sidebar(#8)
 		int sidebarY = windowY + 28;
 		int sidebarH = windowH - 28;
-		graphics.fill(windowX, sidebarY, windowX + GuiTheme.SIDEBAR_WIDTH, sidebarY + sidebarH, GuiTheme.CARD);
+		graphics.fill(windowX, sidebarY, windowX + sidebarW, sidebarY + sidebarH, GuiTheme.SURFACE);
+		graphics.fill(windowX + sidebarW, sidebarY, windowX + sidebarW + 1, sidebarY + sidebarH, GuiTheme.BORDER);
 		for (int i = 0; i < CATEGORIES.length; i++) {
 			int rowY = sidebarY + 6 + i * GuiTheme.ROW_HEIGHT;
 			boolean selected = i == selectedCategory;
-			boolean hovered = mouseX >= windowX && mouseX <= windowX + GuiTheme.SIDEBAR_WIDTH
+			boolean hovered = mouseX >= windowX && mouseX <= windowX + sidebarW
 					&& mouseY >= rowY && mouseY <= rowY + GuiTheme.ROW_HEIGHT;
 			if (selected) {
-				graphics.fill(windowX, rowY, windowX + GuiTheme.SIDEBAR_WIDTH, rowY + GuiTheme.ROW_HEIGHT,
+				graphics.fill(windowX, rowY, windowX + sidebarW, rowY + GuiTheme.ROW_HEIGHT,
 						GuiTheme.SIDEBAR_SELECTED);
 				GuiPaint.accentBar(graphics, windowX, rowY + 4, GuiTheme.ROW_HEIGHT - 8);
 			} else if (hovered) {
-				graphics.fill(windowX, rowY, windowX + GuiTheme.SIDEBAR_WIDTH, rowY + GuiTheme.ROW_HEIGHT,
-						GuiTheme.CARD_HOVER);
+				graphics.fill(windowX, rowY, windowX + sidebarW, rowY + GuiTheme.ROW_HEIGHT,
+						GuiTheme.SURFACE_HOVER);
 			}
 			graphics.text(font, CATEGORIES[i], windowX + GuiTheme.PADDING + 4,
 					rowY + (GuiTheme.ROW_HEIGHT - 8) / 2,
-					selected ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY, false);
+					selected ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY);
 		}
 
 		// content panel(#14): scroll可能
-		int contentX = windowX + GuiTheme.SIDEBAR_WIDTH + 6;
+		int contentX = contentX();
 		int contentY = windowY + 32;
-		int contentW = windowW - GuiTheme.SIDEBAR_WIDTH - 12;
+		int contentW = contentW();
 		int contentH = windowH - 40;
-		GuiPaint.roundedRect(graphics, contentX, contentY, contentW, contentH, 4, GuiTheme.CARD);
+		GuiPaint.roundedRect(graphics, contentX, contentY, contentW, contentH, 4, GuiTheme.SURFACE);
 
 		List<Setting> settings = currentSettings();
 		graphics.enableScissor(contentX, contentY, contentX + contentW, contentY + contentH);
@@ -161,15 +174,21 @@ public class DragsimMacroScreen extends Screen {
 		}
 		graphics.disableScissor();
 
-		// scrollbar
+		// scrollbar(描画geometryをfieldへ確定し、click判定と共通化)
 		int totalH = contentHeightOf(settings);
-		int maxScroll = Math.max(0, totalH - contentH);
+		maxScroll = Math.max(0, totalH - contentH);
 		int scroll = scrollPerCategory.getOrDefault(selectedCategory, 0);
+		scrollbarX1 = contentX + contentW - 4;
+		scrollbarX2 = contentX + contentW - 2;
+		trackTop = contentY + 2;
+		trackBottom = contentY + contentH - 2;
 		if (maxScroll > 0) {
-			int barH = Math.max(24, (int) ((long) contentH * contentH / totalH));
-			int barY = contentY + (int) ((long) scroll * (contentH - barH) / maxScroll);
-			graphics.fill(contentX + contentW - 4, barY, contentX + contentW - 2, barY + barH,
-					GuiTheme.ACCENT_DIM);
+			barHeight = Math.max(24, (int) ((long) contentH * contentH / totalH));
+			int barY = trackTop + (int) ((long) scroll * (trackBottom - trackTop - barHeight) / maxScroll);
+			int barColor = scrollbarDragging ? GuiTheme.ACCENT_BRIGHT : GuiTheme.ACCENT_DIM;
+			graphics.fill(scrollbarX1, barY, scrollbarX2, barY + barHeight, barColor);
+		} else {
+			barHeight = 0;
 		}
 	}
 
@@ -182,11 +201,11 @@ public class DragsimMacroScreen extends Screen {
 	}
 
 	private int contentX() {
-		return windowX + GuiTheme.SIDEBAR_WIDTH + 6;
+		return windowX + sidebarW + 6;
 	}
 
 	private int contentW() {
-		return windowW - GuiTheme.SIDEBAR_WIDTH - 12;
+		return windowW - sidebarW - 12;
 	}
 
 	private List<Setting> currentSettings() {
@@ -422,7 +441,7 @@ public class DragsimMacroScreen extends Screen {
 			public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
 				g.text(font, title, x + GuiTheme.PADDING, y + 8, GuiTheme.ACCENT, true);
 				g.fill(x, y + GuiTheme.SECTION_HEADER_HEIGHT - 2, x + w,
-						y + GuiTheme.SECTION_HEADER_HEIGHT, GuiTheme.SEPARATOR);
+						y + GuiTheme.SECTION_HEADER_HEIGHT, GuiTheme.BORDER);
 			}
 
 			@Override
@@ -491,13 +510,20 @@ public class DragsimMacroScreen extends Screen {
 			}
 		}
 		// sidebar
-		if (mx >= windowX && mx <= windowX + GuiTheme.SIDEBAR_WIDTH
+		if (mx >= windowX && mx <= windowX + sidebarW
 				&& my >= windowY + 28 && my <= windowY + windowH) {
 			int index = (int) ((my - (windowY + 34)) / GuiTheme.ROW_HEIGHT);
 			if (index >= 0 && index < CATEGORIES.length) {
 				selectCategory(index);
 				return true;
 			}
+		}
+		// scrollbar: track/bar clickでdrag開始(描画geometryはrender時に確定済み)
+		if (maxScroll > 0 && mx >= scrollbarX1 - 2 && mx <= scrollbarX2 + 2
+				&& my >= trackTop && my <= trackBottom) {
+			scrollbarDragging = true;
+			dragScrollbarTo(my);
+			return true;
 		}
 		// settings rows
 		if (mx < contentX() || mx > contentX() + contentW()
@@ -518,6 +544,10 @@ public class DragsimMacroScreen extends Screen {
 	public boolean mouseReleased(MouseButtonEvent event) {
 		double mx = event.x();
 		double my = event.y();
+		if (scrollbarDragging) {
+			scrollbarDragging = false;
+			return true;
+		}
 		for (Setting setting : currentSettings()) {
 			if (setting.mouseReleased(mx, my)) {
 				return true;
@@ -530,6 +560,10 @@ public class DragsimMacroScreen extends Screen {
 	public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
 		double mx = event.x();
 		double my = event.y();
+		if (scrollbarDragging) {
+			dragScrollbarTo(my);
+			return true;
+		}
 		int y = windowY + 32 + 6 - scrollPerCategory.getOrDefault(selectedCategory, 0);
 		for (Setting setting : currentSettings()) {
 			if (setting.mouseDragged(mx, my, contentX(), y, contentW())) {
@@ -548,6 +582,15 @@ public class DragsimMacroScreen extends Screen {
 		int scroll = scrollPerCategory.getOrDefault(selectedCategory, 0) - (int) (scrollY * 20);
 		scrollPerCategory.put(selectedCategory, Math.max(0, Math.min(maxScroll, scroll)));
 		return true;
+	}
+
+	private void dragScrollbarTo(double my) {
+		if (maxScroll <= 0 || barHeight <= 0 || trackBottom <= trackTop + barHeight) {
+			return;
+		}
+		int usable = trackBottom - trackTop - barHeight;
+		int t = (int) ((my - trackTop - barHeight / 2.0) / usable * maxScroll);
+		scrollPerCategory.put(selectedCategory, Math.max(0, Math.min(maxScroll, t)));
 	}
 
 	@Override
