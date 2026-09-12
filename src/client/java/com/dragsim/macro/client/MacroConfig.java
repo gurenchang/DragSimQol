@@ -1,0 +1,341 @@
+package com.dragsim.macro.client;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import net.fabricmc.loader.api.FabricLoader;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Locale;
+
+/**
+ * Phase 6.1: Persistent Config(GUI用backend SSOT)。
+ *
+ * config/dragsimmacro.json に永続化。操作順は必ず
+ *   GUI → MacroConfig(JSON) → CombatLoadout → Controller
+ * であり、Controllerへ直接値を書き込まない。
+ *
+ * 将来GUIから変更したい項目:
+ *   Attack Weapon / Warp Item / Warp Distance / Warp settle ticks / Warp timeout
+ *   Melee preferred range / Sprint stop distance
+ *   Approach ON/OFF / Attack ON/OFF / Rotation ON/OFF / ESP mode
+ */
+public final class MacroConfig {
+	private static MacroConfig instance;
+
+	/** JSON保存用のbinding DTO */
+	public static class BindingData {
+		public String registryId;
+		public String name;
+
+		public BindingData() {
+		}
+
+		public BindingData(String registryId, String name) {
+			this.registryId = registryId;
+			this.name = name;
+		}
+	}
+
+	// ==== loadout ====
+	public BindingData attackWeapon;
+	public BindingData warpItem;
+
+	// ==== tunables ====
+	public double meleePreferredRange = 2.8;
+	public double sprintStopDistance = 3.5;
+	public double warpDistance = 8.0;
+	public int warpSettleTicks = 2;
+	public long warpResultTimeoutMs = 500;
+	public long warpRetryDelayMs = 500;
+	public int maxWarpRetries = 1;
+
+	// ==== toggles(persisted) ====
+	public boolean attackEnabled;
+	public boolean approachEnabled;
+	public boolean rotationEnabled;
+	public String rotationSmoothing = "RENDER_SMOOTH";
+	public String espMode = "OFF";
+
+	// ==== target selection V2 ====
+	public String targetSelectionMode = "ENGAGEMENT";
+	public double targetDistanceBand = 2.5;
+	public double targetSwitchAdvantage = 2.0;
+	public int candidateRefreshTicks = 10;
+	public int fastIdleRefreshTicks = 3;
+	public double targetAngleTieDistance = 1.0;
+
+	// ==== target acquisition range(GUI: 40/50/60/70/80m) ====
+	public double targetRange = 60.0;
+
+	// ==== moving warp(Phase 6.3) ====
+	public boolean movingWarp = true;
+	public double movingWarpMaxYawError = 45.0;
+	public double minPostWarpDistance = 2.0;
+	public int maxWarpsPerTarget = 6;
+
+	// ==== navigation(Phase 6.5) ====
+	public boolean navigationEnabled = true;
+	public int localPathRadius = 28;
+	public int repathIntervalMs = 500;
+	public double targetRepathMoveThreshold = 2.0;
+	public double pathLookaheadDistance = 3.0;
+	public boolean allowJump = true;
+	public int maxStepUp = 1;
+	public int maxSafeDrop = 2;
+	public boolean pathSmoothing = true;
+	public long stuckTimeoutMs = 600;
+	public double pathGoalRadius = 2.5;
+
+	// ==== Special Zealot(Phase 6.6) ====
+	public boolean attackSpecialZealot = false;
+	public long specialCombatTimeoutMs = 10000;
+	public boolean specialEspHighlight = true;
+
+	// ==== Target filters(Phase 7.0) ====
+	public boolean targetNormalZealot = true;
+	public boolean targetBruiser = false;
+
+	// ==== Target memory / lookahead(Phase 8.1) ====
+	public boolean badTargetMemoryEnabled = true;
+	public long failureBaseIgnoreMs = 2000;
+	public long failureMaxIgnoreMs = 10000;
+	public long failureMemoryTtlMs = 30000;
+	public double specialFailureRetryMultiplier = 0.5;
+	public long approachFailureTimeoutMs = 15000;
+	public boolean targetLookaheadEnabled = true;
+	public double nextTargetSwitchAdvantage = 2.0;
+
+	// ==== Continuous control(Phase 8.3 / 8.3.1) ====
+	/** 視点速度(%)。100%=旧FAST相当(yaw 240/pitch 180 deg/s)。範囲50〜250 */
+	public double rotationSpeedPercent = 150;
+	public String rotationTrackingSmoothness = "SMOOTH";
+	public String corneringSmoothness = "MEDIUM";
+	public double turnBeforeMoveDeg = 90.0;
+	public boolean predictiveFollowing = true;
+	public int pathPredictionMs = 100;
+	public int targetPredictionMs = 100;
+
+	private MacroConfig() {
+	}
+
+	private static Path path() {
+		return FabricLoader.getInstance().getConfigDir().resolve("dragsimmacro.json");
+	}
+
+	public static synchronized MacroConfig get() {
+		if (instance == null) {
+			load();
+		}
+		return instance;
+	}
+
+	public static synchronized void load() {
+		try {
+			Path path = path();
+			if (Files.exists(path)) {
+				instance = GSON.fromJson(Files.readString(path), MacroConfig.class);
+			}
+		} catch (Exception e) {
+			System.err.println("[DragsimMacro] config load failed: " + e);
+		}
+		if (instance == null) {
+			instance = new MacroConfig();
+		}
+		save();
+	}
+
+	public static synchronized void save() {
+		if (instance == null) {
+			return;
+		}
+		try {
+			Files.createDirectories(path().getParent());
+			Files.writeString(path(), GSON.toJson(instance));
+		} catch (Exception e) {
+			System.err.println("[DragsimMacro] config save failed: " + e);
+		}
+	}
+
+	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
+	// ==== typed accessors ====
+
+	public ItemBinding getAttackWeaponBinding() {
+		return attackWeapon == null ? null : new ItemBinding(attackWeapon.registryId, attackWeapon.name);
+	}
+
+	public void setAttackWeapon(ItemBinding binding) {
+		attackWeapon = binding == null ? null : new BindingData(binding.registryId(), binding.cleanCustomName());
+		save();
+	}
+
+	public ItemBinding getWarpItemBinding() {
+		return warpItem == null ? null : new ItemBinding(warpItem.registryId, warpItem.name);
+	}
+
+	public void setWarpItem(ItemBinding binding) {
+		warpItem = binding == null ? null : new BindingData(binding.registryId(), binding.cleanCustomName());
+		save();
+	}
+
+	public void clearWarpItem() {
+		warpItem = null;
+		save();
+	}
+
+	public void clearAttackWeapon() {
+		attackWeapon = null;
+		save();
+	}
+
+	public EspMode getEspMode() {
+		try {
+			return EspMode.valueOf(espMode);
+		} catch (Exception e) {
+			return EspMode.OFF;
+		}
+	}
+
+	public void setEspMode(EspMode mode) {
+		espMode = mode.name();
+		save();
+	}
+
+	public void setApproachEnabled(boolean value) {
+		approachEnabled = value;
+		save();
+	}
+
+	public void setAttackEnabled(boolean value) {
+		attackEnabled = value;
+		save();
+	}
+
+	public void setRotationEnabled(boolean value) {
+		rotationEnabled = value;
+		save();
+	}
+
+	public RotationSmoothing getRotationSmoothing() {
+		try {
+			return RotationSmoothing.valueOf(rotationSmoothing);
+		} catch (Exception e) {
+			return RotationSmoothing.RENDER_SMOOTH;
+		}
+	}
+
+	public void setRotationSmoothing(RotationSmoothing mode) {
+		rotationSmoothing = mode.name();
+		save();
+	}
+
+	public TargetSelector.SelectionMode getTargetSelectionMode() {
+		try {
+			return TargetSelector.SelectionMode.valueOf(targetSelectionMode);
+		} catch (Exception e) {
+			return TargetSelector.SelectionMode.ENGAGEMENT;
+		}
+	}
+
+	public void setTargetSelectionMode(String mode) {
+		targetSelectionMode = mode;
+		save();
+	}
+
+	public void setAttackSpecialZealot(boolean value) {
+		attackSpecialZealot = value;
+		save();
+	}
+
+	public void setTargetNormalZealot(boolean value) {
+		targetNormalZealot = value;
+		save();
+	}
+
+	public void setTargetBruiser(boolean value) {
+		targetBruiser = value;
+		save();
+	}
+
+	/** ZealotType → Target候補として有効か(SSOT) */
+	public boolean isTargetTypeEnabled(ZealotDetector.ZealotType type) {
+		return switch (type) {
+			case NORMAL -> targetNormalZealot;
+			case BRUISER -> targetBruiser;
+			case SPECIAL -> attackSpecialZealot;
+		};
+	}
+
+	public double getTargetRange() {
+		return Math.max(5.0, Math.min(80.0, targetRange));
+	}
+
+	public void setTargetRange(double value) {
+		targetRange = Math.max(5.0, Math.min(80.0, value));
+		save();
+	}
+
+	// ==== Phase 8.3 typed accessors(high-level feelのみ公開) ====
+
+	/** Phase 8.3.1: 視点速度(%)。clamped 50〜250 */
+	public int getRotationSpeedPercent() {
+		return (int) Math.round(Math.max(50.0, Math.min(250.0, rotationSpeedPercent)));
+	}
+
+	/** 速度倍率m。100%=1.0(旧FAST相当) */
+	public double getRotationSpeedMultiplier() {
+		return getRotationSpeedPercent() / 100.0;
+	}
+
+	/**
+	 * 加速度/jerkの倍率。velocity(m)より増幅を弱める(sqrt(m))。
+	 * speedを上げても加速不足で遅くならず、Target付近のovershootも増やさない。
+	 */
+	public double getAcquisitionScale() {
+		return Math.sqrt(getRotationSpeedMultiplier());
+	}
+
+	/** FAR領域のyaw最大角速度(deg/s)。100%=240 */
+	public double getYawFarCapDegPerSec() {
+		return 240.0 * getRotationSpeedMultiplier();
+	}
+
+	/** FAR領域のpitch最大角速度(deg/s)。100%=180 */
+	public double getPitchFarCapDegPerSec() {
+		return 180.0 * getRotationSpeedMultiplier();
+	}
+
+	/** NEAR領域の比例ゲイン。SMOOTH=6 / TIGHT=9 */
+	public double getTrackingNearGain() {
+		return "TIGHT".equalsIgnoreCase(rotationTrackingSmoothness) ? 9.0 : 6.0;
+	}
+
+	/** corner先読みのlookahead倍率。LOW=1.0 / MEDIUM=1.3 / HIGH=1.6 */
+	public double getCorneringLookaheadMultiplier() {
+		return switch (corneringSmoothness == null ? "MEDIUM" : corneringSmoothness.toUpperCase(Locale.ROOT)) {
+			case "LOW" -> 1.0;
+			case "HIGH" -> 1.6;
+			default -> 1.3;
+		};
+	}
+
+	/** このyaw誤差を超えたらforwardを止めて先に向く(deg) */
+	public double getTurnBeforeMoveDeg() {
+		return Math.max(30.0, Math.min(150.0, turnBeforeMoveDeg));
+	}
+
+	public boolean isPredictiveFollowing() {
+		return predictiveFollowing;
+	}
+
+	/** PathFollowerのpredicted position horizon(ms)。0で無効 */
+	public int getPathPredictionMs() {
+		return Math.max(0, Math.min(200, pathPredictionMs));
+	}
+
+	/** 目標位置の短期prediction horizon(ms)。0〜150。0で無効 */
+	public int getTargetPredictionMs() {
+		return Math.max(0, Math.min(150, targetPredictionMs));
+	}
+}

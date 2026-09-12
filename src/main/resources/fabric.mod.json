@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "dragsimmacro",
+	"version": "${version}",
+	"name": "DragSim Zealot Macro",
+	"description": "Phase 1: client-only entity scanner for DragSim research. /zealotdebug on|off",
+	"authors": [
+		"you"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/dragsimmacro/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.dragsim.macro.DragsimMacroMod"
+		],
+		"client": [
+			"com.dragsim.macro.client.DragsimMacroClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

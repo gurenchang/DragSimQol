@@ -1,0 +1,584 @@
+package com.dragsim.macro.client.gui;
+
+import com.dragsim.macro.client.ApproachPlanner;
+import com.dragsim.macro.client.CombatController;
+import com.dragsim.macro.client.EspMode;
+import com.dragsim.macro.client.ItemBinding;
+import com.dragsim.macro.client.MacroConfig;
+import com.dragsim.macro.client.MacroController;
+import com.dragsim.macro.client.RotationController;
+import com.dragsim.macro.client.RotationSmoothing;
+import com.dragsim.macro.client.gui.GuiPaint;
+import com.dragsim.macro.client.gui.GuiTheme;
+import com.dragsim.macro.client.gui.GuiWidgets.DropdownSetting;
+import com.dragsim.macro.client.gui.GuiWidgets.ItemBindingRow;
+import com.dragsim.macro.client.gui.GuiWidgets.Setting;
+import com.dragsim.macro.client.gui.GuiWidgets.SliderSetting;
+import com.dragsim.macro.client.gui.GuiWidgets.ToggleSetting;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.function.Consumer;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
+import org.lwjgl.glfw.GLFW;
+
+/**
+ * Phase 7.0: DragsimMacroScreen — Main GUI(dark modern UI)。
+ *
+ * - 中央floating window(responsive: 画面から計算)
+ * - sidebar(category選択)+ scroll可能setting panel
+ * - すべてのwidgetはMacroConfig SSOTにgetter/setter bind(独自stateを持たない)
+ * - open時: automation pause + owned input解放 / close時: 次tickから再評価
+ * - world/player null-safe(disconnect後も安全)
+ *
+ * Minecraft 26.2 native API: Screen / extractRenderState / GuiGraphicsExtractor /
+ * MouseButtonEvent / KeyEvent(#26)。drawStringではなくtext()を使用。
+ */
+public class DragsimMacroScreen extends Screen {
+	private static final String[] CATEGORIES = {"General", "Targets", "Combat", "Movement", "Rotation", "ESP"};
+
+	private final MacroController controller;
+	private final RotationController rotationController;
+	private final CombatController combatController;
+	private final ApproachPlanner approachPlanner;
+
+	private int selectedCategory;
+	private int windowX;
+	private int windowY;
+	private int windowW;
+	private int windowH;
+	private final Map<Integer, Integer> scrollPerCategory = new HashMap<>();
+	private final Map<Integer, List<Setting>> settingsPerCategory = new HashMap<>();
+	private final List<DropdownSetting> activeDropdowns = new ArrayList<>();
+
+	public DragsimMacroScreen(MacroController controller, RotationController rotationController,
+			CombatController combatController, ApproachPlanner approachPlanner) {
+		super(Component.literal("DragSim Macro"));
+		this.controller = controller;
+		this.rotationController = rotationController;
+		this.combatController = combatController;
+		this.approachPlanner = approachPlanner;
+	}
+
+	@Override
+	protected void init() {
+		// responsive window(#6): 画面resolutionから計算、小さい解像度では自動縮小
+		windowW = Math.min(GuiTheme.WINDOW_WIDTH_DEFAULT, this.width - 30);
+		windowH = Math.min(GuiTheme.WINDOW_HEIGHT_DEFAULT, this.height - 30);
+		windowX = (this.width - windowW) / 2;
+		windowY = (this.height - windowH) / 2;
+	}
+
+	@Override
+	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+		// dark dim overlay(#5)
+		graphics.fill(0, 0, this.width, this.height, GuiTheme.OVERLAY);
+
+		// main panel + shadow(#6)
+		GuiPaint.roundedRect(graphics, windowX - 5, windowY - 5, windowW + 10, windowH + 10,
+				GuiTheme.CORNER_RADIUS + 2, GuiTheme.SHADOW);
+		GuiPaint.roundedRect(graphics, windowX, windowY, windowW, windowH, GuiTheme.CORNER_RADIUS, GuiTheme.PANEL);
+
+		// header(#7)
+		graphics.text(font, "DragSim Macro", windowX + GuiTheme.PADDING, windowY + 9,
+				GuiTheme.TEXT_PRIMARY, true);
+		graphics.text(font, "v1.5.0", windowX + GuiTheme.PADDING + 96, windowY + 11,
+				GuiTheme.TEXT_SECONDARY, false);
+		boolean macroOn = controller.getState() != MacroController.State.IDLE;
+		int chipW = 96;
+		int chipX = windowX + windowW - chipW - 44;
+		GuiPaint.roundedRect(graphics, chipX, windowY + 5, chipW, 20, 4, GuiTheme.CARD);
+		graphics.text(font, "Macro", chipX + 8, windowY + 11, GuiTheme.TEXT_SECONDARY, false);
+		graphics.text(font, macroOn ? "ON" : "OFF", chipX + chipW - 32, windowY + 11,
+				macroOn ? GuiTheme.STATUS_ON : GuiTheme.STATUS_OFF, false);
+		// close button(#7): ×
+		boolean closeHover = mouseX >= windowX + windowW - 36 && mouseX <= windowX + windowW - 6
+				&& mouseY >= windowY + 4 && mouseY <= windowY + 26;
+		if (closeHover) {
+			GuiPaint.roundedRect(graphics, windowX + windowW - 30, windowY + 5, 24, 20, 4, GuiTheme.CARD_HOVER);
+		}
+		graphics.text(font, "✕", windowX + windowW - 22, windowY + 10,
+				closeHover ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY, false);
+
+		// separator
+		graphics.fill(windowX, windowY + 27, windowX + windowW, windowY + 28, GuiTheme.SEPARATOR);
+
+		// sidebar(#8)
+		int sidebarY = windowY + 28;
+		int sidebarH = windowH - 28;
+		graphics.fill(windowX, sidebarY, windowX + GuiTheme.SIDEBAR_WIDTH, sidebarY + sidebarH, GuiTheme.CARD);
+		for (int i = 0; i < CATEGORIES.length; i++) {
+			int rowY = sidebarY + 6 + i * GuiTheme.ROW_HEIGHT;
+			boolean selected = i == selectedCategory;
+			boolean hovered = mouseX >= windowX && mouseX <= windowX + GuiTheme.SIDEBAR_WIDTH
+					&& mouseY >= rowY && mouseY <= rowY + GuiTheme.ROW_HEIGHT;
+			if (selected) {
+				graphics.fill(windowX, rowY, windowX + GuiTheme.SIDEBAR_WIDTH, rowY + GuiTheme.ROW_HEIGHT,
+						GuiTheme.SIDEBAR_SELECTED);
+				GuiPaint.accentBar(graphics, windowX, rowY + 4, GuiTheme.ROW_HEIGHT - 8);
+			} else if (hovered) {
+				graphics.fill(windowX, rowY, windowX + GuiTheme.SIDEBAR_WIDTH, rowY + GuiTheme.ROW_HEIGHT,
+						GuiTheme.CARD_HOVER);
+			}
+			graphics.text(font, CATEGORIES[i], windowX + GuiTheme.PADDING + 4,
+					rowY + (GuiTheme.ROW_HEIGHT - 8) / 2,
+					selected ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY, false);
+		}
+
+		// content panel(#14): scroll可能
+		int contentX = windowX + GuiTheme.SIDEBAR_WIDTH + 6;
+		int contentY = windowY + 32;
+		int contentW = windowW - GuiTheme.SIDEBAR_WIDTH - 12;
+		int contentH = windowH - 40;
+		GuiPaint.roundedRect(graphics, contentX, contentY, contentW, contentH, 4, GuiTheme.CARD);
+
+		List<Setting> settings = currentSettings();
+		graphics.enableScissor(contentX, contentY, contentX + contentW, contentY + contentH);
+		int y = contentY + 6 - scrollPerCategory.getOrDefault(selectedCategory, 0);
+		for (Setting setting : settings) {
+			int h = setting.height();
+			if (y + h >= contentY && y <= contentY + contentH) {
+				if (setting instanceof ToggleSetting toggle) {
+					toggle.tickAnimation();
+				}
+				boolean hovered = mouseX >= contentX && mouseX <= contentX + contentW
+						&& mouseY >= y && mouseY <= y + h;
+				setting.render(graphics, font, contentX, y, contentW, hovered);
+			}
+			y += h;
+		}
+		graphics.disableScissor();
+
+		// scrollbar
+		int totalH = contentHeightOf(settings);
+		int maxScroll = Math.max(0, totalH - contentH);
+		int scroll = scrollPerCategory.getOrDefault(selectedCategory, 0);
+		if (maxScroll > 0) {
+			int barH = Math.max(24, (int) ((long) contentH * contentH / totalH));
+			int barY = contentY + (int) ((long) scroll * (contentH - barH) / maxScroll);
+			graphics.fill(contentX + contentW - 4, barY, contentX + contentW - 2, barY + barH,
+					GuiTheme.ACCENT_DIM);
+		}
+	}
+
+	private int contentHeightOf(List<Setting> settings) {
+		int h = 0;
+		for (Setting setting : settings) {
+			h += setting.height();
+		}
+		return h;
+	}
+
+	private int contentX() {
+		return windowX + GuiTheme.SIDEBAR_WIDTH + 6;
+	}
+
+	private int contentW() {
+		return windowW - GuiTheme.SIDEBAR_WIDTH - 12;
+	}
+
+	private List<Setting> currentSettings() {
+		return settingsPerCategory.computeIfAbsent(selectedCategory, category -> buildSettings(minecraft, category));
+	}
+
+	// ==== pages(仕様#15〜#20) ====
+
+	private List<Setting> buildSettings(Minecraft mc, int category) {
+		MacroConfig config = MacroConfig.get();
+		List<Setting> settings = new ArrayList<>();
+		switch (CATEGORIES[category]) {
+			case "General" -> {
+				settings.add(header("GENERAL"));
+				settings.add(new DropdownSetting("ESP", null,
+						new String[]{"OFF", "NORMAL", "DEBUG"},
+						() -> controller.getEspMode().name(),
+						v -> controller.setEspMode(EspMode.valueOf(v))));
+				settings.add(new ToggleSetting("Attack", "Combat attack automation",
+						() -> combatController.isAttackEnabled(),
+						v -> combatController.setEnabled(v)));
+				settings.add(new ToggleSetting("Approach", "Navigation approach automation",
+						() -> approachPlanner.isApproachEnabled(),
+						v -> approachPlanner.setEnabled(v)));
+				settings.add(new ToggleSetting("Rotation", "Camera rotation automation",
+						() -> rotationController.isEnabled(),
+						v -> rotationController.setEnabled(mc, v)));
+			}
+			case "Targets" -> {
+				settings.add(header("TARGET TYPES"));
+				settings.add(new ToggleSetting("Normal Zealot", "Primary farming target",
+						() -> MacroConfig.get().targetNormalZealot,
+						v -> {
+							MacroConfig.get().setTargetNormalZealot(v);
+							controller.getTargetSelector().onTargetPolicyChanged(controller.getRange());
+						}));
+				settings.add(new ToggleSetting("Zealot Bruiser", "Include Zealot Bruisers",
+						() -> MacroConfig.get().targetBruiser,
+						v -> {
+							MacroConfig.get().setTargetBruiser(v);
+							controller.getTargetSelector().onTargetPolicyChanged(controller.getRange());
+						}));
+				settings.add(new ToggleSetting("Special Zealot",
+						"Prioritize Lv100 Special Zealots when enabled",
+						() -> MacroConfig.get().attackSpecialZealot,
+						v -> {
+							MacroConfig.get().setAttackSpecialZealot(v);
+							controller.getTargetSelector().onTargetPolicyChanged(controller.getRange());
+						}));
+				settings.add(header("TARGET SELECTION"));
+				settings.add(new SliderSetting("Target Range", "Candidate acquisition range (m)",
+						20, 80, 5,
+						() -> controller.getRange(),
+						v -> controller.setRange(v)));
+				settings.add(new DropdownSetting("Selection Mode", null,
+						new String[]{"ENGAGEMENT", "LEGACY"},
+						() -> MacroConfig.get().getTargetSelectionMode().name(),
+						v -> MacroConfig.get().setTargetSelectionMode(v)));
+				settings.add(new SliderSetting("Angle Tie Distance", "Angle tie-break range (m)",
+						0.5, 5.0, 0.5,
+						() -> MacroConfig.get().targetAngleTieDistance,
+						v -> MacroConfig.get().targetAngleTieDistance = v));
+				settings.add(new SliderSetting("Switch Advantage", "Min distance advantage to switch (m)",
+						0.5, 5.0, 0.5,
+						() -> MacroConfig.get().targetSwitchAdvantage,
+						v -> MacroConfig.get().targetSwitchAdvantage = v));
+				settings.add(header("TARGET MEMORY"));
+				settings.add(new ToggleSetting("Bad Target Memory", "Temporarily ignore unreachable targets",
+						() -> MacroConfig.get().badTargetMemoryEnabled,
+						v -> {
+							updateConfig(c -> c.badTargetMemoryEnabled = v);
+							controller.getTargetSelector().onTargetPolicyChanged(controller.getRange());
+						}));
+				settings.add(new SliderSetting("Base Ignore Time", "Base failure cooldown (seconds)",
+						0.5, 5.0, 0.25,
+						() -> MacroConfig.get().failureBaseIgnoreMs / 1000.0,
+						v -> MacroConfig.get().failureBaseIgnoreMs = Math.round(v * 1000.0),
+						v -> String.format(Locale.ROOT, "%.2fs", v)));
+				settings.add(new SliderSetting("Maximum Ignore", "Maximum escalated cooldown (seconds)",
+						2.0, 15.0, 1.0,
+						() -> MacroConfig.get().failureMaxIgnoreMs / 1000.0,
+						v -> MacroConfig.get().failureMaxIgnoreMs = Math.round(v * 1000.0),
+						v -> String.format(Locale.ROOT, "%.0fs", v)));
+				settings.add(header("LOOKAHEAD"));
+				settings.add(new ToggleSetting("Next Target Lookahead", "Reserve one cached target during combat",
+						() -> MacroConfig.get().targetLookaheadEnabled,
+						v -> {
+							updateConfig(c -> c.targetLookaheadEnabled = v);
+							controller.getTargetSelector().onTargetPolicyChanged(controller.getRange());
+						}));
+				settings.add(new SliderSetting("Next Target Stickiness", "Distance advantage required to switch reserve (m)",
+						0.5, 5.0, 0.5,
+						() -> MacroConfig.get().nextTargetSwitchAdvantage,
+						v -> MacroConfig.get().nextTargetSwitchAdvantage = v,
+						v -> String.format(Locale.ROOT, "%.1fm", v)));
+			}
+			case "Combat" -> {
+				settings.add(header("COMBAT"));
+				settings.add(new ToggleSetting("Attack", "Combat attack automation",
+						() -> combatController.isAttackEnabled(),
+						v -> combatController.setEnabled(v)));
+				settings.add(header("LOADOUT"));
+				settings.add(new ItemBindingRow("Attack Weapon",
+						() -> describeBinding(MacroConfig.get().getAttackWeaponBinding(), "Not configured"),
+						() -> bindHeld("attack")));
+				settings.add(new ItemBindingRow("Warp Item",
+						() -> {
+							ItemBinding binding = MacroConfig.get().getWarpItemBinding();
+							return binding != null ? binding.toString()
+									: "Aspect of the End (auto)";
+						},
+						() -> bindHeld("warp")));
+			}
+			case "Movement" -> {
+				settings.add(header("MOVEMENT"));
+				settings.add(new ToggleSetting("Approach", "Approach automation",
+						() -> approachPlanner.isApproachEnabled(),
+						v -> approachPlanner.setEnabled(v)));
+				settings.add(new ToggleSetting("Navigation", "Local pathfinding",
+						() -> MacroConfig.get().navigationEnabled,
+						v -> updateConfig(c -> c.navigationEnabled = v)));
+				settings.add(new ToggleSetting("Auto Jump", "Jump over 1-block steps",
+						() -> MacroConfig.get().allowJump,
+						v -> updateConfig(c -> c.allowJump = v)));
+				settings.add(new ToggleSetting("Moving Warp", "Warp while sprinting",
+						() -> MacroConfig.get().movingWarp,
+						v -> updateConfig(c -> c.movingWarp = v)));
+				settings.add(header("NAVIGATION"));
+				settings.add(new SliderSetting("Path Lookahead", "How far ahead the follower aims (m)",
+						1.0, 6.0, 0.5,
+						() -> MacroConfig.get().pathLookaheadDistance,
+						v -> MacroConfig.get().pathLookaheadDistance = v));
+				settings.add(new SliderSetting("Local Path Radius", "Local A* search radius (blocks)",
+						16, 48, 2,
+						() -> (double) MacroConfig.get().localPathRadius,
+						v -> MacroConfig.get().localPathRadius = (int) (double) v));
+				settings.add(new SliderSetting("Goal Radius", "Attack-reachable goal region (m)",
+						1.5, 4.0, 0.5,
+						() -> MacroConfig.get().pathGoalRadius,
+						v -> MacroConfig.get().pathGoalRadius = v));
+				settings.add(header("ADVANCED"));
+				settings.add(new SliderSetting("Repath Interval", "Auto repath period (ms)",
+						200, 1000, 50,
+						() -> (double) MacroConfig.get().repathIntervalMs,
+						v -> MacroConfig.get().repathIntervalMs = (int) (double) v));
+				settings.add(new SliderSetting("Stuck Timeout", "Stuck detection period (ms)",
+						300, 1200, 50,
+						() -> (double) MacroConfig.get().stuckTimeoutMs,
+						v -> MacroConfig.get().stuckTimeoutMs = (long) (double) v));
+				settings.add(new SliderSetting("Turn Before Move", "Stop and turn first beyond this yaw error",
+						30, 150, 5,
+						() -> MacroConfig.get().turnBeforeMoveDeg,
+						v -> MacroConfig.get().turnBeforeMoveDeg = v,
+						v -> String.format(Locale.ROOT, "%.0f°", v)));
+				settings.add(new ToggleSetting("Predictive Following", "Use velocity for waypoint heading",
+						() -> MacroConfig.get().predictiveFollowing,
+						v -> updateConfig(c -> c.predictiveFollowing = v)));
+				settings.add(new SliderSetting("Path Prediction", "Predicted position horizon (ms)",
+						50, 200, 10,
+						() -> (double) MacroConfig.get().getPathPredictionMs(),
+						v -> MacroConfig.get().pathPredictionMs = (int) (double) v,
+						v -> String.format(Locale.ROOT, "%.0fms", v)));
+			}
+			case "Rotation" -> {
+				settings.add(header("ROTATION"));
+				settings.add(new ToggleSetting("Rotation", "Camera rotation automation",
+						() -> rotationController.isEnabled(),
+						v -> rotationController.setEnabled(mc, v)));
+				settings.add(new DropdownSetting("Mode", null,
+						new String[]{"CURVE_SMOOTH", "RENDER_SMOOTH", "DYNAMIC_SMOOTH", "LINEAR"},
+						() -> rotationController.getSmoothing().name(),
+						v -> rotationController.setSmoothing(RotationSmoothing.valueOf(v))));
+				settings.add(header("FEEL"));
+				settings.add(new SliderSetting("Rotation Speed",
+						"Controls how quickly the camera acquires a new target. Higher values mainly affect large turns.",
+						50, 250, 5,
+						() -> (double) MacroConfig.get().getRotationSpeedPercent(),
+						v -> MacroConfig.get().rotationSpeedPercent = v,
+						v -> String.format(Locale.ROOT, "%.0f%%", v)));
+				settings.add(new DropdownSetting("Tracking Smoothness", null,
+						new String[]{"SMOOTH", "TIGHT"},
+						() -> MacroConfig.get().rotationTrackingSmoothness,
+						v -> updateConfig(c -> c.rotationTrackingSmoothness = v)));
+				settings.add(new DropdownSetting("Cornering Smoothness", null,
+						new String[]{"LOW", "MEDIUM", "HIGH"},
+						() -> MacroConfig.get().corneringSmoothness,
+						v -> updateConfig(c -> c.corneringSmoothness = v)));
+			}
+			case "ESP" -> {
+				settings.add(header("ESP"));
+				settings.add(new DropdownSetting("ESP Mode", null,
+						new String[]{"OFF", "NORMAL", "DEBUG"},
+						() -> controller.getEspMode().name(),
+						v -> controller.setEspMode(EspMode.valueOf(v))));
+				settings.add(new ToggleSetting("Special Highlight", "Purple highlight for Special Zealots",
+						() -> MacroConfig.get().specialEspHighlight,
+						v -> {
+							MacroConfig.get().specialEspHighlight = v;
+							MacroConfig.save();
+						}));
+			}
+			default -> {
+			}
+		}
+		for (Setting setting : settings) {
+			if (setting instanceof DropdownSetting dropdown) {
+				activeDropdowns.add(dropdown);
+			}
+		}
+		return settings;
+	}
+
+	private static void updateConfig(Consumer<MacroConfig> update) {
+		update.accept(MacroConfig.get());
+		MacroConfig.save();
+	}
+
+	private void closeDropdowns() {
+		for (DropdownSetting dropdown : activeDropdowns) {
+			dropdown.closeDropdown();
+		}
+	}
+
+	/** section header(仕様#10: LiquidBounce風setting section) */
+	private Setting header(String title) {
+		return new Setting() {
+			@Override
+			public int height() {
+				return GuiTheme.SECTION_HEADER_HEIGHT;
+			}
+
+			@Override
+			public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
+				g.text(font, title, x + GuiTheme.PADDING, y + 8, GuiTheme.ACCENT, true);
+				g.fill(x, y + GuiTheme.SECTION_HEADER_HEIGHT - 2, x + w,
+						y + GuiTheme.SECTION_HEADER_HEIGHT, GuiTheme.SEPARATOR);
+			}
+
+			@Override
+			public boolean mouseClicked(double mx, double my, int button, int x, int y, int w) {
+				return false;
+			}
+
+			@Override
+			public boolean mouseReleased(double mx, double my) {
+				return false;
+			}
+
+			@Override
+			public boolean mouseDragged(double mx, double my, int x, int y, int w) {
+				return false;
+			}
+
+			@Override
+			public boolean mouseScrolled(double mx, double my, double amount, int x, int y, int w) {
+				return false;
+			}
+		};
+	}
+
+	private void bindHeld(String kind) {
+		Minecraft mc = Minecraft.getInstance();
+		if (mc.player == null) {
+			return;
+		}
+		ItemStack held = mc.player.getMainHandItem();
+		if (held == null || held.isEmpty()) {
+			return;
+		}
+		ItemBinding binding = ItemBinding.fromStack(held);
+		if ("attack".equals(kind)) {
+			MacroConfig.get().setAttackWeapon(binding);
+		} else {
+			MacroConfig.get().setWarpItem(binding);
+		}
+	}
+
+	private String describeBinding(ItemBinding binding, String fallback) {
+		return binding != null ? binding.toString() : fallback;
+	}
+
+	@Override
+	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+		if (event.button() != 0) {
+			return super.mouseClicked(event, doubled);
+		}
+		double mx = event.x();
+		double my = event.y();
+		// header: Macro toggle / close
+		if (my >= windowY + 4 && my <= windowY + 27) {
+			if (mx >= windowX + windowW - 140 && mx <= windowX + windowW - 40) {
+				if (controller.getState() == MacroController.State.IDLE) {
+					controller.enable();
+				} else {
+					controller.disable();
+				}
+				return true;
+			}
+			if (mx >= windowX + windowW - 30 && mx <= windowX + windowW - 6) {
+				onClose();
+				return true;
+			}
+		}
+		// sidebar
+		if (mx >= windowX && mx <= windowX + GuiTheme.SIDEBAR_WIDTH
+				&& my >= windowY + 28 && my <= windowY + windowH) {
+			int index = (int) ((my - (windowY + 34)) / GuiTheme.ROW_HEIGHT);
+			if (index >= 0 && index < CATEGORIES.length) {
+				selectCategory(index);
+				return true;
+			}
+		}
+		// settings rows
+		if (mx < contentX() || mx > contentX() + contentW()
+				|| my < windowY + 32 || my > windowY + windowH - 8) {
+			return super.mouseClicked(event, doubled);
+		}
+		int y = windowY + 32 + 6 - scrollPerCategory.getOrDefault(selectedCategory, 0);
+		for (Setting setting : currentSettings()) {
+			if (setting.mouseClicked(mx, my, event.button(), contentX(), y, contentW())) {
+				return true;
+			}
+			y += setting.height();
+		}
+		return super.mouseClicked(event, doubled);
+	}
+
+	@Override
+	public boolean mouseReleased(MouseButtonEvent event) {
+		double mx = event.x();
+		double my = event.y();
+		for (Setting setting : currentSettings()) {
+			if (setting.mouseReleased(mx, my)) {
+				return true;
+			}
+		}
+		return super.mouseReleased(event);
+	}
+
+	@Override
+	public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+		double mx = event.x();
+		double my = event.y();
+		int y = windowY + 32 + 6 - scrollPerCategory.getOrDefault(selectedCategory, 0);
+		for (Setting setting : currentSettings()) {
+			if (setting.mouseDragged(mx, my, contentX(), y, contentW())) {
+				return true;
+			}
+			y += setting.height();
+		}
+		return super.mouseDragged(event, dragX, dragY);
+	}
+
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		int totalH = contentHeightOf(currentSettings());
+		int contentH = windowH - 40;
+		int maxScroll = Math.max(0, totalH - contentH);
+		int scroll = scrollPerCategory.getOrDefault(selectedCategory, 0) - (int) (scrollY * 20);
+		scrollPerCategory.put(selectedCategory, Math.max(0, Math.min(maxScroll, scroll)));
+		return true;
+	}
+
+	@Override
+	public boolean keyPressed(KeyEvent event) {
+		if (event.input() == GLFW.GLFW_KEY_ESCAPE) {
+			for (DropdownSetting dropdown : activeDropdowns) {
+				if (dropdown.isOpen()) {
+					dropdown.closeDropdown();
+					return true;
+				}
+			}
+			onClose();
+			return true;
+		}
+		return super.keyPressed(event);
+	}
+
+	private void selectCategory(int index) {
+		scrollPerCategory.put(selectedCategory, scrollPerCategory.getOrDefault(selectedCategory, 0));
+		selectedCategory = index;
+		closeDropdowns();
+	}
+
+	@Override
+	public void onClose() {
+		MacroConfig.save();
+		minecraft.gui.setScreen(null);
+	}
+
+	@Override
+	public boolean isPauseScreen() {
+		return false;
+	}
+}
