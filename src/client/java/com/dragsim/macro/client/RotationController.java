@@ -678,7 +678,7 @@ public class RotationController {
 	 */
 	public void renderFrame(net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionContext ctx,
 			AimSolution solution) {
-		if (!enabled) {
+		if (!enabled || !isRenderRateMode()) {
 			renderAimPointFresh = false;
 			return;
 		}
