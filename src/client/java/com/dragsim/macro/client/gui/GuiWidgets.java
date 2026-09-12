@@ -41,6 +41,8 @@ public final class GuiWidgets {
 	public static class ToggleSetting implements Setting {
 		private final String name;
 		private final String description;
+		private final Component nameComponent;
+		private final Component descriptionComponent;
 		private final BooleanSupplier getter;
 		private final Consumer<Boolean> setter;
 		private float animT;
@@ -48,6 +50,8 @@ public final class GuiWidgets {
 		public ToggleSetting(String name, String description, BooleanSupplier getter, Consumer<Boolean> setter) {
 			this.name = name;
 			this.description = description == null ? "" : description;
+			this.nameComponent = UiFont.text(name);
+			this.descriptionComponent = UiFont.text(this.description);
 			this.getter = getter;
 			this.setter = setter;
 		}
@@ -62,9 +66,9 @@ public final class GuiWidgets {
 			if (hovered) {
 				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, name, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY);
 			if (!description.isEmpty()) {
-				g.text(font, description, x + GuiTheme.PADDING, y + 14, GuiTheme.TEXT_SECONDARY);
+				g.text(font, descriptionComponent, x + GuiTheme.PADDING, y + 14, GuiTheme.TEXT_SECONDARY);
 			}
 			int toggleW = 34;
 			int toggleH = 14;
@@ -72,7 +76,7 @@ public final class GuiWidgets {
 			int toggleY = y + (GuiTheme.ROW_HEIGHT - toggleH) / 2;
 			GuiPaint.toggle(g, toggleX, toggleY, toggleW, toggleH, getter.getAsBoolean(), animT);
 			// ON/OFF status色(明確な状態表示)
-			g.text(font, getter.getAsBoolean() ? "ON" : "OFF",
+			g.text(font, getter.getAsBoolean() ? UiFont.ON : UiFont.OFF,
 					toggleX - 24, toggleY + 3, getter.getAsBoolean() ? GuiTheme.SUCCESS : GuiTheme.TEXT_DISABLED);
 		}
 
@@ -118,6 +122,7 @@ public final class GuiWidgets {
 		private final DoubleSupplier getter;
 		private final DoubleConsumer setter;
 		private final java.util.function.Function<Double, String> valueFormatter;
+		private final Component nameComponent;
 		private boolean dragging;
 		private boolean dirty;
 
@@ -138,6 +143,7 @@ public final class GuiWidgets {
 			this.getter = getter;
 			this.setter = setter;
 			this.valueFormatter = valueFormatter;
+			this.nameComponent = UiFont.text(name);
 		}
 
 		@Override
@@ -151,10 +157,11 @@ public final class GuiWidgets {
 				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
 			double value = getter.getAsDouble();
-			g.text(font, name, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
 			String valueText = valueFormatter.apply(value);
 			int valueW = font.width(valueText);
-			g.text(font, valueText, x + w - valueW - GuiTheme.PADDING, y + 3, GuiTheme.ACCENT_BRIGHT);
+			g.text(font, UiFont.text(valueText), x + w - valueW - GuiTheme.PADDING, y + 3,
+					GuiTheme.ACCENT_BRIGHT);
 			// slider
 			int sliderX = x + GuiTheme.PADDING;
 			int sliderW = w - GuiTheme.PADDING * 2;
@@ -240,6 +247,7 @@ public final class GuiWidgets {
 		private final Supplier<String[]> optionsSupplier;
 		private final Supplier<String> getter;
 		private final Consumer<String> setter;
+		private final Component nameComponent;
 		private boolean open;
 		private int openHoverIndex = -1;
 
@@ -255,6 +263,7 @@ public final class GuiWidgets {
 			this.optionsSupplier = optionsSupplier;
 			this.getter = getter;
 			this.setter = setter;
+			this.nameComponent = UiFont.text(name);
 		}
 
 		@Override
@@ -283,7 +292,7 @@ public final class GuiWidgets {
 			if (hovered && !open) {
 				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, name, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY);
 			int ddX = dropdownX(x, w);
 			int ddW = dropdownW(x, w);
 			int ddY = y + 3;
@@ -291,8 +300,8 @@ public final class GuiWidgets {
 			GuiPaint.roundedRect(g, ddX, ddY, ddW, ddH, 4, GuiTheme.SURFACE);
 			GuiPaint.border(g, ddX, ddY, ddW, ddH, open ? GuiTheme.ACCENT_DIM : GuiTheme.BORDER);
 			String current = getter.get();
-			g.text(font, current, ddX + 6, ddY + (ddH - 8) / 2, GuiTheme.TEXT_PRIMARY, false);
-			g.text(font, "▾", ddX + ddW - 10, ddY + (ddH - 8) / 2, GuiTheme.ACCENT_BRIGHT, false);
+			g.text(font, UiFont.text(current), ddX + 6, ddY + (ddH - 8) / 2, GuiTheme.TEXT_PRIMARY, false);
+			g.text(font, UiFont.ARROW_DOWN, ddX + ddW - 10, ddY + (ddH - 8) / 2, GuiTheme.ACCENT_BRIGHT, false);
 			if (open) {
 				String[] options = optionsSupplier.get();
 				for (int i = 0; i < options.length; i++) {
@@ -305,7 +314,7 @@ public final class GuiWidgets {
 					if (isCurrent) {
 						GuiPaint.accentBar(g, ddX, oy, GuiTheme.ROW_HEIGHT - 2);
 					}
-					g.text(font, options[i], ddX + 8, oy + 5,
+					g.text(font, UiFont.text(options[i]), ddX + 8, oy + 5,
 							isCurrent ? GuiTheme.ACCENT_BRIGHT : GuiTheme.TEXT_PRIMARY, false);
 				}
 				openHoverIndex = -1;
@@ -380,12 +389,14 @@ public final class GuiWidgets {
 	public static class ActionSetting implements Setting {
 		private final String name;
 		private final String description;
+		private final Component nameComponent;
 		private final Supplier<String> valueSupplier;
 		private final Runnable action;
 
 		public ActionSetting(String name, String description, Supplier<String> valueSupplier, Runnable action) {
 			this.name = name;
 			this.description = description == null ? "" : description;
+			this.nameComponent = UiFont.text(name);
 			this.valueSupplier = valueSupplier;
 			this.action = action;
 		}
@@ -400,16 +411,16 @@ public final class GuiWidgets {
 			if (hovered) {
 				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, name, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
-			g.text(font, valueSupplier.get(), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT_BRIGHT);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
+			g.text(font, UiFont.text(valueSupplier.get()), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT_BRIGHT);
 			int btnW = 72;
 			int btnH = height() - 8;
 			int btnX = x + w - btnW - GuiTheme.PADDING;
 			int btnY = y + 5;
 			GuiPaint.roundedRect(g, btnX, btnY, btnW, btnH, 4, GuiTheme.SURFACE_HOVER);
 			GuiPaint.border(g, btnX, btnY, btnW, btnH, GuiTheme.BORDER);
-			String label = "Bind Held";
-			g.text(font, label, btnX + (btnW - font.width(label)) / 2, btnY + (btnH - 8) / 2,
+			int labelW = font.width(UiFont.BIND_HELD);
+			g.text(font, UiFont.BIND_HELD, btnX + (btnW - labelW) / 2, btnY + (btnH - 8) / 2,
 					GuiTheme.TEXT_PRIMARY, false);
 		}
 
@@ -448,11 +459,13 @@ public final class GuiWidgets {
 
 	public static class ItemBindingRow implements Setting {
 		private final String name;
+		private final Component nameComponent;
 		private final Supplier<String> valueSupplier;
 		private final Runnable bindAction;
 
 		public ItemBindingRow(String name, Supplier<String> valueSupplier, Runnable bindAction) {
 			this.name = name;
+			this.nameComponent = UiFont.text(name);
 			this.valueSupplier = valueSupplier;
 			this.bindAction = bindAction;
 		}
@@ -467,16 +480,16 @@ public final class GuiWidgets {
 			if (hovered) {
 				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, name, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
-			g.text(font, valueSupplier.get(), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT_BRIGHT);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
+			g.text(font, UiFont.text(valueSupplier.get()), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT_BRIGHT);
 			int btnW = 84;
 			int btnH = height() - 10;
 			int btnX = x + w - btnW - GuiTheme.PADDING;
 			int btnY = y + 5;
 			GuiPaint.roundedRect(g, btnX, btnY, btnW, btnH, 4, GuiTheme.SURFACE_HOVER);
 			GuiPaint.border(g, btnX, btnY, btnW, btnH, GuiTheme.BORDER);
-			String label = "Bind Held";
-			g.text(font, label, btnX + (btnW - font.width(label)) / 2, btnY + (btnH - 8) / 2,
+			int labelW = font.width(UiFont.BIND_HELD);
+			g.text(font, UiFont.BIND_HELD, btnX + (btnW - labelW) / 2, btnY + (btnH - 8) / 2,
 					GuiTheme.TEXT_PRIMARY, false);
 		}
 

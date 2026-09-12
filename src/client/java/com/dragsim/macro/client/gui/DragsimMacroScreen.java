@@ -35,19 +35,30 @@ import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * Phase 7.0: DragsimMacroScreen — Main GUI(dark modern UI)。
+ * DragsimMacroScreen — Main GUI(黒×紫ダークテーマ)。
  *
  * - 中央floating window(responsive: 画面から計算)
- * - sidebar(category選択)+ scroll可能setting panel
+ * - sidebar(category選択)+ scroll可能setting panel(+scrollbar drag)
  * - すべてのwidgetはMacroConfig SSOTにgetter/setter bind(独自stateを持たない)
  * - open時: automation pause + owned input解放 / close時: 次tickから再評価
- * - world/player null-safe(disconnect後も安全)
+ * - 文字はUiFont(Oxanium / SIL OFL 1.1)。固定ラベルのComponentは起動時生成のみ
  *
  * Minecraft 26.2 native API: Screen / extractRenderState / GuiGraphicsExtractor /
  * MouseButtonEvent / KeyEvent(#26)。drawStringではなくtext()を使用。
  */
 public class DragsimMacroScreen extends Screen {
 	private static final String[] CATEGORIES = {"General", "Targets", "Combat", "Movement", "Rotation", "ESP"};
+
+	private static final Component TITLE = UiFont.text("DragSim Macro");
+	private static final Component VERSION = UiFont.text("v1.5.0");
+	private static final Component CLOSE = UiFont.text("✕");
+	private static final Component[] CATEGORY_LABELS = new Component[CATEGORIES.length];
+
+	static {
+		for (int i = 0; i < CATEGORIES.length; i++) {
+			CATEGORY_LABELS[i] = UiFont.text(CATEGORIES[i]);
+		}
+	}
 
 	private final MacroController controller;
 	private final RotationController rotationController;
@@ -104,16 +115,16 @@ public class DragsimMacroScreen extends Screen {
 		GuiPaint.roundedRect(graphics, windowX, windowY, windowW, windowH, GuiTheme.CORNER_RADIUS, GuiTheme.PANEL);
 
 		// header(#7): title + version + macro state
-		graphics.text(font, "DragSim Macro", windowX + GuiTheme.PADDING, windowY + 9,
+		graphics.text(font, TITLE, windowX + GuiTheme.PADDING, windowY + 9,
 				GuiTheme.TEXT_PRIMARY, true);
-		graphics.text(font, "v1.5.0", windowX + GuiTheme.PADDING + 96, windowY + 11,
+		graphics.text(font, VERSION, windowX + GuiTheme.PADDING + 96, windowY + 11,
 				GuiTheme.TEXT_SECONDARY, false);
 		boolean macroOn = controller.getState() != MacroController.State.IDLE;
 		int chipW = 96;
 		int chipX = windowX + windowW - chipW - 44;
 		GuiPaint.roundedRect(graphics, chipX, windowY + 5, chipW, 20, 4, GuiTheme.SURFACE);
-		graphics.text(font, "Macro", chipX + 8, windowY + 11, GuiTheme.TEXT_SECONDARY, false);
-		graphics.text(font, macroOn ? "ON" : "OFF", chipX + chipW - 32, windowY + 11,
+		graphics.text(font, UiFont.MACRO, chipX + 8, windowY + 11, GuiTheme.TEXT_SECONDARY, false);
+		graphics.text(font, macroOn ? UiFont.MACRO_ON : UiFont.MACRO_OFF, chipX + chipW - 32, windowY + 11,
 				macroOn ? GuiTheme.SUCCESS : GuiTheme.TEXT_DISABLED, false);
 		// close button(#7): ×
 		boolean closeHover = mouseX >= windowX + windowW - 36 && mouseX <= windowX + windowW - 6
@@ -121,7 +132,7 @@ public class DragsimMacroScreen extends Screen {
 		if (closeHover) {
 			GuiPaint.roundedRect(graphics, windowX + windowW - 30, windowY + 5, 24, 20, 4, GuiTheme.SURFACE_HOVER);
 		}
-		graphics.text(font, "✕", windowX + windowW - 22, windowY + 10,
+		graphics.text(font, CLOSE, windowX + windowW - 22, windowY + 10,
 				closeHover ? GuiTheme.DANGER : GuiTheme.TEXT_SECONDARY, false);
 
 		// separator
@@ -145,7 +156,7 @@ public class DragsimMacroScreen extends Screen {
 				graphics.fill(windowX, rowY, windowX + sidebarW, rowY + GuiTheme.ROW_HEIGHT,
 						GuiTheme.SURFACE_HOVER);
 			}
-			graphics.text(font, CATEGORIES[i], windowX + GuiTheme.PADDING + 4,
+			graphics.text(font, CATEGORY_LABELS[i], windowX + GuiTheme.PADDING + 4,
 					rowY + (GuiTheme.ROW_HEIGHT - 8) / 2,
 					selected ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY);
 		}
@@ -429,8 +440,9 @@ public class DragsimMacroScreen extends Screen {
 		}
 	}
 
-	/** section header(仕様#10: LiquidBounce風setting section) */
+	/** section header(仕様#10: setting section) */
 	private Setting header(String title) {
+		Component label = UiFont.text(title);
 		return new Setting() {
 			@Override
 			public int height() {
@@ -439,7 +451,7 @@ public class DragsimMacroScreen extends Screen {
 
 			@Override
 			public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
-				g.text(font, title, x + GuiTheme.PADDING, y + 8, GuiTheme.ACCENT, true);
+				g.text(font, label, x + GuiTheme.PADDING, y + 8, GuiTheme.ACCENT_BRIGHT, true);
 				g.fill(x, y + GuiTheme.SECTION_HEADER_HEIGHT - 2, x + w,
 						y + GuiTheme.SECTION_HEADER_HEIGHT, GuiTheme.BORDER);
 			}
