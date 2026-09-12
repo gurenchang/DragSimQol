@@ -37,6 +37,14 @@ public final class GuiTheme {
 	public static final int WARNING = 0xFFFFD166;
 	public static final int DANGER = 0xFFFF6B91;
 
+	// ==== ESP(NORMAL用。紫系に統一) ====
+	/** 非Targetの通常候補(淡いラベンダー白) */
+	public static final int ESP_NORMAL = 0xFFCBB9E6;
+	/** 現在Target(アクセント紫) */
+	public static final int ESP_TARGET = ACCENT;
+	/** Special Zealotハイライト(明紫) */
+	public static final int ESP_SPECIAL = ACCENT_BRIGHT;
+
 	// ==== derived controls ====
 	public static final int OVERLAY = 0xC008060D;
 	public static final int SHADOW = 0x90000000;

@@ -8,6 +8,9 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
+import com.dragsim.macro.client.gui.GuiTheme;
+import com.dragsim.macro.client.gui.UiFont;
+
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
@@ -22,8 +25,7 @@ import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
 /**
- * Phase 3.2: NORMAL ESP。
- * スクリーン空間2DコーナーESP。
+ * NORMAL ESP(スクリーン空間2DコーナーESP)。DEBUG表示はEspOverlay/PathDebugOverlay/DebugHudが担当。
  *
  * データフロー(描画ループ内で検出/レイトレ/パース/スコア計算はしない):
  *   ZealotDetector(スキャン時判定)
@@ -42,30 +44,40 @@ import org.joml.Vector4f;
  *   y = (1 - ndcY) / 2 * guiScaledHeight
  * (NDCは左下原点/Y上方向、GUIは左上原点/Y下方向)。
  *
- * 描画は軸整列fillのみ(コーナー4×2本 + ラベル)なので1体あたり十数draw、
- * アンチエイリアス不要な真直角ラインでmodern/minimalな見た目にする。
+ * 性能:
+ *   - 描画対象は最大 MAX_DRAWN 体(Targetは常に描画)
+ *   - 早期除外: RANGE / DEAD / カメラ後方 / 完全画面外
+ *   - Matrix4f/Vector4fは使い回し、ラベル文字列はスキャン更新時のみ生成
+ *   - 診断HUD/ログはPIPELINE_DEBUG=true時のみ(本番はfalse)
  */
 public class CornerEspOverlay implements HudElement {
-	// 色(明るさはalphaで距離フェード)。Target accent = cyan(#55E6FF)
-	private static final int RGB_NORMAL = 0xBFE3E3;
-	private static final int RGB_TARGET = 0x55E6FF;
-	private static final int RGB_SPECIAL = 0xB48CFF;
-	private static final int RGB_ID_TEXT = 0x9FB4B4;
-	private static final int RGB_GATE_READY = 0x55FF55;
-	private static final int RGB_GATE_WAIT = 0x9FB4B4;
+	// 色はGuiTheme(黒×紫トークン)から参照。ハードコードしない
+	private static final int RGB_NORMAL = GuiTheme.ESP_NORMAL;
+	private static final int RGB_TARGET = GuiTheme.ESP_TARGET;
+	private static final int RGB_SPECIAL = GuiTheme.ESP_SPECIAL;
+	private static final int RGB_ID_TEXT = GuiTheme.TEXT_SECONDARY;
+	private static final int RGB_GATE_READY = GuiTheme.SUCCESS;
+	private static final int RGB_GATE_WAIT = GuiTheme.TEXT_SECONDARY;
 	private static final int ALPHA_NORMAL_MAX = 150;
-	// Targetは通常Zealotよりopacity高め(AttackGate状態色と分離し常にcyan)
+	// Targetは通常Zealotよりopacity高め(AttackGate状態色と分離し常にaccent)
 	private static final int ALPHA_TARGET_MAX = 250;
 	private static final int ALPHA_SPECIAL_MAX = 190;
 	private static final int ALPHA_ID_TEXT = 120;
 	private static final double BOX_HALF_WIDTH = 0.3;
 	// Target Cornerは少し太い/少し長い(minimal design維持)
 	private static final double TARGET_CORNER_LEN_SCALE = 1.35;
+	/** 1フレーム最大描画体数(Target除く)。性能上限(定数化) */
+	private static final int MAX_DRAWN = 16;
 
-	// パイプライン診断(NORMAL表示不具合調査用)。確定後はfalseへ。
-	private static final boolean PIPELINE_DEBUG = true;
+	// パイプライン診断(NORMAL表示不具合調査用)。本番はfalse(診断HUD/ログ無効)
+	private static final boolean PIPELINE_DEBUG = false;
 	// ターゲット1体の低頻度診断ログ間隔
 	private static final long TARGET_LOG_INTERVAL_MS = 2000;
+
+	// 固定ラベル(起動時に一度だけ生成。毎フレーム生成しない)
+	private static final Component LABEL_TARGET = UiFont.text("TARGET");
+	private static final Component LABEL_GATE_READY = UiFont.text("READY");
+	private static final Component LABEL_GATE_WAIT = UiFont.text("WAIT");
 
 	private final MacroController controller;
 	private final AimSolver aimSolver;
@@ -77,7 +89,7 @@ public class CornerEspOverlay implements HudElement {
 	private final Matrix4f viewProjection = new Matrix4f();
 	private final Vector4f projOut = new Vector4f();
 
-	// パイプライン診断カウンタ(フレーム毎にリセット)
+	// フレーム計測カウンタ(HUD/debug参照用。本番ではログ出力しない)
 	private int entries;
 	private int projected;
 	private int drawn;
@@ -94,7 +106,20 @@ public class CornerEspOverlay implements HudElement {
 	private String targetProjDetail;
 	private long lastTargetLog;
 
-	private record LabelCache(EntitySnapshot snapshot, String idText, String distText) {
+	/** 最終フレームの描画統計(デバッグHUD用getter。本番ログは出さない) */
+	public int getLastEntries() {
+		return entries;
+	}
+
+	public int getLastProjected() {
+		return projected;
+	}
+
+	public int getLastDrawn() {
+		return drawn;
+	}
+
+	private record LabelCache(EntitySnapshot snapshot, Component idText, Component distText) {
 	}
 
 	public CornerEspOverlay(MacroController controller, AimSolver aimSolver, RotationController rotationController,
@@ -189,7 +214,7 @@ public class CornerEspOverlay implements HudElement {
 				minY = Double.MAX_VALUE;
 				maxX = -Double.MAX_VALUE;
 				maxY = -Double.MAX_VALUE;
-				StringBuilder projLog = isTarget ? new StringBuilder("proj=[") : null;
+				StringBuilder projLog = isTarget && PIPELINE_DEBUG ? new StringBuilder("proj=[") : null;
 				for (int i = 0; i < 8; i++) {
 					float wx = (float) ((i & 1) == 0 ? box.minX : box.maxX);
 					float wy = (float) ((i & 2) == 0 ? box.minY : box.maxY);
@@ -263,6 +288,11 @@ public class CornerEspOverlay implements HudElement {
 
 			projected++;
 
+			// 描画数上限(定数)。Targetは常に描画
+			if (drawn >= MAX_DRAWN && !isTarget) {
+				continue;
+			}
+
 			boolean isTargetDrawn = isTarget;
 			// Phase 6.6: 非Target Special Zealotはpurpleで識別(落ち着いたviolet)
 			boolean isSpecial = ZealotDetector.typeOf(snapshot) == ZealotDetector.ZealotType.SPECIAL;
@@ -277,12 +307,12 @@ public class CornerEspOverlay implements HudElement {
 			drawCorners(graphics, minX, minY, maxX, maxY, lineWidth, lineColor,
 					isTargetDrawn ? TARGET_CORNER_LEN_SCALE : 1.0);
 
-			// ラベル: 文字列はスキャン毎にキャッシュ(毎フレームのString.formatを回避)
+			// ラベル: 文字列/Componentはスキャン更新時のみ生成(毎フレームのString.format回避)
 			LabelCache cache = labels.get(snapshot.id());
 			if (cache == null || cache.snapshot() != snapshot) {
 				cache = new LabelCache(snapshot,
-						"#" + snapshot.id(),
-						String.format(Locale.ROOT, "%.1fm", candidate.distance()));
+						UiFont.text("#" + snapshot.id()),
+						UiFont.text(String.format(Locale.ROOT, "%.1fm", candidate.distance())));
 				labels.put(snapshot.id(), cache);
 			}
 
@@ -319,30 +349,29 @@ public class CornerEspOverlay implements HudElement {
 					}
 
 					int y = (int) Math.round(minY) - font.lineHeight * 3 - 4;
-					drawCentered(graphics, font, "AIM:" + aim.pointType().tag(), cx, y, targetColor);
+					drawCentered(graphics, font, UiFont.text("AIM:" + aim.pointType().tag()), cx, y, targetColor);
 					y += font.lineHeight + 1;
-					drawCentered(graphics, font, "TARGET", cx, y, targetColor);
+					drawCentered(graphics, font, LABEL_TARGET, cx, y, targetColor);
 					drawCentered(graphics, font, cache.distText(), cx, y + font.lineHeight + 1, targetColor);
 
 					// Phase 5.0: Attack Gate indicator(Target 1体のみ、極小)
-					// AttackGate状態色はTarget色と分離(Target=cyan / READY=green / WAIT=gray)
+					// AttackGate状態色はTarget色と分離(Target=accent / READY=success / WAIT=secondary)
 					AttackReadiness gate = attackGate.getReadiness();
 					if (gate.entityId() == candidate.entityId()) {
 						int gateColor = gate.ready() ? withAlpha(RGB_GATE_READY, 230) : withAlpha(RGB_GATE_WAIT, 180);
-						String gateText = gate.ready() ? "READY" : "WAIT";
+						Component gateText = gate.ready() ? LABEL_GATE_READY : LABEL_GATE_WAIT;
 						drawCentered(graphics, font, gateText, cx, y + font.lineHeight * 2 + 2, gateColor);
 					}
 				} else {
 					int y = (int) Math.round(minY) - font.lineHeight * 2 - 3;
-					drawCentered(graphics, font, "TARGET", cx, y, targetColor);
+					drawCentered(graphics, font, LABEL_TARGET, cx, y, targetColor);
 					drawCentered(graphics, font, cache.distText(), cx, y + font.lineHeight + 1, targetColor);
 				}
 			}
 			int idY = (int) Math.round(maxY) + 2;
 			if (idY + font.lineHeight < guiH) {
-				String idText = cache.idText();
-				graphics.text(font, Component.literal(idText),
-						(int) (cx - font.width(idText) / 2.0), idY, idColor, true);
+				graphics.text(font, cache.idText(),
+						(int) (cx - font.width(cache.idText()) / 2.0), idY, idColor, true);
 			}
 
 			drawn++;
@@ -508,11 +537,11 @@ public class CornerEspOverlay implements HudElement {
 		graphics.fill(ix1, iy2 - ilen, ix1 + lw, iy2, color);
 	}
 
-	private void drawCentered(GuiGraphicsExtractor graphics, Font font, String text, int centerX, int y, int color) {
+	private void drawCentered(GuiGraphicsExtractor graphics, Font font, Component text, int centerX, int y, int color) {
 		if (y < 0) {
 			return;
 		}
-		graphics.text(font, Component.literal(text),
+		graphics.text(font, text,
 				(int) (centerX - font.width(text) / 2.0), y, color, true);
 	}
 
