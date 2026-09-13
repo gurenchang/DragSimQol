@@ -141,8 +141,11 @@ public class MacroController {
 		if (mc.player != null && mc.level != null) {
 			MacroLogger.get().logSessionStart(mc.player, range);
 			setState(State.SCAN);
+			MacroLogger.get().log("MACRO_ON mode=" + MacroConfig.get().getCombatMode());
+			MacroNotifications.send(mc, "[DragSim] Macro ON — " + combatModeDisplayName());
 		} else {
-			MacroLogger.get().log("ERROR enable called without world");
+			MacroLogger.get().log("MACRO_ON_FAILED reason=NO_WORLD");
+			MacroNotifications.send(mc, "[DragSim] Macro cannot start — no active world");
 		}
 	}
 
@@ -154,7 +157,15 @@ public class MacroController {
 		seen.clear();
 		lastSnapshots = List.of();
 		targetSelector.resetSessionState();
-		MacroLogger.get().log("SESSION off");
+		MacroLogger.get().log("MACRO_OFF");
+		MacroNotifications.send(Minecraft.getInstance(), "[DragSim] Macro OFF");
+	}
+
+	/** 通知/ログ用のcombat mode表示名(英語) */
+	public static String combatModeDisplayName() {
+		return MacroConfig.get().getCombatMode() == CombatMode.FROZEN_SCYTHE
+				? "Frozen Scythe"
+				: "Sword";
 	}
 
 	/**
@@ -203,6 +214,14 @@ public class MacroController {
 				lastSnapshots = List.of();
 				targetSelector.resetSessionState();
 				MacroLogger.get().log("PAUSE world lost");
+			}
+			return;
+		}
+		if (player.isDeadOrDying()) {
+			// 死亡時はマクロOFFとする(自動再開しない)
+			if (state != State.IDLE) {
+				disable();
+				MacroLogger.get().log("MACRO_OFF reason=DEATH");
 			}
 			return;
 		}

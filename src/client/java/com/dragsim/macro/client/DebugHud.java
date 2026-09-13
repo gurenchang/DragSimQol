@@ -199,12 +199,21 @@ public class DebugHud implements HudElement {
 					+ "  Timeout: " + combat.getWeaponProfile().maxCombatTimeMs() + "ms"
 					+ "  lastSkip=" + combat.getLastSkipReason()),
 					x, kx + 24 + 24, color, false);
-			// Frozen Scythe: mode/試行回数/発射skip理由/迎撃解の状態(不一致診断用)
+			// Frozen Scythe: mode/target/wait reason/attempts(診断)/next fire/motion/approach
+			String scytheUuid = combat.getSessionTargetUuid();
+			if (scytheUuid != null && scytheUuid.length() > 8) {
+				scytheUuid = scytheUuid.substring(0, 8);
+			}
 			graphics.text(font, Component.literal(String.format(Locale.ROOT,
-					" Scythe: mode=%s attempts=%d skip=%s intercept=%s flight=%.2fs",
-					MacroConfig.get().getCombatMode(), combat.getScytheAttempts(),
-					combat.getScytheSkipReason(), combat.isScytheInterceptValid(),
-					combat.getScytheInterceptFlightSeconds())), x, kx + 24 + 36, color, false);
+					" Scythe: mode=%s target=#%d wait=%s attempts=%d nextFire=%dms",
+					MacroConfig.get().getCombatMode(), combat.getSessionTargetId(),
+					combat.getScytheSkipReason(), combat.getScytheAttempts(),
+					combat.getScytheMsUntilNextFire())), x, kx + 24 + 36, color, false);
+			graphics.text(font, Component.literal(String.format(Locale.ROOT,
+					" Scythe: uuid=%s intercept=%s motion=%s approach=%s",
+					scytheUuid != null ? scytheUuid : "-",
+					combat.isScytheInterceptValid(), combat.isScytheMotionValid(),
+					approachPlanner.getState())), x, kx + 24 + 48, color, false);
 
 			// Phase 6.1: Approach状態
 			int ax = kx + 60;

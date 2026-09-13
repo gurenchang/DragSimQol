@@ -7,7 +7,8 @@ public enum TargetFailureReason {
 	WARP_FAILED(0.75),
 	APPROACH_TIMEOUT(2.0),
 	UNREACHABLE(2.5),
-	FROZEN_SCYTHE_FAILED(1.5);
+	FROZEN_SCYTHE_FAILED(1.5),
+	COMBAT_TIMEOUT(2.0);
 
 	private final double baseMultiplier;
 

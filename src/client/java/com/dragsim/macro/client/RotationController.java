@@ -635,6 +635,18 @@ public class RotationController {
 		targetYaw = filteredYawCont;
 		targetPitch = filteredPitch;
 
+		// Frozen Scythe偏差照準(tick-rate): 迎撃点を追従対象へ差し替えてから誤差計算する。
+		// locked早期returnより前に適用するため、lock中も新しい迎撃点へ追従を再開できる。
+		// AimSolutionのentity位置追従を上書きする(二重予測なし)。
+		if (ballisticAimActive) {
+			double bdx = ballisticAimX - player.getX();
+			double bdy = ballisticAimY - player.getEyeY();
+			double bdz = ballisticAimZ - player.getZ();
+			double bhoriz = Math.sqrt(bdx * bdx + bdz * bdz);
+			targetYaw = RotationMath.targetYaw(bdx, bdz);
+			targetPitch = RotationMath.targetPitch(bdy, bhoriz);
+		}
+
 		// 共通誤差計算(HUD/lock判定用)
 		double yawError = RotationMath.yawDelta(targetYaw, player.getYRot());
 		double pitchError = RotationMath.pitchDelta(targetPitch, player.getXRot());
@@ -669,20 +681,6 @@ public class RotationController {
 			observePlayerRotation(player);
 			captureDiagnostic();
 			return;
-		}
-
-		// Frozen Scythe偏差照準(tick-rate mode): 迎撃点をtick計算結果へ差し替え。
-		// AimSolutionのentity位置追従を上書きする(二重予測なし)。
-		if (ballisticAimActive) {
-			double bdx = ballisticAimX - player.getX();
-			double bdy = ballisticAimY - player.getEyeY();
-			double bdz = ballisticAimZ - player.getZ();
-			double bhoriz = Math.sqrt(bdx * bdx + bdz * bdz);
-			targetYaw = RotationMath.targetYaw(bdx, bdz);
-			targetPitch = RotationMath.targetPitch(bdy, bhoriz);
-			lastErrorYaw = RotationMath.yawDelta(targetYaw, player.getYRot());
-			lastErrorPitch = RotationMath.pitchDelta(targetPitch, player.getXRot());
-			lastErrorTotal = Math.hypot(lastErrorYaw, lastErrorPitch);
 		}
 
 		if (smoothing == RotationSmoothing.DYNAMIC_SMOOTH) {

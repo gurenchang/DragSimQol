@@ -353,11 +353,6 @@ public class DragsimMacroScreen extends Screen {
 						() -> (double) MacroConfig.get().getFrozenScytheFireIntervalMs(),
 						v -> MacroConfig.get().setFrozenScytheFireIntervalMs((long) (double) v),
 						v -> String.format(Locale.ROOT, "%.0fms", v)));
-				settings.add(new SliderSetting("Scythe Max Attempts", "Per-target attempt cap",
-						1.0, 10.0, 1.0,
-						() -> (double) MacroConfig.get().getFrozenScytheMaxAttempts(),
-						v -> MacroConfig.get().setFrozenScytheMaxAttempts((int) (double) v),
-						v -> String.format(Locale.ROOT, "%.0f", v)));
 			}
 			case "Movement" -> {
 				settings.add(header("MOVEMENT"));

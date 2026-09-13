@@ -51,8 +51,6 @@ public final class MacroConfig {
 	public double frozenScytheProjectileSpeed = 12.0;
 	/** 発射試行間隔(ms)。MOD側の初期間隔であり武器の実クールダウンではない */
 	public long frozenScytheFireIntervalMs = 600;
-	/** 対象ごとの発射試行上限(無限連射防止) */
-	public int frozenScytheMaxAttempts = 5;
 
 	// ==== tunables ====
 	public double meleePreferredRange = 2.8;
@@ -278,19 +276,6 @@ public final class MacroConfig {
 		frozenScytheFireIntervalMs = Double.isFinite(value)
 				? Math.max(200L, Math.min(5000L, value))
 				: 600L;
-		save();
-	}
-
-	/** 対象ごとの発射試行上限。clamp 1〜10 */
-	public int getFrozenScytheMaxAttempts() {
-		if (!Double.isFinite(frozenScytheMaxAttempts)) {
-			return 5;
-		}
-		return (int) Math.max(1L, Math.min(10L, frozenScytheMaxAttempts));
-	}
-
-	public void setFrozenScytheMaxAttempts(int value) {
-		frozenScytheMaxAttempts = Double.isFinite(value) ? (int) Math.max(1L, Math.min(10L, value)) : 5;
 		save();
 	}
 

@@ -28,7 +28,9 @@ import net.minecraft.world.level.ClipContext;
  *   - AttackGateのrenderキャッシュREADY / target.visibleキャッシュは発射根拠にしない
  *   - 発射直前に同一tickの情報で対象/武器/迎撃解/視線/遮蔽/間隔を再確認
  *   - useItemは最大1回/tick。戻り値(PASS含む)によらず試行間隔を更新
- *   - 対象ごとの試行上限+飛行時間+観測猶予でタイムアウト(無限連射防止)
+ *   - 条件成立中は設定間隔で連射を継続する(試行回数による固定停止なし)。
+ *     無限固着の防止は対象ごとのcombat timeoutと継続失敗stallタイムアウトで行う
+ *     (その場合のみ既存の対象失敗処理と再選択へ進む)
  *
  * - Target探索/score再計算/raytraceは一切しない
  * - timeout: maxCombatTimeMsは「最初の実attack(または最初のREADY)から」計測。
@@ -42,12 +44,11 @@ public class CombatController {
 	private static final long MIN_ATTACK_INTERVAL_MS = 150;
 	/** vanilla attack cooldownの要求charge(getAttackStrengthScale) */
 	private static final float ATTACK_STRENGTH_MIN = 0.9F;
-	/** 最後の発射後、予測飛行時間+この猶予を待ってから失敗処理へ渡す(ms) */
-	private static final long SCYTHE_OBSERVATION_GRACE_MS = 1000;
-	/** 観測猶予中の暫定飛行時間(ms)。迎撃解が無い場合のフォールバック */
-	private static final long SCYTHE_FALLBACK_FLIGHT_MS = 800;
 	/** 発射経路遮蔽判定の許容(blocks)。遮蔽点が迎撃点のこの距離以内なら遮蔽扱い */
 	private static final double SCYTHE_OCCLUSION_MARGIN_BLOCKS = 0.5;
+	/** 継続失敗(遮蔽/迎撃不能/武器不一致等)の対象固着タイムアウト(ms)。
+	 *  試行回数による固定停止は行わず、このタイムアウトでのみ失敗処理へ進む。 */
+	private static final long SCYTHE_STALL_TIMEOUT_MS = 5000;
 
 	private final MacroController controller;
 	private final RotationController rotationController;
@@ -73,13 +74,18 @@ public class CombatController {
 	private final TargetMotionEstimator scytheMotion = new TargetMotionEstimator();
 	private int scytheMotionTargetId = -1;
 	private String scytheMotionTargetUuid;
-	/** 試行上限のカウンタ対象(target切替で不当にリセットされないようidentityキー) */
+	/** 診断カウンタのidentityキー(発射停止には使わない。target切替で不当にリセットされないよう鍵) */
 	private int scytheAttemptsTargetId = -1;
 	private String scytheAttemptsTargetUuid;
+	/** 診断用発射カウンタ(停止条件には使わない) */
 	private int scytheAttempts;
 	/** 発射間隔の基準時刻(対象に紐付けない。切替での間隔回避を防ぐ) */
 	private long lastScytheFireMs;
-	private long lastScytheAttemptMs;
+	/** 継続失敗の固着タイムアウト用(stall理由と開始時刻) */
+	private String scytheStallReason;
+	private long scytheStallSinceMs;
+	/** Shooting paused通知の重複防止(最後に通知した理由) */
+	private String scythePauseKey;
 	/** 武器自動選択のpending(切替直後のtickは発射しない。次tickに一致再確認) */
 	private boolean scytheSelectPending;
 	private int scytheSelectSlot = -1;
@@ -192,7 +198,9 @@ public class CombatController {
 		scytheAttemptsTargetUuid = null;
 		scytheAttempts = 0;
 		lastScytheFireMs = 0L;
-		lastScytheAttemptMs = 0L;
+		scytheStallReason = null;
+		scytheStallSinceMs = 0L;
+		scythePauseKey = null;
 		scytheSelectPending = false;
 		scytheSelectSlot = -1;
 		scytheSelectBlocked = false;
@@ -201,13 +209,20 @@ public class CombatController {
 
 	private void clearScytheIntercept() {
 		scytheInterceptValid = false;
+		scythePauseKey = null;
 		rotationController.clearBallisticAim();
 	}
 
 	/** client tick毎(EndClientTick)に呼ぶ。対象はcurrent Target 1体のみ。 */
 	public void tick(Minecraft mc) {
+		// CombatLoadout(Config SSOT)からweapon profileを反映(GUI変更がここへ流れる)
+		CombatLoadout loadout = CombatLoadout.from(MacroConfig.get());
+		weaponProfile = loadout.weaponProfile();
 		// Phase 7.0: world/player消失(disconnect)時に安全にreturn(クラッシュ防止)
 		if (mc.player == null || mc.level == null) {
+			if (loadout.isFrozenScytheMode()) {
+				scytheSkipReason = ScytheFireGate.REASON_WORLD_LOST;
+			}
 			if (sessionTargetId >= 0) {
 				endSession("WORLD_LOST");
 			}
@@ -215,20 +230,37 @@ public class CombatController {
 			return;
 		}
 		if (mc.gui.screen() != null) {
+			if (loadout.isFrozenScytheMode()) {
+				scytheSkipReason = ScytheFireGate.REASON_GUI_OPEN;
+			}
 			if (sessionTargetId >= 0) {
 				endSession("SCREEN_OPEN");
 			}
 			state = CombatState.IDLE;
 			return;
 		}
-		// CombatLoadout(Config SSOT)からweapon profileを反映(GUI変更がここへ流れる)
-		CombatLoadout loadout = CombatLoadout.from(MacroConfig.get());
-		weaponProfile = loadout.weaponProfile();
 		if (!attackEnabled) {
+			if (loadout.isFrozenScytheMode()) {
+				clearScytheIntercept();
+				scytheSkipReason = ScytheFireGate.REASON_MACRO_OFF;
+			}
 			return;
+		}
+		// マクロ全体がOFF(IDLE)なら発射しない(Attack個別設定とは区別)
+		if (controller.getState() == MacroController.State.IDLE) {
+			if (loadout.isFrozenScytheMode()) {
+				clearScytheIntercept();
+				scytheSkipReason = ScytheFireGate.REASON_MACRO_OFF;
+			}
 		}
 		TargetCandidate target = controller.getTarget();
 		if (target == null) {
+			if (loadout.isFrozenScytheMode()) {
+				clearScytheIntercept();
+				scytheSkipReason = controller.getState() == MacroController.State.IDLE
+						? ScytheFireGate.REASON_MACRO_OFF
+						: ScytheFireGate.REASON_NO_TARGET;
+			}
 			if (sessionTargetId >= 0) {
 				Entity previous = mc.level.getEntity(sessionTargetId);
 				boolean gone = previous == null || !previous.isAlive();
@@ -288,11 +320,24 @@ public class CombatController {
 				? MacroConfig.get().specialCombatTimeoutMs
 				: weaponProfile.maxCombatTimeMs();
 		if (combatBase != 0L && now - combatBase > timeout) {
-			state = CombatState.ABORTED;
-			MacroLogger.get().log("COMBAT_ABORT id=" + id + " reason=COMBAT_TIMEOUT");
+			// 対象固着防止: タイムアウトは対象失敗処理と再選択へ進む(ABORTED停留を作らない)
+			MacroLogger.get().log("COMBAT_TIMEOUT id=" + id);
+			scytheSkipReason = ScytheFireGate.REASON_TARGET_TIMEOUT;
+			lastSkipReason = "TARGET_TIMEOUT";
+			controller.reportTargetFailure(mc.player, id, target.snapshot().uuid(),
+					TargetFailureReason.COMBAT_TIMEOUT);
+			endSession("COMBAT_TIMEOUT");
 			return;
 		}
 
+		// Frozen Scythe mode: 観測(武器/速度/迎撃点)は毎tick実行し、
+		// 発射判定はScytheFireGateで行う(接近中・interval中も観測は止めない)。
+		if (loadout.isFrozenScytheMode()) {
+			scytheTick(mc, target, live, loadout, now);
+			return;
+		}
+
+		// Manual Override中はattack禁止
 		if (rotationController.isManualOverrideActive()) {
 			state = CombatState.WAITING_READY;
 			return;
@@ -301,13 +346,6 @@ public class CombatController {
 		// Approach中(AOTE slot切替/warp等)はcombat attackを一時停止
 		if (approachPlanner != null && approachPlanner.isBusy()) {
 			state = CombatState.WAITING_READY;
-			return;
-		}
-
-		// Frozen Scythe mode: Gate READY / vanilla近接射程 / 攻撃チャージは発射条件に使わない。
-		// tick計算の迎撃点と発射直前の同一tick再確認で発射を判定する。
-		if (loadout.isFrozenScytheMode()) {
-			scytheFireTick(mc, target, live, loadout, now);
 			return;
 		}
 
@@ -423,9 +461,8 @@ public class CombatController {
 	// ==== Frozen Scythe(偏差照準の右クリック発射) ====
 
 	/**
-	 * 試行上限カウンタのidentityキー更新。
-	 * 同一対象の再選択では即リセットされず(無限再試行の抑止)、
-	 * 異なる対象への切替でのみカウンタ/武器選択blockを解除する。
+	 * 診断カウンタのidentityキー更新(発射停止には使わない)。
+	 * IDが同じでもUUIDが違えば別対象。対象切替時に旧対象の観測/選択stateを破棄する。
 	 */
 	private void onScytheTargetIdentityChanged(int id, String uuid) {
 		if (id != scytheAttemptsTargetId || !uuid.equals(scytheAttemptsTargetUuid)) {
@@ -435,36 +472,39 @@ public class CombatController {
 		}
 		scytheSelectBlocked = false;
 		scytheSelectPending = false;
+		scytheStallReason = null;
+		scytheStallSinceMs = 0L;
 		scytheMotionTargetId = -1;
 		scytheMotionTargetUuid = null;
 	}
 
 	/**
-	 * Frozen Scythe発射tick(target確定・Manual Override/Approach busy済みの状態で呼ぶ)。
-	 * 処理順: 武器確認(選択は次tick再確認) → 速度推定 → 迎撃計算(tick単位) →
-	 * 試行上限/タイムアウト → 間隔/cooldown → 視線×予測命中領域 → 遮蔽 → useItem(1回/tick)。
+	 * Frozen Scythe tick(target確定後に呼ぶ。Manual Override/Approach busy中も観測は継続)。
+	 * 処理順: 武器観測(自動選択は次tick再確認) → 速度推定(tick単位・毎tick) →
+	 * 迎撃計算(単一予測元) → 同一tickの射程/視線/遮蔽 → ScytheFireGate → useItem(1回/tick)。
+	 * 条件成立中は設定間隔で連射を継続し、継続失敗はstallタイムアウトで失敗処理へ進む。
 	 */
-	private void scytheFireTick(Minecraft mc, TargetCandidate target, Entity live,
+	private void scytheTick(Minecraft mc, TargetCandidate target, Entity live,
 			CombatLoadout loadout, long now) {
 		MacroConfig config = MacroConfig.get();
 		int id = target.entityId();
 		String uuid = target.snapshot().uuid();
 
-		// ---- 武器確認(未登録/不一致は発射しない。理由をHUD/ログで確認可能) ----
+		// ---- 武器観測(未登録/不一致でも観測は継続。自動選択はhotbar限定・次tick再確認) ----
 		ItemBinding scythe = loadout.frozenScytheWeapon();
-		if (scythe == null) {
-			scytheSkipReason = "SCYTHE_NOT_REGISTERED";
-			clearScytheIntercept();
-			return;
-		}
+		boolean registered = scythe != null;
 		ItemStack held = mc.player.getMainHandItem();
-		if (!scythe.matches(held)) {
-			clearScytheIntercept();
+		boolean inHand = registered && scythe.matches(held);
+		boolean inHotbar = registered && loadout.findFrozenScytheSlot(mc.player) >= 0;
+		if (registered && !inHand) {
 			ensureScytheInHand(mc, loadout, scythe);
-			return;
+			held = mc.player.getMainHandItem();
+			inHand = scythe.matches(held);
+			inHotbar = registered && loadout.findFrozenScytheSlot(mc.player) >= 0;
 		}
+		boolean switching = scytheSelectPending;
 
-		// ---- 対象速度推定(tick単位。target切替/テレポートでリセット) ----
+		// ---- 対象速度推定(tick単位。接近中・interval中も継続。切替/テレポートでリセット) ----
 		if (scytheMotionTargetId != id || !uuid.equals(scytheMotionTargetUuid)) {
 			scytheMotion.reset();
 			scytheMotionTargetId = id;
@@ -472,7 +512,7 @@ public class CombatController {
 		}
 		scytheMotion.sample(live.getX(), live.getY(), live.getZ(), now);
 
-		// ---- 迎撃計算(tick単位、選択中の対象1体のみ。render側はこの結果を参照) ----
+		// ---- 迎撃計算(単一予測元。射程+ヒステリシスまで許容し接近停止帯との両止まりを防ぐ) ----
 		Vec3 eye = mc.player.getEyePosition();
 		double seedX;
 		double seedY;
@@ -488,17 +528,18 @@ public class CombatController {
 			seedY = (box.minY + box.maxY) / 2.0;
 			seedZ = live.getZ();
 		}
+		double maxFlight = config.getFrozenScytheRangeBlocks()
+				+ AttackGate.RANGED_RANGE_HYSTERESIS_BLOCKS;
 		InterceptSolver.Intercept hit = null;
 		if (scytheMotion.hasVelocity()) {
 			hit = InterceptSolver.solve(
 					seedX - eye.x, seedY - eye.y, seedZ - eye.z,
 					scytheMotion.vx(), scytheMotion.vy(), scytheMotion.vz(),
 					config.getFrozenScytheProjectileSpeed(),
-					config.getFrozenScytheRangeBlocks());
+					maxFlight);
 		}
 		if (hit == null) {
 			clearScytheIntercept();
-			scytheSkipReason = scytheMotion.hasVelocity() ? "NO_INTERCEPT" : "NO_MOTION_ESTIMATE";
 		} else {
 			scytheInterceptValid = true;
 			scytheInterceptX = seedX + hit.offsetX();
@@ -508,56 +549,68 @@ public class CombatController {
 			rotationController.setBallisticAim(scytheInterceptX, scytheInterceptY, scytheInterceptZ);
 		}
 
-		// ---- 試行上限 / タイムアウト(飛行時間+観測猶予を待ってから失敗処理) ----
-		int maxAttempts = config.getFrozenScytheMaxAttempts();
-		if (scytheAttempts >= maxAttempts) {
-			long flightMs = scytheInterceptValid
-					? (long) Math.ceil(scytheInterceptFlightSeconds * 1000.0)
-					: SCYTHE_FALLBACK_FLIGHT_MS;
-			if (now - lastScytheAttemptMs > flightMs + SCYTHE_OBSERVATION_GRACE_MS) {
-				scytheSkipReason = "SCYTHE_ATTEMPTS_EXHAUSTED";
-				MacroLogger.get().log(String.format(Locale.ROOT,
-						"SCYTHE_EXHAUSTED id=%d attempts=%d", id, scytheAttempts));
-				controller.reportTargetFailure(mc.player, id, uuid,
-						TargetFailureReason.FROZEN_SCYTHE_FAILED);
-				endSession("SCYTHE_ATTEMPTS_EXHAUSTED");
-			}
-			return;
+		// ---- 同一tickの射程/視線/遮蔽(発射判定用の最新値。Gate READYキャッシュには依存しない) ----
+		double distance = Math.sqrt(live.getBoundingBox().distanceToSqr(eye));
+		boolean inRange = distance <= maxFlight;
+		boolean aimed = false;
+		boolean pathClear = false;
+		Vec3 interceptVec = scytheInterceptValid
+				? new Vec3(scytheInterceptX, scytheInterceptY, scytheInterceptZ)
+				: null;
+		if (hit != null) {
+			double t = hit.flightSeconds();
+			// 実際のプレイヤー視線が予測命中領域(AABB + 速度*t)に合っていること。
+			// 現在AABBのcrosshair一致は必須にしない(偏差照準は対象前方を狙う)。
+			AABB predictedBox = live.getBoundingBox()
+					.move(scytheMotion.vx() * t, scytheMotion.vy() * t, scytheMotion.vz() * t)
+					.inflate(0.35);
+			Vec3 look = mc.player.getViewVector(1.0F);
+			aimed = predictedBox.clip(eye, eye.add(look.scale(maxFlight * 1.5))).isPresent();
+			// 発射経路上のブロック遮蔽(target.visibleのキャッシュに頼らない最新判定)
+			BlockHitResult blockHit = mc.level.clip(new ClipContext(
+					eye, interceptVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player));
+			pathClear = blockHit.getType() == HitResult.Type.MISS
+					|| eye.distanceToSqr(blockHit.getLocation())
+							>= eye.distanceToSqr(interceptVec) - SCYTHE_OCCLUSION_MARGIN_BLOCKS;
 		}
 
-		// ---- 発射直前の同一tick再確認 ----
-		if (!scytheInterceptValid) {
-			return;
-		}
-		if (now - lastScytheFireMs < config.getFrozenScytheFireIntervalMs()) {
-			return;
-		}
-		if (mc.player.getCooldowns().isOnCooldown(held)) {
-			scytheSkipReason = "ITEM_COOLDOWN";
-			return;
-		}
+		// ---- 発射ゲート(条件成立中は連射。継続失敗のみstallタイムアウトで失敗処理へ) ----
+		boolean manualOverride = rotationController.isManualOverrideActive();
+		boolean approachBusy = approachPlanner != null && approachPlanner.isBusy();
+		boolean intervalElapsed = now - lastScytheFireMs >= config.getFrozenScytheFireIntervalMs();
+		boolean cooldown = mc.player.getCooldowns().isOnCooldown(held);
+		boolean stallTimedOut = scytheStallReason != null
+				&& now - scytheStallSinceMs >= SCYTHE_STALL_TIMEOUT_MS;
+		ScytheFireGate.Outcome outcome = ScytheFireGate.evaluate(new ScytheFireGate.Flags()
+				.macroOn(attackEnabled && controller.getState() != MacroController.State.IDLE)
+				.registered(registered)
+				.inHotbar(inHotbar)
+				.inHand(inHand)
+				.switching(switching)
+				.inRange(inRange)
+				.motionValid(scytheMotion.hasVelocity())
+				.interceptValid(scytheInterceptValid)
+				.aimed(aimed)
+				.pathClear(pathClear)
+				.cooldown(cooldown)
+				.intervalElapsed(intervalElapsed)
+				.manualOverride(manualOverride)
+				.approachBusy(approachBusy)
+				.stallTimedOut(stallTimedOut));
+		scytheSkipReason = outcome.reason();
 
-		// 実際のプレイヤー視線が予測命中領域(AABB + 速度*t)に合っていること。
-		// 現在AABBのcrosshair一致は必須にしない(偏差照準は対象前方を狙う)。
-		double t = hit.flightSeconds();
-		AABB predictedBox = live.getBoundingBox()
-				.move(scytheMotion.vx() * t, scytheMotion.vy() * t, scytheMotion.vz() * t)
-				.inflate(0.35);
-		Vec3 look = mc.player.getViewVector(1.0F);
-		double maxRay = config.getFrozenScytheRangeBlocks() * 1.5;
-		if (predictedBox.clip(eye, eye.add(look.scale(maxRay))).isEmpty()) {
-			scytheSkipReason = "NOT_AIMED";
+		if (outcome.action() == ScytheFireGate.Action.FAIL_TARGET) {
+			MacroLogger.get().log(String.format(Locale.ROOT,
+					"SCYTHE_STALL id=%d reason=%s duration=%dms", id, scytheStallReason,
+					now - scytheStallSinceMs));
+			controller.reportTargetFailure(mc.player, id, uuid,
+					TargetFailureReason.FROZEN_SCYTHE_FAILED);
+			endSession("SCYTHE_STALLED");
 			return;
 		}
-
-		// 発射経路上のブロック遮蔽(target.visibleのキャッシュに頼らない最新判定)
-		Vec3 interceptVec = new Vec3(scytheInterceptX, scytheInterceptY, scytheInterceptZ);
-		BlockHitResult blockHit = mc.level.clip(new ClipContext(
-				eye, interceptVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player));
-		if (blockHit.getType() != HitResult.Type.MISS
-				&& eye.distanceToSqr(blockHit.getLocation())
-						< eye.distanceToSqr(interceptVec) - SCYTHE_OCCLUSION_MARGIN_BLOCKS) {
-			scytheSkipReason = "PATH_BLOCKED";
+		if (outcome.action() == ScytheFireGate.Action.WAIT) {
+			trackStall(now, outcome.reason());
+			notifyPauseIfNeeded(mc, outcome.reason());
 			return;
 		}
 
@@ -568,17 +621,73 @@ public class CombatController {
 			mc.player.swing(InteractionHand.MAIN_HAND);
 		}
 		lastScytheFireMs = now;
-		lastScytheAttemptMs = now;
 		scytheAttempts++;
 		attackCount++;
 		if (firstAttackAt == 0L) {
 			firstAttackAt = now;
 		}
 		state = CombatState.ATTACKING;
-		scytheSkipReason = "-";
+		scytheStallReason = null;
+		scytheStallSinceMs = 0L;
+		if (scythePauseKey != null) {
+			MacroNotifications.send(mc, "[DragSim] Shooting resumed — target #" + id);
+			scythePauseKey = null;
+		}
 		MacroLogger.get().log(String.format(Locale.ROOT,
 				"SCYTHE_FIRE id=%d attempts=%d flight=%.2fs dist=%.1f result=%s",
-				id, scytheAttempts, t, eye.distanceTo(interceptVec), result));
+				id, scytheAttempts, hit.flightSeconds(), eye.distanceTo(interceptVec), result));
+	}
+
+	/** 継続失敗理由のstall追跡(一時的理由は解除) */
+	private void trackStall(long now, String reason) {
+		if (isPersistentStallReason(reason)) {
+			if (!reason.equals(scytheStallReason)) {
+				scytheStallReason = reason;
+				scytheStallSinceMs = now;
+			}
+		} else {
+			scytheStallReason = null;
+			scytheStallSinceMs = 0L;
+		}
+	}
+
+	private static boolean isPersistentStallReason(String reason) {
+		return ScytheFireGate.REASON_NO_INTERCEPT.equals(reason)
+				|| ScytheFireGate.REASON_NOT_AIMED.equals(reason)
+				|| ScytheFireGate.REASON_PATH_BLOCKED.equals(reason)
+				|| ScytheFireGate.REASON_WRONG_WEAPON.equals(reason)
+				|| ScytheFireGate.REASON_SCYTHE_NOT_REGISTERED.equals(reason);
+	}
+
+	/** 継続的な発射停止のみ通知(一時的理由・同一理由の連続は通知しない) */
+	private void notifyPauseIfNeeded(Minecraft mc, String reason) {
+		String text = pauseNotificationText(reason);
+		if (text == null) {
+			return;
+		}
+		if (!reason.equals(scythePauseKey)) {
+			scythePauseKey = reason;
+			MacroNotifications.send(mc, "[DragSim] Shooting paused — " + text);
+		}
+	}
+
+	private static String pauseNotificationText(String reason) {
+		switch (reason) {
+			case ScytheFireGate.REASON_OUT_OF_RANGE:
+				return "target out of range";
+			case ScytheFireGate.REASON_NO_INTERCEPT:
+				return "no intercept solution";
+			case ScytheFireGate.REASON_PATH_BLOCKED:
+				return "line of sight blocked";
+			case ScytheFireGate.REASON_NOT_AIMED:
+				return "aim not aligned";
+			case ScytheFireGate.REASON_WRONG_WEAPON:
+				return "weapon mismatch";
+			case ScytheFireGate.REASON_SCYTHE_NOT_REGISTERED:
+				return "Frozen Scythe not registered";
+			default:
+				return null;
+		}
 	}
 
 	/**
@@ -588,7 +697,7 @@ public class CombatController {
 	 */
 	private void ensureScytheInHand(Minecraft mc, CombatLoadout loadout, ItemBinding scythe) {
 		if (scytheSelectBlocked) {
-			scytheSkipReason = "SCYTHE_SELECT_INTERRUPTED";
+			scytheSkipReason = ScytheFireGate.REASON_WRONG_WEAPON;
 			return;
 		}
 		if (scytheSelectPending) {
@@ -597,32 +706,32 @@ public class CombatController {
 			if (mc.player.getInventory().getSelectedSlot() != scytheSelectSlot) {
 				// 選択が反映されていない=手動変更と衝突。再選しない
 				scytheSelectBlocked = true;
-				scytheSkipReason = "SCYTHE_SELECT_INTERRUPTED";
+				scytheSkipReason = ScytheFireGate.REASON_WRONG_WEAPON;
 				MacroLogger.get().log("SCYTHE_SELECT_INTERRUPTED slot=" + scytheSelectSlot);
 			} else {
-				scytheSkipReason = "SCYTHE_SWITCHING";
+				scytheSkipReason = ScytheFireGate.REASON_SWITCHING_WEAPON;
 			}
 			return;
 		}
 		int slot = loadout.findFrozenScytheSlot(mc.player);
 		if (slot < 0) {
-			scytheSkipReason = "SCYTHE_NOT_IN_HOTBAR";
+			scytheSkipReason = ScytheFireGate.REASON_WRONG_WEAPON;
 			return;
 		}
 		if (mc.player.getInventory().getSelectedSlot() != slot) {
 			mc.player.getInventory().setSelectedSlot(slot);
 			scytheSelectPending = true;
 			scytheSelectSlot = slot;
-			scytheSkipReason = "SCYTHE_SWITCHING";
+			scytheSkipReason = ScytheFireGate.REASON_SWITCHING_WEAPON;
 			return;
 		}
 		// 選択スロット一致でも手持ちが不一致(通常のくわ等)
-		scytheSkipReason = "SCYTHE_NOT_IN_HAND";
-		return;
+		scytheSkipReason = ScytheFireGate.REASON_WRONG_WEAPON;
 	}
 
 	// ==== Frozen Scythe status getters(DebugHud/診断用) ====
 
+	/** 診断用発射カウンタ(停止条件には使わない) */
 	public int getScytheAttempts() {
 		return scytheAttempts;
 	}
@@ -637,5 +746,22 @@ public class CombatController {
 
 	public double getScytheInterceptFlightSeconds() {
 		return scytheInterceptFlightSeconds;
+	}
+
+	public boolean isScytheMotionValid() {
+		return scytheMotion.hasVelocity();
+	}
+
+	/** 次の発射試行までの残りms(0=発射可能。診断表示用) */
+	public long getScytheMsUntilNextFire() {
+		long interval = MacroConfig.get().getFrozenScytheFireIntervalMs();
+		if (lastScytheFireMs == 0L) {
+			return 0L;
+		}
+		return Math.max(0L, lastScytheFireMs + interval - System.currentTimeMillis());
+	}
+
+	public String getSessionTargetUuid() {
+		return sessionTargetUuid;
 	}
 }

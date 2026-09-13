@@ -80,6 +80,11 @@ public class DragsimMacroClient implements ClientModInitializer {
 				InputConstants.Type.KEYSYM,
 				GLFW.GLFW_KEY_UNKNOWN,
 				DRAGSIM_CATEGORY));
+		KeyMapping macroToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.dragsimmacro.macro_toggle",
+				InputConstants.Type.KEYSYM,
+				GLFW.GLFW_KEY_G,
+				DRAGSIM_CATEGORY));
 
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_hud"), new DebugHud(controller, aimSolver, rotationController, attackGate, combatController, approachPlanner));
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp"), new EspOverlay(controller, aimSolver));
@@ -96,7 +101,18 @@ public class DragsimMacroClient implements ClientModInitializer {
 				aimSolver.tick(mc);
 			}
 		});
+		// combat/approachをrotation tickより先に実行する:
+		// CombatControllerが算出した迎撃点を同tickのrotationで使用する(1tick遅れの排除)。
+		ClientTickEvents.END_CLIENT_TICK.register(combatController::tick);
+		ClientTickEvents.END_CLIENT_TICK.register(approachPlanner::tick);
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+			// マクロ全体ON/OFF(G)。押下ごとに1回だけ切替(長押し連続切替なし)。
+			// 画面が開いている間の入力は持ち越さない。
+			while (macroToggleKey.consumeClick()) {
+				if (mc.gui.screen() == null) {
+					controller.toggle();
+				}
+			}
 			while (rotationKey.consumeClick()) {
 				rotationController.toggle(mc);
 			}
@@ -109,10 +125,6 @@ public class DragsimMacroClient implements ClientModInitializer {
 			// Target探索ではなくAimSolutionのみ入力
 			rotationController.tick(mc, aimSolver.getSolution());
 		});
-		// Phase 5.2: sustained combat loop(Target死亡までinterval/cooldown毎にattack)
-		ClientTickEvents.END_CLIENT_TICK.register(combatController::tick);
-		// Phase 6.0: approach planner(warp。ATTACK以外の接近)
-		ClientTickEvents.END_CLIENT_TICK.register(approachPlanner::tick);
 
 		// Phase 4.1e: render-rate camera tracking。
 		// EndExtraction = camera抽出直後(本frameのcamera確定済み)/世界描画前。
