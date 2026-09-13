@@ -39,13 +39,15 @@ public class PathFollower {
 	private Vec3 lastProgressPos;
 	private long lastProgressAtMs;
 	private boolean stuck;
+	private boolean progressSeen;
 
 	public void setPath(List<PathNode> path) {
 		this.path = path == null ? List.of() : path;
 		this.cursor = this.path.size() > 1 ? 1 : 0;
-		this.stuck = false;
-		this.lastProgressPos = null;
-		this.lastProgressAtMs = 0L;
+		// 進行計測(lastProgressPos/AtMs)とstuck flagはここでリセットしない。
+		// repathIntervalMs(500ms) < stuckTimeoutMs(600ms) のため、setPathで
+		// リセットするとスタック検知が永遠に完了しない(過去の不具合)。
+		// 計測のリセットは実進行確認(pollProgress)または明示的resetでのみ行う。
 	}
 
 	public List<PathNode> getPath() {
@@ -92,6 +94,34 @@ public class PathFollower {
 
 	public boolean isOwnedJump() {
 		return ownsJump;
+	}
+
+	/**
+	 * 実進行の確認を1回だけ返す(trueを返したtickで計測を再ベースラインする)。
+	 * 呼び出し側(ApproachPlanner)はこの結果をRecoveryPolicy.onProgressへ渡し、
+	 * 回復予算を実際の進行が確認された場合にのみリセットする。
+	 */
+	public boolean pollProgress() {
+		boolean seen = progressSeen;
+		if (progressSeen) {
+			progressSeen = false;
+			stuck = false;
+			lastProgressPos = null;
+			lastProgressAtMs = 0L;
+		}
+		return seen;
+	}
+
+	/** player足元と現在segmentの水平距離(blocks)。横ずれ再計画の判定用 */
+	public double deviationFromPath(Minecraft mc) {
+		if (path.isEmpty() || mc.player == null || path.size() < 2) {
+			return 0.0;
+		}
+		int a = Math.max(0, Math.min(cursor - 1, path.size() - 2));
+		Vec3 s = path.get(a).center();
+		Vec3 e = path.get(Math.min(cursor, path.size() - 1)).center();
+		Vec3 feet = mc.player.position();
+		return PathGoals.distanceToSegment(s.x, s.z, e.x, e.z, feet.x, feet.z);
 	}
 
 	/** 現在追従中のwaypointへのyaw(RENDER_SMOOTH objective用)。lookahead点を使用 */
@@ -171,15 +201,20 @@ public class PathFollower {
 			ownsJump = false;
 		}
 
-		// stuck detection: forward要求中にほぼ位置が変わらなければSTUCK
+		// stuck detection: forward要求中にほぼ位置が変わらなければSTUCK。
+		// 実進行が確認された場合のみprogressSeenを立て、stuckを解除する。
 		Vec3 pos = player.position();
 		long now = System.currentTimeMillis();
 		if (lastProgressPos == null) {
 			lastProgressPos = pos;
 			lastProgressAtMs = now;
 		} else if (now - lastProgressAtMs >= MacroConfig.get().stuckTimeoutMs) {
-			if (pos.distanceTo(lastProgressPos) < 0.25) {
+			double moved = pos.distanceTo(lastProgressPos);
+			if (moved < 0.25) {
 				stuck = true;
+			} else {
+				progressSeen = true;
+				stuck = false;
 			}
 			lastProgressPos = pos;
 			lastProgressAtMs = now;
@@ -259,11 +294,20 @@ public class PathFollower {
 			}
 			break;
 		}
-		// path smoothing: line-of-travelがclearなら中間nodeをskip(cornerは切らない)
+		// path smoothing: line-of-travelがclearでも、JUMP/STEP/DROP edgeや
+		// 高さ変化を含む区間はskipしない(必要なjump edgeを無効化しないため)。
 		if (MacroConfig.get().pathSmoothing) {
 			int lookahead = cursor;
 			Vec3 eye = mc.player.getEyePosition();
 			while (lookahead + 1 < path.size() && lookahead - cursor < 5) {
+				PathNodeType nextEdge = path.get(lookahead + 1).edgeType();
+				boolean safeEdge = nextEdge == PathNodeType.WALK_FLAT
+						|| nextEdge == PathNodeType.GOAL;
+				boolean sameY = path.get(lookahead + 1).feetPos().getY()
+						== path.get(cursor).feetPos().getY();
+				if (!safeEdge || !sameY) {
+					break;
+				}
 				Vec3 target = path.get(lookahead + 1).center().add(0, 1.2, 0);
 				Vec3 from = eye;
 				if (LocalPathPlanner.isDirectLineClear(mc.level,

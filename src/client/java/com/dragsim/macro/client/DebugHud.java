@@ -297,6 +297,9 @@ public class DebugHud implements HudElement {
 					MacroConfig.get().pathLookaheadDistance)),
 					x, nx + 48, color, false);
 			graphics.text(font, Component.literal(NavigationMetrics.get().summary()), x, nx + 60, color, false);
+			graphics.text(font, Component.literal(" navState=" + approachPlanner.getNavState()
+					+ " recovery=" + approachPlanner.getRecoveryAttempts()),
+					x, nx + 72, color, false);
 
 			// Phase 6.2/6.3: Target Selector V2 + scan負荷
 			int tx = nx + 84;

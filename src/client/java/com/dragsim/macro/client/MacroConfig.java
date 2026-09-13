@@ -98,6 +98,18 @@ public final class MacroConfig {
 	public long stuckTimeoutMs = 600;
 	public double pathGoalRadius = 2.5;
 
+	// ==== navigation recovery(スタック回復/再計画予算) ====
+	/** A*の最大展開ノード数(探索を無制限にしない) */
+	public int maxPathExpandedNodes = 1500;
+	/** スタック回復の試行上限(超過で対象失敗へ) */
+	public int recoveryMaxAttempts = 3;
+	/** 回復時の入力解放+再計画までのbackoff(ms) */
+	public long recoveryBackoffMs = 300;
+	/** playerとpathの横ずれがこの距離を超えたら再計画(blocks) */
+	public double pathDeviationDistance = 3.0;
+	/** target周囲のgoal候補数 */
+	public int goalCandidateCount = 8;
+
 	// ==== Special Zealot(Phase 6.6) ====
 	public boolean attackSpecialZealot = false;
 	public long specialCombatTimeoutMs = 10000;
@@ -421,6 +433,48 @@ public final class MacroConfig {
 	/** このyaw誤差を超えたらforwardを止めて先に向く(deg) */
 	public double getTurnBeforeMoveDeg() {
 		return Math.max(30.0, Math.min(150.0, turnBeforeMoveDeg));
+	}
+
+	// ==== navigation recovery typed accessors ====
+
+	/** A*最大展開ノード数。clamp 200〜8000、非有限は既定値 */
+	public int getMaxPathExpandedNodes() {
+		if (!Double.isFinite(maxPathExpandedNodes)) {
+			return 1500;
+		}
+		return (int) Math.max(200, Math.min(8000, maxPathExpandedNodes));
+	}
+
+	/** スタック回復試行上限。clamp 1〜10 */
+	public int getRecoveryMaxAttempts() {
+		if (!Double.isFinite(recoveryMaxAttempts)) {
+			return 3;
+		}
+		return (int) Math.max(1, Math.min(10, recoveryMaxAttempts));
+	}
+
+	/** 回復backoff(ms)。clamp 100〜1000 */
+	public long getRecoveryBackoffMs() {
+		if (!Double.isFinite(recoveryBackoffMs)) {
+			return 300L;
+		}
+		return (long) Math.max(100L, Math.min(1000L, recoveryBackoffMs));
+	}
+
+	/** path横ずれ再計画距離(blocks)。clamp 1.5〜8.0 */
+	public double getPathDeviationDistance() {
+		if (!Double.isFinite(pathDeviationDistance)) {
+			return 3.0;
+		}
+		return Math.max(1.5, Math.min(8.0, pathDeviationDistance));
+	}
+
+	/** target周囲のgoal候補数。clamp 4〜16 */
+	public int getGoalCandidateCount() {
+		if (!Double.isFinite(goalCandidateCount)) {
+			return 8;
+		}
+		return (int) Math.max(4, Math.min(16, goalCandidateCount));
 	}
 
 	public boolean isPredictiveFollowing() {

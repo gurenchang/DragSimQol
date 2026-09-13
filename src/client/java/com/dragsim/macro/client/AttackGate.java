@@ -131,8 +131,11 @@ public class AttackGate {
 			return;
 		}
 
-		// 防御的identity確認(ZealotDetectorの全走査なし、既存Target metadataのみ)
-		boolean identityOk = target.snapshot().enderman() == (live instanceof EnderMan);
+		// 防御的identity確認(ZealotDetectorの全走査なし、既存Target metadataのみ)。
+		// IDに加えてUUIDも比較し、旧targetのキャッシュで新targetを誤判断しない。
+		boolean identityOk = target.snapshot().enderman() == (live instanceof EnderMan)
+				&& target.snapshot().uuid() != null
+				&& target.snapshot().uuid().equals(live.getUUID().toString());
 		if (!identityOk) {
 			settle(AttackReadiness.notReady(id, AttackReadiness.REASON_TARGET_MISMATCH, 0.0, 0.0,
 					false, false, target.visible(), false, false, false, false, false, false, 0.0, -1,

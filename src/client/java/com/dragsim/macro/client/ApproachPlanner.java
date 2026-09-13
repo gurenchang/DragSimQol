@@ -99,6 +99,23 @@ public class ApproachPlanner {
 	// Input Ownership: MODが自動で押下したinputのみを管理/解放する
 	// (6.1bのownership flagはPathFollowerへ移行済み)
 
+	// ==== navigation recovery(スタック回復/再計画) ====
+	private final RecoveryPolicy recovery = new RecoveryPolicy(
+			MacroConfig.get().getRecoveryMaxAttempts(), MacroConfig.get().getRecoveryBackoffMs());
+	private long recoveryBackoffUntilMs;
+	private boolean recoveryReplanPending;
+	private NavState navState = NavState.IDLE;
+	private int goalRotation;
+
+	public NavState getNavState() {
+		return navState;
+	}
+
+	/** 診断表示用: 現在の回復試行回数 */
+	public int getRecoveryAttempts() {
+		return recovery.attempts();
+	}
+
 
 	// pause/abort
 	private long pauseUntilMs;
@@ -153,6 +170,11 @@ public class ApproachPlanner {
 		sessionTargetUuid = null;
 		approachStartedAtMs = 0L;
 		state = ApproachState.IDLE;
+		recovery.reset();
+		recoveryReplanPending = false;
+		recoveryBackoffUntilMs = 0L;
+		navState = NavState.IDLE;
+		goalRotation = 0;
 	}
 
 	public void setEnabled(boolean value) {
@@ -328,6 +350,12 @@ public class ApproachPlanner {
 			boolean handoffKill = previous == null || !previous.isAlive();
 			if (handoffKill) {
 				clearPathState();
+				// handoff: 旧path/MOD所有入力/recovery状態を破棄し、
+				// 新target用pathが生成されるまでforwardを押し続けない
+				pathFollower.stopAndRelease(mc);
+				recovery.reset();
+				recoveryReplanPending = false;
+				navState = NavState.REPLAN;
 				movingWarpYawPaused = false;
 				if (state != ApproachState.IDLE && state != ApproachState.SPRINTING) {
 					// warp cycle中ならweapon復帰のみ(停止しない)
@@ -546,41 +574,145 @@ public class ApproachPlanner {
 	 */
 	private boolean ensurePath(Minecraft mc, Entity live, AttackReadiness r) {
 		long now = System.currentTimeMillis();
-		Vec3 targetPos = live.position();
+
+		// 回復中: backoff経過までMOD所有入力を解放して待機(押しっぱなしで再計画しない)
+		if (recoveryReplanPending) {
+			pathFollower.stopAndRelease(mc);
+			navState = NavState.RECOVERY;
+			if (now < recoveryBackoffUntilMs) {
+				return false;
+			}
+			recoveryReplanPending = false;
+			return planPath(mc, live, now, true);
+		}
+
+		// 実進行の確認(スタック計測は通常のrepathではリセットされない)
+		if (pathFollower.pollProgress()) {
+			recovery.onProgress();
+			navState = NavState.PROGRESS;
+		}
+
+		// スタック検知 → 即対象失敗ではなく回復フローへ
 		if (pathFollower.isStuck()) {
-			MotionMetrics.get().recordStop("PATH_STUCK", true);
-			failCurrentTarget(mc, TargetFailureReason.STUCK);
+			NavigationMetrics.get().recordStuck();
+			navState = NavState.STUCK;
+			beginRecovery(mc, now);
 			return false;
 		}
+
+		Vec3 targetPos = live.position();
 		boolean targetMoved = lastPathTargetPos != null && lastPathTargetPos.distanceTo(targetPos) >= 2.0;
+		double deviation = pathFollower.deviationFromPath(mc);
+		boolean deviated = deviation > MacroConfig.get().getPathDeviationDistance();
 		boolean needRepath = currentPath == null
 				|| now - lastRepathAtMs >= MacroConfig.get().repathIntervalMs
 				|| pathFollower.isPathExhausted()
-				|| targetMoved;
+				|| targetMoved
+				|| deviated;
 		if (needRepath) {
-			BlockPos startFeet = mc.player.blockPosition();
-			double goalRadius = Math.max(1.5, MacroConfig.get().pathGoalRadius);
-			if (MacroConfig.get().navigationEnabled) {
-				currentPath = LocalPathPlanner.computePath(mc.level, startFeet, targetPos,
-						goalRadius, MacroConfig.get().localPathRadius);
-			} else {
-				// navigation無効: 直線のみ(旧方式相当)
-				List<PathNode> direct = new ArrayList<>();
-				direct.add(new PathNode(startFeet, PathNodeType.START));
-				direct.add(new PathNode(BlockPos.containing(targetPos.x, targetPos.y, targetPos.z), PathNodeType.GOAL));
-				currentPath = new PathResult(direct, targetPos.distanceTo(mc.player.position()), true);
+			// 同一tickの連続再計画をしない(最低100ms間隔。recovery経路は除く)
+			if (currentPath != null && now - lastRepathAtMs < 100L) {
+				navState = NavState.FOLLOWING;
+				return true;
 			}
-			if (!currentPath.reachedGoal() && currentPath.nodes().size() <= 1) {
-				MotionMetrics.get().recordStop("PATH_NOT_FOUND", true);
-				failCurrentTarget(mc, TargetFailureReason.PATH_NOT_FOUND);
-				return false;
+			navState = NavState.REPLAN;
+			return planPath(mc, live, now, false);
+		}
+		navState = NavState.FOLLOWING;
+		return true;
+	}
+
+	/** スタック回復: 入力解放→path破棄→backoff→variantを変えて再計画。上限超過で対象失敗 */
+	private void beginRecovery(Minecraft mc, long now) {
+		recovery.onStuck();
+		if (recovery.exhausted(MacroConfig.get().getRecoveryMaxAttempts())) {
+			NavigationMetrics.get().recordPathFailed();
+			navState = NavState.FAILED;
+			MotionMetrics.get().recordStop("PATH_FAILED", true);
+			failCurrentTarget(mc, TargetFailureReason.STUCK);
+			return;
+		}
+		NavigationMetrics.get().recordRecovery();
+		navState = NavState.RECOVERY;
+		recoveryBackoffUntilMs = now + MacroConfig.get().getRecoveryBackoffMs();
+		recoveryReplanPending = true;
+		// forward/sprint/jumpを一度解放してから再計画する
+		pathFollower.stopAndRelease(mc);
+		clearPathState();
+		MotionMetrics.get().recordStop("PATH_RECOVERY", true);
+	}
+
+	/**
+	 * 経路計画。goal候補はモード別リング(Sword=近接射程 / Scythe=射撃可能地点)。
+	 * recovery時は goal rotation / smoothing無効 / 探索半径拡大を試す。
+	 */
+	private boolean planPath(Minecraft mc, Entity live, long now, boolean recoveryVariant) {
+		int count = MacroConfig.get().getGoalCandidateCount();
+		double preferredRange = loadout != null && loadout.isFrozenScytheMode()
+				? Math.max(2.0, loadout.weaponProfile().maxRange() * 0.85)
+				: Math.max(1.5, MacroConfig.get().meleePreferredRange);
+		List<PathGoals.GoalCandidate> candidates = PathGoals.ringCandidates(
+				live.getX(), live.getY(), live.getZ(), preferredRange, count, goalRotation);
+		if (recoveryVariant || recovery.goalRotated()) {
+			goalRotation++;
+		}
+		List<Vec3> goalPoints = new ArrayList<>();
+		for (PathGoals.GoalCandidate c : candidates) {
+			BlockPos snapped = LocalPathPlanner.snapToStandable(mc.level, c.x(), c.y(), c.z());
+			if (snapped == null) {
+				continue;
 			}
-			lastPathTargetPos = targetPos;
-			lastRepathAtMs = now;
-			pathFollower.setPath(currentPath.nodes());
-			pathFollower.clearStuck();
+			Vec3 center = new Vec3(snapped.getX() + 0.5, snapped.getY(), snapped.getZ() + 0.5);
+			// Frozen Scythe: 遮蔽のない射撃可能地点のみgoalにする
+			if (loadout != null && loadout.isFrozenScytheMode()
+					&& !hasLineOfSight(mc, center.add(0, 1.6, 0), live)) {
+				continue;
+			}
+			goalPoints.add(center);
+		}
+		if (goalPoints.isEmpty()) {
+			// 全候補が塞がっている場合のフォールバック(target方向の直進)
+			goalPoints.add(live.position());
+		}
+		double goalRadius = Math.max(1.5, MacroConfig.get().pathGoalRadius);
+		int radius = MacroConfig.get().localPathRadius
+				+ (recoveryVariant || recovery.radiusExpanded() ? 8 : 0);
+		boolean allowSmoothing = !(recoveryVariant || recovery.smoothingDisabled());
+		PathResult result;
+		if (MacroConfig.get().navigationEnabled) {
+			result = LocalPathPlanner.computePath(mc.level, mc.player.blockPosition(), goalPoints,
+					goalRadius, radius, MacroConfig.get().getMaxPathExpandedNodes(), allowSmoothing);
+		} else {
+			// navigation無効: 第一候補への直線のみ(旧方式相当)
+			List<PathNode> direct = new ArrayList<>();
+			direct.add(new PathNode(mc.player.blockPosition(), PathNodeType.START));
+			Vec3 gp = goalPoints.get(0);
+			direct.add(new PathNode(BlockPos.containing(gp.x, gp.y, gp.z), PathNodeType.GOAL));
+			result = new PathResult(direct, mc.player.position().distanceTo(gp), true);
+		}
+		currentPath = result;
+		lastPathTargetPos = live.position();
+		lastRepathAtMs = now;
+		pathFollower.setPath(currentPath.nodes());
+		navState = NavState.FOLLOWING;
+		// partial path(goal未到達)は完了扱いにしない:
+		// exhausted時に再計画され、進行がなければstuck→recovery→失敗処理へ進む。
+		if (!currentPath.reachedGoal() && currentPath.nodes().size() <= 1) {
+			MotionMetrics.get().recordStop("PATH_NOT_FOUND", true);
+			NavigationMetrics.get().recordPathFailed();
+			navState = NavState.FAILED;
+			failCurrentTarget(mc, TargetFailureReason.PATH_NOT_FOUND);
+			return false;
 		}
 		return true;
+	}
+
+	/** 候補地点の視線(射撃可能判定) */
+	private boolean hasLineOfSight(Minecraft mc, Vec3 from, Entity target) {
+		Vec3 to = target.getEyePosition();
+		BlockHitResult hit = mc.level.clip(new ClipContext(
+				from, to, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mc.player));
+		return hit.getType() == HitResult.Type.MISS;
 	}
 
 	/**
@@ -926,6 +1058,8 @@ public class ApproachPlanner {
 		pathFollower.stopAndRelease(mc);
 		clearPathState();
 		rotationController.clearObjectiveAim();
+		recovery.reset();
+		recoveryReplanPending = false;
 		movingWarpYawPaused = false;
 		if (state != ApproachState.IDLE || heldSlotBeforeWarp >= 0) {
 			lastAbortReason = reason;
