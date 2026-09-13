@@ -41,6 +41,19 @@ public final class MacroConfig {
 	public BindingData attackWeapon;
 	public BindingData warpItem;
 
+	// ==== combat mode(Frozen Scythe) ====
+	/** 既存configに無い場合の既定値はSWORD(既存の剣設定を保持) */
+	public String combatMode = "SWORD";
+	public BindingData frozenScytheWeapon;
+	/** 有効射程(blocks)。ユーザー観測15〜20の下限を基準した暫定値(実測未確認) */
+	public double frozenScytheRangeBlocks = 15.0;
+	/** 弾速(blocks/second)。観測概算10〜13.3の範囲内の仮値(実測未確認) */
+	public double frozenScytheProjectileSpeed = 12.0;
+	/** 発射試行間隔(ms)。MOD側の初期間隔であり武器の実クールダウンではない */
+	public long frozenScytheFireIntervalMs = 600;
+	/** 対象ごとの発射試行上限(無限連射防止) */
+	public int frozenScytheMaxAttempts = 5;
+
 	// ==== tunables ====
 	public double meleePreferredRange = 2.8;
 	public double sprintStopDistance = 3.5;
@@ -186,6 +199,96 @@ public final class MacroConfig {
 
 	public void clearAttackWeapon() {
 		attackWeapon = null;
+		save();
+	}
+
+	// ==== combat mode / Frozen Scythe typed accessors ====
+
+	public CombatMode getCombatMode() {
+		try {
+			return CombatMode.valueOf(combatMode);
+		} catch (Exception e) {
+			return CombatMode.SWORD;
+		}
+	}
+
+	public void setCombatMode(CombatMode mode) {
+		combatMode = (mode == null ? CombatMode.SWORD : mode).name();
+		save();
+	}
+
+	/** Frozen Scytheのbinding。nameが空なbindingは通常のくわと区別できないため無効 */
+	public ItemBinding getFrozenScytheBinding() {
+		if (frozenScytheWeapon == null) {
+			return null;
+		}
+		if (frozenScytheWeapon.name == null || frozenScytheWeapon.name.isEmpty()) {
+			return null;
+		}
+		return new ItemBinding(frozenScytheWeapon.registryId, frozenScytheWeapon.name);
+	}
+
+	public void setFrozenScytheWeapon(ItemBinding binding) {
+		frozenScytheWeapon = binding == null ? null : new BindingData(binding.registryId(), binding.cleanCustomName());
+		save();
+	}
+
+	public void clearFrozenScytheWeapon() {
+		frozenScytheWeapon = null;
+		save();
+	}
+
+	/** 有効射程(blocks)。clamp 8〜24、非有限は既定値 */
+	public double getFrozenScytheRangeBlocks() {
+		if (!Double.isFinite(frozenScytheRangeBlocks)) {
+			return 15.0;
+		}
+		return Math.max(8.0, Math.min(24.0, frozenScytheRangeBlocks));
+	}
+
+	public void setFrozenScytheRangeBlocks(double value) {
+		frozenScytheRangeBlocks = Double.isFinite(value) ? Math.max(8.0, Math.min(24.0, value)) : 15.0;
+		save();
+	}
+
+	/** 弾速(blocks/second)。clamp 5〜30、非有限は既定値 */
+	public double getFrozenScytheProjectileSpeed() {
+		if (!Double.isFinite(frozenScytheProjectileSpeed)) {
+			return 12.0;
+		}
+		return Math.max(5.0, Math.min(30.0, frozenScytheProjectileSpeed));
+	}
+
+	public void setFrozenScytheProjectileSpeed(double value) {
+		frozenScytheProjectileSpeed = Double.isFinite(value) ? Math.max(5.0, Math.min(30.0, value)) : 12.0;
+		save();
+	}
+
+	/** 発射試行間隔(ms)。clamp 200〜5000 */
+	public long getFrozenScytheFireIntervalMs() {
+		if (!Double.isFinite(frozenScytheFireIntervalMs)) {
+			return 600L;
+		}
+		return Math.max(200L, Math.min(5000L, frozenScytheFireIntervalMs));
+	}
+
+	public void setFrozenScytheFireIntervalMs(long value) {
+		frozenScytheFireIntervalMs = Double.isFinite(value)
+				? Math.max(200L, Math.min(5000L, value))
+				: 600L;
+		save();
+	}
+
+	/** 対象ごとの発射試行上限。clamp 1〜10 */
+	public int getFrozenScytheMaxAttempts() {
+		if (!Double.isFinite(frozenScytheMaxAttempts)) {
+			return 5;
+		}
+		return (int) Math.max(1L, Math.min(10L, frozenScytheMaxAttempts));
+	}
+
+	public void setFrozenScytheMaxAttempts(int value) {
+		frozenScytheMaxAttempts = Double.isFinite(value) ? (int) Math.max(1L, Math.min(10L, value)) : 5;
 		save();
 	}
 

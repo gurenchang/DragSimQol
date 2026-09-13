@@ -64,9 +64,14 @@ public class AttackGate {
 	private boolean lastOverlapState;
 	private boolean lastCrosshairState;
 	private boolean lastReadyState;
+	/** Frozen Scythe modeの射程判定hysteresis状態(範囲内でstop/開始の往復防止) */
+	private boolean rangedInRange;
 	private String lastReason = "";
 	private long lastOverlapLogMs;
 	private long lastLogMs;
+
+	/** 射程境界の余裕幅(blocks)。範囲内→範囲外は range+この値 まで維持 */
+	public static final double RANGED_RANGE_HYSTERESIS_BLOCKS = 1.5;
 
 	public AttackGate(MacroController controller, RotationController rotationController) {
 		this.controller = controller;
@@ -84,6 +89,7 @@ public class AttackGate {
 		lastOverlapState = false;
 		lastCrosshairState = false;
 		lastReadyState = false;
+		rangedInRange = false;
 		lastReason = "";
 		lastOverlapLogMs = 0L;
 		lastLogMs = 0L;
@@ -154,11 +160,22 @@ public class AttackGate {
 		Vec3 eye = player.getEyePosition();
 		double distance = Math.sqrt(live.getBoundingBox().distanceToSqr(eye));
 
-		// attack range: vanilla公式API(手持ちitemのAttackRangeコンポーネント)
+		// attack range: mode応対。
+		//   SWORD: vanilla公式API(手持ちitemのAttackRangeコンポーネント / isWithinAttackRange)
+		//   FROZEN_SCYTHE: 設定射程(blocks) + hysteresis。vanilla近接射程は使わない
 		ItemStack weapon = player.getMainHandItem();
 		AttackRange attackRange = player.getAttackRangeWith(weapon);
-		boolean inAttackRange = player.isWithinAttackRange(weapon, live.getBoundingBox(), ATTACK_RANGE_MARGIN);
-		double rangeDisplay = attackRange.effectiveMaxRange(player) + attackRange.hitboxMargin();
+		boolean frozenScytheMode = MacroConfig.get().getCombatMode() == CombatMode.FROZEN_SCYTHE;
+		double rangeDisplay;
+		boolean inAttackRange;
+		if (frozenScytheMode) {
+			double scytheRange = MacroConfig.get().getFrozenScytheRangeBlocks();
+			inAttackRange = updateRangedInRange(distance, scytheRange);
+			rangeDisplay = scytheRange;
+		} else {
+			inAttackRange = player.isWithinAttackRange(weapon, live.getBoundingBox(), ATTACK_RANGE_MARGIN);
+			rangeDisplay = attackRange.effectiveMaxRange(player) + attackRange.hitboxMargin();
+		}
 
 		// Manual Override中はREADYにしない(実attack禁止をgateで反映)
 		if (rotationController.isManualOverrideActive()) {
@@ -200,7 +217,7 @@ public class AttackGate {
 				&& Math.abs(pitchError) <= ATTACK_PITCH_TOLERANCE_DEG;
 
 		if (!inAttackRange) {
-			settle(AttackReadiness.notReady(id, AttackReadiness.REASON_OUT_OF_RANGE, distance, rangeDisplay(attackRange, player),
+			settle(AttackReadiness.notReady(id, AttackReadiness.REASON_OUT_OF_RANGE, distance, rangeDisplay,
 					true, true, true, alignedDiagnostic, false, crosshairMatches, aimOverlap, insideBox, rayHit,
 					effectiveMargin, crosshairId, yawError, pitchError));
 			return;
@@ -208,19 +225,31 @@ public class AttackGate {
 
 		// READY主要条件: crosshair一致 OR 視線Rayがattack aim boxに重なっている
 		if (!crosshairMatches && !aimOverlap) {
-			settle(AttackReadiness.notReady(id, AttackReadiness.REASON_NO_AIM_OVERLAP, distance, rangeDisplay(attackRange, player),
+			settle(AttackReadiness.notReady(id, AttackReadiness.REASON_NO_AIM_OVERLAP, distance, rangeDisplay,
 					true, true, true, alignedDiagnostic, true, crosshairMatches, false, insideBox, rayHit,
 					effectiveMargin, crosshairId, yawError, pitchError));
 			return;
 		}
 
-		settle(new AttackReadiness(true, id, AttackReadiness.REASON_READY, distance, rangeDisplay(attackRange, player),
+		settle(new AttackReadiness(true, id, AttackReadiness.REASON_READY, distance, rangeDisplay,
 				true, true, true, alignedDiagnostic, true, crosshairMatches, aimOverlap, insideBox, rayHit,
 				effectiveMargin, crosshairId, yawError, pitchError));
 	}
 
-	private static double rangeDisplay(AttackRange attackRange, LocalPlayer player) {
-		return attackRange.effectiveMaxRange(player) + attackRange.hitboxMargin();
+	/**
+	 * Frozen Scythe modeの射程判定(hysteresis付き)。
+	 * 範囲内に入るのは distance <= range、範囲外へ出るのは distance > range + 余裕幅。
+	 * 境界での移動開始/停止の往復を防ぐ。
+	 */
+	private boolean updateRangedInRange(double distance, double range) {
+		if (rangedInRange) {
+			if (distance > range + RANGED_RANGE_HYSTERESIS_BLOCKS) {
+				rangedInRange = false;
+			}
+		} else if (distance <= range) {
+			rangedInRange = true;
+		}
+		return rangedInRange;
 	}
 
 	private void settle(AttackReadiness readiness) {

@@ -32,7 +32,8 @@ public class DragsimMacroClient implements ClientModInitializer {
 		RotationController rotationController = new RotationController();
 		AttackGate attackGate = new AttackGate(controller, rotationController);
 		ApproachPlanner approachPlanner = new ApproachPlanner(controller, rotationController, attackGate);
-		CombatController combatController = new CombatController(controller, rotationController, attackGate, approachPlanner);
+		CombatController combatController = new CombatController(controller, rotationController, attackGate,
+				approachPlanner, aimSolver);
 		AttackCommand.register(attackGate, combatController);
 		ApproachCommand.register(attackGate, approachPlanner);
 		WeaponCommand.register();

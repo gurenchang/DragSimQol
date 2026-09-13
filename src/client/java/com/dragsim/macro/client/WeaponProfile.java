@@ -42,6 +42,25 @@ public record WeaponProfile(
 				false);
 	}
 
+	/**
+	 * Frozen Scythe(鉄のくわベースの右クリック能力)の暫定profile。
+	 * 射程/弾速/発射間隔はユーザー観測由来の暫定値で、実測未確認。
+	 * maxCombatTimeMsはTargetごとの保険(実クールダウンや消費仕様とは無関係)。
+	 */
+	public static WeaponProfile frozenScythe(double rangeBlocks, long fireIntervalMs) {
+		return new WeaponProfile(
+				"frozen_scythe",
+				"Frozen Scythe",
+				AttackType.RIGHT_CLICK,
+				0.0,
+				rangeBlocks,
+				rangeBlocks * 0.9,
+				fireIntervalMs,
+				30000L,
+				false,
+				false);
+	}
+
 	/** 将来のWeaponProfile resolver用のプレースホルダ(現在はdefaultMelee固定) */
 	public static WeaponProfile forHeldItem(ItemStack stack) {
 		return defaultMelee();

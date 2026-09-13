@@ -226,6 +226,30 @@ public class RotationController {
 	private double objectiveTargetYaw;
 	private double objectiveTargetPitch;
 
+	// Frozen Scythe偏差照準(CombatControllerがtick毎に更新する共通の迎撃点)。
+	// 照準・発射判定・照準マーカーはこの点を参照し、renderFrame側で
+	// targetPredictionMsの二重予測を行わない。
+	private boolean ballisticAimActive;
+	private double ballisticAimX;
+	private double ballisticAimY;
+	private double ballisticAimZ;
+
+	/** Frozen Scythe用: 迎撃点(world座標)をtick計算結果として設定する */
+	public void setBallisticAim(double x, double y, double z) {
+		ballisticAimActive = true;
+		ballisticAimX = x;
+		ballisticAimY = y;
+		ballisticAimZ = z;
+	}
+
+	public void clearBallisticAim() {
+		ballisticAimActive = false;
+	}
+
+	public boolean isBallisticAimActive() {
+		return ballisticAimActive;
+	}
+
 	/** WARP_AIM: Target水平方向yaw + pitch≈0(AOTE用。warp後clearで復帰) */
 	public void setObjectiveAim(double yaw, double pitch) {
 		objectiveAimActive = true;
@@ -508,6 +532,7 @@ public class RotationController {
 		lastFrameNanos = 0L;
 		renderModeLogged = false;
 		objectiveAimActive = false;
+		ballisticAimActive = false;
 	}
 
 	/**
@@ -646,6 +671,20 @@ public class RotationController {
 			return;
 		}
 
+		// Frozen Scythe偏差照準(tick-rate mode): 迎撃点をtick計算結果へ差し替え。
+		// AimSolutionのentity位置追従を上書きする(二重予測なし)。
+		if (ballisticAimActive) {
+			double bdx = ballisticAimX - player.getX();
+			double bdy = ballisticAimY - player.getEyeY();
+			double bdz = ballisticAimZ - player.getZ();
+			double bhoriz = Math.sqrt(bdx * bdx + bdz * bdz);
+			targetYaw = RotationMath.targetYaw(bdx, bdz);
+			targetPitch = RotationMath.targetPitch(bdy, bhoriz);
+			lastErrorYaw = RotationMath.yawDelta(targetYaw, player.getYRot());
+			lastErrorPitch = RotationMath.pitchDelta(targetPitch, player.getXRot());
+			lastErrorTotal = Math.hypot(lastErrorYaw, lastErrorPitch);
+		}
+
 		if (smoothing == RotationSmoothing.DYNAMIC_SMOOTH) {
 			stepDynamic(player);
 		} else {
@@ -776,7 +815,8 @@ public class RotationController {
 		// Phase 8.3: 短期target位置prediction(50〜150ms)。
 		// AimSolver/AimPoint/visibility/AttackGateは変更しない(camera向き先の推定のみ)。
 		// 近距離(≤4m)ではtaperして0にする(meleeでhitbox前方を狙わない)。
-		if (!objectiveAimActive) {
+		// Frozen Scythe偏差照準中は迎撃計算が予測を含むため二重予測しない。
+		if (!objectiveAimActive && !ballisticAimActive) {
 			int predictionMs = MacroConfig.get().getTargetPredictionMs();
 			if (predictionMs > 0) {
 				Vec3 dv = live.getDeltaMovement();
@@ -796,6 +836,24 @@ public class RotationController {
 		if (objectiveAimActive) {
 			renderTargetYaw = objectiveTargetYaw;
 			renderTargetPitch = objectiveTargetPitch;
+		}
+
+		// Frozen Scythe偏差照準(render-rate mode): CombatControllerのtick計算による
+		// 共通迎撃点へ差し替える。entity位置の再計算/二重予測はしない。
+		// renderAimPointも迎撃点へ更新(照準マーカーが同じ予測結果を参照)。
+		if (ballisticAimActive) {
+			Vec3 origin = camera.position();
+			double bdx = ballisticAimX - origin.x;
+			double bdy = ballisticAimY - origin.y;
+			double bdz = ballisticAimZ - origin.z;
+			double bhoriz = Math.sqrt(bdx * bdx + bdz * bdz);
+			renderTargetYaw = RotationMath.targetYaw(bdx, bdz);
+			renderTargetPitch = RotationMath.targetPitch(bdy, bhoriz);
+			renderAimX = ballisticAimX;
+			renderAimY = ballisticAimY;
+			renderAimZ = ballisticAimZ;
+			targetRawYaw = renderTargetYaw;
+			targetRawPitch = renderTargetPitch;
 		}
 
 		double yawError = RotationMath.yawDelta(renderTargetYaw, player.getYRot());

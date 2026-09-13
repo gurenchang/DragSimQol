@@ -77,7 +77,7 @@ public class DebugHud implements HudElement {
 					target.yawDifference(), target.pitchDifference(), target.score())), x, y + 72, color, false);
 		}
 
-		// Phase 4.0: Aim隧ｳ邏ｰ(DEBUG esp譎ゅ・縺ｿ縲・ORMAL HUD繧呈ｱ壹＆縺ｪ縺・
+		// Phase 4.0: Aim詳細(DEBUG esp時のみ。NORMAL HUDを汚さない)
 		if (controller.getEspMode() == EspMode.DEBUG) {
 			AimSolution aim = aimSolver.getSolution();
 			if (aim.valid()) {
@@ -100,7 +100,7 @@ public class DebugHud implements HudElement {
 			}
 		}
 
-		// Phase 4.1c: Rotation迥ｶ諷・DEBUG esp譎ゅ・縺ｿ)
+		// Phase 4.1c: Rotation状態(DEBUG esp時のみ)
 		if (controller.getEspMode() == EspMode.DEBUG) {
 			if (rotationController.isEnabled()) {
 				int ry = y + 132;
@@ -140,22 +140,22 @@ public class DebugHud implements HudElement {
 							rotationController.getLastYawStep(), rotationController.getLastPitchStep())),
 							x, ry + 84, color, false);
 				}
-				// Phase 8.3.1: speed險ｭ螳・vs 螳溷柑velocity(actual/max遒ｺ隱咲畑)
+				// Phase 8.3.1: speed設定 vs 実効velocity(actual/max確認用)
 				graphics.text(font, Component.literal(String.format(Locale.ROOT,
-						" Speed: %d%%  Mode: %s  Max: yaw=%.0fﾂｰ/s pitch=%.0fﾂｰ/s",
+						" Speed: %d%%  Mode: %s  Max: yaw=%.0f°/s pitch=%.0f°/s",
 						rotationController.getRotationSpeedPercent(),
 						rotationController.getRotationPhase(),
 						rotationController.getYawCapDegPerSec(),
 						rotationController.getPitchCapDegPerSec())), x, ry + 96, color, false);
 				graphics.text(font, Component.literal(String.format(Locale.ROOT,
-						" Velocity: yaw=%.0fﾂｰ/s pitch=%.0fﾂｰ/s",
+						" Velocity: yaw=%.0f°/s pitch=%.0f°/s",
 						rotationController.getCameraYawVelocity(),
 						rotationController.getCameraPitchVelocity())), x, ry + 108, color, false);
 			} else {
 				graphics.text(font, Component.literal("Rotation: OFF (/zealotrotation on)"), x, y + 132, accent, false);
 			}
 		}
-		// Phase 5.2b: Attack Gate迥ｶ諷・DEBUG esp譎ゅ・縺ｿ)
+		// Phase 5.2b: Attack Gate状態(DEBUG esp時のみ)
 		if (controller.getEspMode() == EspMode.DEBUG) {
 			AttackReadiness gate = attackGate.getReadiness();
 			int ay = y + 228;
@@ -183,7 +183,7 @@ public class DebugHud implements HudElement {
 					x, ay + 72, color, false);
 			graphics.text(font, Component.literal(" READY: " + (gate.ready() ? "TRUE" : "FALSE")),
 					x, ay + 84, color, false);
-			// Phase 5.2: Combat迥ｶ諷・
+			// Phase 5.2: Combat状態
 			int kx = y + 312 + 24;
 			CombatController combat = combatController;
 			graphics.text(font, Component.literal("Combat"), x, kx, accent, false);
@@ -199,8 +199,14 @@ public class DebugHud implements HudElement {
 					+ "  Timeout: " + combat.getWeaponProfile().maxCombatTimeMs() + "ms"
 					+ "  lastSkip=" + combat.getLastSkipReason()),
 					x, kx + 24 + 24, color, false);
+			// Frozen Scythe: mode/試行回数/発射skip理由/迎撃解の状態(不一致診断用)
+			graphics.text(font, Component.literal(String.format(Locale.ROOT,
+					" Scythe: mode=%s attempts=%d skip=%s intercept=%s flight=%.2fs",
+					MacroConfig.get().getCombatMode(), combat.getScytheAttempts(),
+					combat.getScytheSkipReason(), combat.isScytheInterceptValid(),
+					combat.getScytheInterceptFlightSeconds())), x, kx + 24 + 36, color, false);
 
-			// Phase 6.1: Approach迥ｶ諷・
+			// Phase 6.1: Approach状態
 			int ax = kx + 60;
 			CombatLoadout loadout = approachPlanner.getLoadout();
 			if (loadout == null) {
@@ -243,7 +249,7 @@ public class DebugHud implements HudElement {
 					approachPlanner.isForwardHeld(), approachPlanner.isSprintHeld(),
 					approachPlanner.isOwnedForward(), approachPlanner.isOwnedSprint(),
 					approachPlanner.isPhysicalForwardDown())), x, ax + 84, color, false);
-			// Phase 6.4: 螳溘く繝ｼ迥ｶ諷・+ vanilla sprint迥ｶ諷九・險ｺ譁ｭ(intent vs actual)
+			// Phase 6.4: 実キー状態 + vanilla sprint状態の診断(intent vs actual)
 			graphics.text(font, Component.literal(String.format(Locale.ROOT,
 					" keys: forwardKey=%s sprintKey=%s  player.isSprinting=%s",
 					mc.options.keyUp.isDown(), mc.options.keySprint.isDown(),
@@ -251,12 +257,12 @@ public class DebugHud implements HudElement {
 			graphics.text(font, Component.literal(" Approach enabled: " + approachPlanner.isApproachEnabled()
 					+ "  abort=" + approachPlanner.getLastAbortReason()), x, ax + 108, color, false);
 			graphics.text(font, Component.literal(String.format(Locale.ROOT,
-					" Moving warp: %s (maxYaw=%.0fﾂｰ)  Warps: %d/%d",
+					" Moving warp: %s (maxYaw=%.0f°)  Warps: %d/%d",
 					MacroConfig.get().movingWarp, MacroConfig.get().movingWarpMaxYawError,
 					approachPlanner.getWarpsUsedThisTarget(),
 					MacroConfig.get().maxWarpsPerTarget)), x, ax + 120, color, false);
 
-			// Phase 6.5: Navigation迥ｶ諷・
+			// Phase 6.5: Navigation状態
 			int nx = ax + 144;
 			PathResult path = approachPlanner.getCurrentPath();
 			PathFollower follower = approachPlanner.getPathFollower();
@@ -283,7 +289,7 @@ public class DebugHud implements HudElement {
 					x, nx + 48, color, false);
 			graphics.text(font, Component.literal(NavigationMetrics.get().summary()), x, nx + 60, color, false);
 
-			// Phase 6.2/6.3: Target Selector V2 + scan雋闕ｷ
+			// Phase 6.2/6.3: Target Selector V2 + scan負荷
 			int tx = nx + 84;
 			TargetSelector selector = controller.getTargetSelector();
 			TargetCandidate currentTarget = selector.getTarget();
@@ -307,7 +313,7 @@ public class DebugHud implements HudElement {
 					" Shortlist: %d  Best angle in band: %s",
 					selector.getShortlistSize(),
 					currentTarget != null
-							? String.format(Locale.ROOT, "#%d %.1fﾂｰ",
+							? String.format(Locale.ROOT, "#%d %.1f°",
 							currentTarget.entityId(), currentTarget.rotationDifference())
 							: "-")), x, tx + 48, color, false);
 			graphics.text(font, Component.literal(String.format(Locale.ROOT,
@@ -316,7 +322,7 @@ public class DebugHud implements HudElement {
 					currentTarget != null && Double.isFinite(currentTarget.score())
 							? String.format(Locale.ROOT, "%.2f", currentTarget.score()) : "-")),
 					x, tx + 60, color, false);
-			// Phase 6.4: Engagement priority驕ｸ謚樒炊逕ｱ + candidate tier荳隕ｧ
+			// Phase 6.4: Engagement priority選択理由 + candidate tier一覧
 			int ty = tx + 72;
 			graphics.text(font, Component.literal(" Selected reason: " + selector.getLastSelectionReason()),
 					x, ty, color, false);
@@ -352,7 +358,7 @@ public class DebugHud implements HudElement {
 				candY += 12;
 			}
 
-			// Phase 8.3: Motion Quality(DEBUG蟆ら畑)
+			// Phase 8.3: Motion Quality(DEBUG専用)
 			MotionMetrics motion = MotionMetrics.get();
 			int motionY = candY + 12;
 			graphics.text(font, Component.literal("Motion Quality"), x, motionY, accent, false);
@@ -367,7 +373,7 @@ public class DebugHud implements HudElement {
 							? " last=" + motion.getLastUnexpectedReason() : "")),
 					x, motionY + 12, color, false);
 			graphics.text(font, Component.literal(String.format(Locale.ROOT,
-					" reversals=%d (%.1f/min) headingChanges=%d avgYawCorr=%.1fﾂｰ",
+					" reversals=%d (%.1f/min) headingChanges=%d avgYawCorr=%.1f°",
 					motion.getReversalCount(), motion.getReversalsPerMinute(),
 					motion.getHeadingChangeCount(), motion.getAverageYawCorrectionDeg())),
 					x, motionY + 24, color, false);

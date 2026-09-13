@@ -2,6 +2,7 @@ package com.dragsim.macro.client.gui;
 
 import com.dragsim.macro.client.ApproachPlanner;
 import com.dragsim.macro.client.CombatController;
+import com.dragsim.macro.client.CombatMode;
 import com.dragsim.macro.client.EspMode;
 import com.dragsim.macro.client.ItemBinding;
 import com.dragsim.macro.client.MacroConfig;
@@ -315,6 +316,10 @@ public class DragsimMacroScreen extends Screen {
 			}
 			case "Combat" -> {
 				settings.add(header("COMBAT"));
+				settings.add(new DropdownSetting("Combat Mode", null,
+						new String[]{"SWORD", "FROZEN_SCYTHE"},
+						() -> MacroConfig.get().getCombatMode().name(),
+						v -> MacroConfig.get().setCombatMode(CombatMode.valueOf(v))));
 				settings.add(new ToggleSetting("Attack", "Combat attack automation",
 						() -> combatController.isAttackEnabled(),
 						v -> combatController.setEnabled(v)));
@@ -322,6 +327,9 @@ public class DragsimMacroScreen extends Screen {
 				settings.add(new ItemBindingRow("Attack Weapon",
 						() -> describeBinding(MacroConfig.get().getAttackWeaponBinding(), "Not configured"),
 						() -> bindHeld("attack")));
+				settings.add(new ItemBindingRow("Frozen Scythe",
+						() -> describeScytheBinding(),
+						() -> bindHeld("frozen_scythe")));
 				settings.add(new ItemBindingRow("Warp Item",
 						() -> {
 							ItemBinding binding = MacroConfig.get().getWarpItemBinding();
@@ -329,6 +337,27 @@ public class DragsimMacroScreen extends Screen {
 									: "Aspect of the End (auto)";
 						},
 						() -> bindHeld("warp")));
+				settings.add(header("FROZEN SCYTHE"));
+				settings.add(new SliderSetting("Scythe Range", "Effective range (blocks, provisional)",
+						8.0, 24.0, 0.5,
+						() -> MacroConfig.get().getFrozenScytheRangeBlocks(),
+						v -> MacroConfig.get().setFrozenScytheRangeBlocks(v),
+						v -> String.format(Locale.ROOT, "%.1fm", v)));
+				settings.add(new SliderSetting("Scythe Speed", "Projectile speed (blocks/s, provisional)",
+						5.0, 30.0, 0.5,
+						() -> MacroConfig.get().getFrozenScytheProjectileSpeed(),
+						v -> MacroConfig.get().setFrozenScytheProjectileSpeed(v),
+						v -> String.format(Locale.ROOT, "%.1f", v)));
+				settings.add(new SliderSetting("Scythe Interval", "Fire attempt interval (ms)",
+						200.0, 2000.0, 50.0,
+						() -> (double) MacroConfig.get().getFrozenScytheFireIntervalMs(),
+						v -> MacroConfig.get().setFrozenScytheFireIntervalMs((long) (double) v),
+						v -> String.format(Locale.ROOT, "%.0fms", v)));
+				settings.add(new SliderSetting("Scythe Max Attempts", "Per-target attempt cap",
+						1.0, 10.0, 1.0,
+						() -> (double) MacroConfig.get().getFrozenScytheMaxAttempts(),
+						v -> MacroConfig.get().setFrozenScytheMaxAttempts((int) (double) v),
+						v -> String.format(Locale.ROOT, "%.0f", v)));
 			}
 			case "Movement" -> {
 				settings.add(header("MOVEMENT"));
@@ -490,6 +519,8 @@ public class DragsimMacroScreen extends Screen {
 		ItemBinding binding = ItemBinding.fromStack(held);
 		if ("attack".equals(kind)) {
 			MacroConfig.get().setAttackWeapon(binding);
+		} else if ("frozen_scythe".equals(kind)) {
+			MacroConfig.get().setFrozenScytheWeapon(binding);
 		} else {
 			MacroConfig.get().setWarpItem(binding);
 		}
@@ -497,6 +528,22 @@ public class DragsimMacroScreen extends Screen {
 
 	private String describeBinding(ItemBinding binding, String fallback) {
 		return binding != null ? binding.toString() : fallback;
+	}
+
+	/**
+	 * Frozen Scythe bindingの状態表示。
+	 * name無しのiron_hoe bindingは通常のくわと区別できないため、その旨を明示する。
+	 */
+	private String describeScytheBinding() {
+		ItemBinding binding = MacroConfig.get().getFrozenScytheBinding();
+		if (binding != null) {
+			return binding.toString();
+		}
+		MacroConfig.BindingData raw = MacroConfig.get().frozenScytheWeapon;
+		if (raw != null) {
+			return raw.registryId + " (custom name required)";
+		}
+		return "Not configured";
 	}
 
 	@Override

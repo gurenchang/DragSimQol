@@ -860,6 +860,10 @@ public class ApproachPlanner {
 	 *   path clear / projected安全 / path方向とwarp方向が概ね一致。
 	 */
 	private boolean isMovingWarpOpportunity(Minecraft mc, TargetCandidate target, AttackReadiness r, Entity live) {
+		// Frozen Scythe modeでは初版としてワープを使用しない(Sword設定は保持)
+		if (loadout != null && loadout.isFrozenScytheMode()) {
+			return false;
+		}
 		if (!r.visible() || !MacroConfig.get().movingWarp) {
 			return false;
 		}
