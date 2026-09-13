@@ -420,10 +420,10 @@ public class DragsimMacroScreen extends Screen {
 						v -> rotationController.setSmoothing(RotationSmoothing.valueOf(v))));
 				settings.add(header("FEEL"));
 				settings.add(new SliderSetting("Rotation Speed",
-						"Controls how quickly the camera acquires a new target. Higher values mainly affect large turns.",
-						50, 250, 5,
+						"Rotation speed in all modes. Affects both large turns and close tracking.",
+						50, 300, 5,
 						() -> (double) MacroConfig.get().getRotationSpeedPercent(),
-						v -> MacroConfig.get().rotationSpeedPercent = v,
+						v -> MacroConfig.get().setRotationSpeedPercent(v),
 						v -> String.format(Locale.ROOT, "%.0f%%", v)));
 				settings.add(new DropdownSetting("Tracking Smoothness", null,
 						new String[]{"SMOOTH", "TIGHT"},

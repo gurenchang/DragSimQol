@@ -120,7 +120,9 @@ public final class MacroConfig {
 	public double nextTargetSwitchAdvantage = 2.0;
 
 	// ==== Continuous control(Phase 8.3 / 8.3.1) ====
-	/** 視点速度(%)。100%=旧FAST相当(yaw 240/pitch 180 deg/s)。範囲50〜250 */
+	/** 視点速度(%)。100%=旧FAST相当(yaw 240/pitch 180 deg/s)。範囲50〜300。
+	 *  全モード(RENDER/CURVE/DYNAMIC/LINEAR)の追従速度に一貫して反映される。
+	 *  上限300は加速度がsqrtスケールのためsnap回転にならない範囲で設定。 */
 	public double rotationSpeedPercent = 150;
 	public String rotationTrackingSmoothness = "SMOOTH";
 	public String corneringSmoothness = "MEDIUM";
@@ -381,9 +383,17 @@ public final class MacroConfig {
 
 	// ==== Phase 8.3 typed accessors(high-level feelのみ公開) ====
 
-	/** Phase 8.3.1: 視点速度(%)。clamped 50〜250 */
+	/** Phase 8.3.1: 視点速度(%)。clamped 50〜300 */
 	public int getRotationSpeedPercent() {
-		return (int) Math.round(Math.max(50.0, Math.min(250.0, rotationSpeedPercent)));
+		return (int) Math.round(Math.max(50.0, Math.min(300.0, rotationSpeedPercent)));
+	}
+
+	/** 視点速度(%)をclamp/有限値検証/保存込みで設定する(GUI/コマンドはここ経由) */
+	public void setRotationSpeedPercent(double value) {
+		rotationSpeedPercent = Double.isFinite(value)
+				? Math.max(50.0, Math.min(300.0, value))
+				: 150.0;
+		save();
 	}
 
 	/** 速度倍率m。100%=1.0(旧FAST相当) */

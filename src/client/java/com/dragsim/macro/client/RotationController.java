@@ -928,7 +928,9 @@ public class RotationController {
 		if (smoothing == RotationSmoothing.CURVE_SMOOTH) {
 			// Phase 8.3: yaw/pitch独立のFAR/MEDIUM/NEAR curve
 			// Phase 8.3.1: FAR/MEDIUMにspeed multiplierを反映(NEARはTracking Smoothness優先)
-			double nearGain = MacroConfig.get().getTrackingNearGain();
+			// NEAR領域を含む全領域で速度設定を反映(近距離追従でも速度が変わる)
+			double nearGain = MacroConfig.get().getTrackingNearGain()
+					* MacroConfig.get().getRotationSpeedMultiplier();
 			desiredYawSpeed = curveDesiredSpeed(yawError, yawCap, nearGain);
 			desiredPitchSpeed = curveDesiredSpeed(pitchError, pitchCap, nearGain);
 			// jerk limit: 加速度そのものを滑らかに変化させる(0→MAXの瞬間加速を防ぐ)
@@ -949,8 +951,10 @@ public class RotationController {
 			cameraPitchVelocity = Mth.clamp(cameraPitchVelocity + curveAccelPitch * dt,
 					-pitchCap, pitchCap);
 		} else {
-			desiredYawSpeed = Mth.clamp(RENDER_RESPONSE_GAIN * yawError, -yawCap, yawCap);
-			desiredPitchSpeed = Mth.clamp(RENDER_RESPONSE_GAIN * pitchError, -pitchCap, pitchCap);
+			// 比例gainにも速度設定を反映(追従距離でも速度が変わる。cap側は既に反映済み)
+			double responseGain = RENDER_RESPONSE_GAIN * MacroConfig.get().getRotationSpeedMultiplier();
+			desiredYawSpeed = Mth.clamp(responseGain * yawError, -yawCap, yawCap);
+			desiredPitchSpeed = Mth.clamp(responseGain * pitchError, -pitchCap, pitchCap);
 			cameraYawVelocity = approach(cameraYawVelocity, desiredYawSpeed,
 					MAX_YAW_ACCEL_DEG_PER_SEC2 * accelScale * dt);
 			cameraPitchVelocity = approach(cameraPitchVelocity, desiredPitchSpeed,
@@ -1108,7 +1112,12 @@ public class RotationController {
 		double effYaw = Math.abs(yawError) <= DYNAMIC_YAW_DEADZONE_DEG ? 0.0 : yawError;
 		double effPitch = Math.abs(pitchError) <= DYNAMIC_PITCH_DEADZONE_DEG ? 0.0 : pitchError;
 
-		double omegaN = SPRING_NATURAL_FREQ_RAD_PER_SEC;
+		// 速度設定の反映(DYNAMIC_SMOOTH):
+		//   ωn = 基準 × sqrt(m)(ζ=1の臨界減衰を保ったまま追従を加速。snap防止)
+		//   速度cap = 基準 × m(線形)、加速度 = 基準 × sqrt(m)(render側と同一スケール)
+		double speedMul = MacroConfig.get().getRotationSpeedMultiplier();
+		double accelScaleD = MacroConfig.get().getAcquisitionScale();
+		double omegaN = SPRING_NATURAL_FREQ_RAD_PER_SEC * accelScaleD;
 		double desiredYawVel = (cameraYawVelocity + omegaN * omegaN * effYaw * DT_SECONDS)
 				/ (1.0 + 2.0 * omegaN * DT_SECONDS);
 		double desiredPitchVel = (cameraPitchVelocity + omegaN * omegaN * effPitch * DT_SECONDS)
@@ -1116,14 +1125,14 @@ public class RotationController {
 
 		desiredYawVel += feedForwardYawVel;
 		desiredPitchVel += feedForwardPitchVel;
-		desiredYawVel = Mth.clamp(desiredYawVel, -MAX_YAW_SPEED_DEG_PER_SEC, MAX_YAW_SPEED_DEG_PER_SEC);
-		desiredPitchVel = Mth.clamp(desiredPitchVel, -MAX_PITCH_SPEED_DEG_PER_SEC, MAX_PITCH_SPEED_DEG_PER_SEC);
+		desiredYawVel = Mth.clamp(desiredYawVel, -MAX_YAW_SPEED_DEG_PER_SEC * speedMul, MAX_YAW_SPEED_DEG_PER_SEC * speedMul);
+		desiredPitchVel = Mth.clamp(desiredPitchVel, -MAX_PITCH_SPEED_DEG_PER_SEC * speedMul, MAX_PITCH_SPEED_DEG_PER_SEC * speedMul);
 
 		// 加速度制限付きslew: 1tickで変えられる速度は accel * dt まで(初期加速のなめらかさ)
 		cameraYawVelocity = approach(cameraYawVelocity, desiredYawVel,
-				MAX_YAW_ACCEL_DEG_PER_SEC2 * DT_SECONDS);
+				MAX_YAW_ACCEL_DEG_PER_SEC2 * accelScaleD * DT_SECONDS);
 		cameraPitchVelocity = approach(cameraPitchVelocity, desiredPitchVel,
-				MAX_PITCH_ACCEL_DEG_PER_SEC2 * DT_SECONDS);
+				MAX_PITCH_ACCEL_DEG_PER_SEC2 * accelScaleD * DT_SECONDS);
 
 		double stepYaw = cameraYawVelocity * DT_SECONDS;
 		double stepPitch = cameraPitchVelocity * DT_SECONDS;
@@ -1145,12 +1154,15 @@ public class RotationController {
 		applyRotation(player, stepYaw, stepPitch);
 	}
 
-	/** 旧LINEAR方式(比較用)。targetにはfilter済み値を使用。 */
+	/** 旧LINEAR方式(比較用)。targetにはfilter済み値を使用。ステップ上限に速度設定を反映 */
 	private void stepLinear(LocalPlayer player) {
 		double yawDelta = lastErrorYaw;
 		double pitchDelta = lastErrorPitch;
-		double yawStep = RotationSmoothing.LINEAR.step(yawDelta, LINEAR_MAX_YAW_STEP_DEG, LINEAR_YAW_DEADZONE_DEG);
-		double pitchStep = RotationSmoothing.LINEAR.step(pitchDelta, LINEAR_MAX_PITCH_STEP_DEG, LINEAR_PITCH_DEADZONE_DEG);
+		double speedMul = MacroConfig.get().getRotationSpeedMultiplier();
+		double yawStep = RotationSmoothing.LINEAR.step(yawDelta,
+				LINEAR_MAX_YAW_STEP_DEG * speedMul, LINEAR_YAW_DEADZONE_DEG);
+		double pitchStep = RotationSmoothing.LINEAR.step(pitchDelta,
+				LINEAR_MAX_PITCH_STEP_DEG * speedMul, LINEAR_PITCH_DEADZONE_DEG);
 
 		applyRotation(player, yawStep, pitchStep);
 	}
