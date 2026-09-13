@@ -2,9 +2,9 @@
 	"providers": [
 		{
 			"type": "ttf",
-			"file": "dragsimmacro:oxanium.ttf",
+			"file": "dragsimmacro:oxanium-semibold.ttf",
 			"shift": [0, 1],
-			"size": 11.0,
+			"size": 12.0,
 			"oversample": 3.0
 		},
 		{

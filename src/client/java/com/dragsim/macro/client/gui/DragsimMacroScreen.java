@@ -116,7 +116,7 @@ public class DragsimMacroScreen extends Screen {
 
 		// header(#7): title + version + macro state
 		graphics.text(font, TITLE, windowX + GuiTheme.PADDING, windowY + 9,
-				GuiTheme.TEXT_PRIMARY, true);
+				GuiTheme.TEXT_PRIMARY, false);
 		graphics.text(font, VERSION, windowX + GuiTheme.PADDING + 96, windowY + 11,
 				GuiTheme.TEXT_SECONDARY, false);
 		boolean macroOn = controller.getState() != MacroController.State.IDLE;
@@ -158,7 +158,7 @@ public class DragsimMacroScreen extends Screen {
 			}
 			graphics.text(font, CATEGORY_LABELS[i], windowX + GuiTheme.PADDING + 4,
 					rowY + (GuiTheme.ROW_HEIGHT - 8) / 2,
-					selected ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY);
+					selected ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY, false);
 		}
 
 		// content panel(#14): scroll可能
@@ -451,7 +451,7 @@ public class DragsimMacroScreen extends Screen {
 
 			@Override
 			public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
-				g.text(font, label, x + GuiTheme.PADDING, y + 8, GuiTheme.ACCENT_BRIGHT, true);
+				g.text(font, label, x + GuiTheme.PADDING, y + 8, GuiTheme.ACCENT_BRIGHT, false);
 				g.fill(x, y + GuiTheme.SECTION_HEADER_HEIGHT - 2, x + w,
 						y + GuiTheme.SECTION_HEADER_HEIGHT, GuiTheme.BORDER);
 			}

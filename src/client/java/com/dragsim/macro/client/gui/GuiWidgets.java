@@ -66,9 +66,9 @@ public final class GuiWidgets {
 			if (hovered) {
 				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY, false);
 			if (!description.isEmpty()) {
-				g.text(font, descriptionComponent, x + GuiTheme.PADDING, y + 14, GuiTheme.TEXT_SECONDARY);
+				g.text(font, descriptionComponent, x + GuiTheme.PADDING, y + 14, GuiTheme.TEXT_SECONDARY, false);
 			}
 			int toggleW = 34;
 			int toggleH = 14;
@@ -77,7 +77,8 @@ public final class GuiWidgets {
 			GuiPaint.toggle(g, toggleX, toggleY, toggleW, toggleH, getter.getAsBoolean(), animT);
 			// ON/OFF status色(明確な状態表示)
 			g.text(font, getter.getAsBoolean() ? UiFont.ON : UiFont.OFF,
-					toggleX - 24, toggleY + 3, getter.getAsBoolean() ? GuiTheme.SUCCESS : GuiTheme.TEXT_DISABLED);
+					toggleX - 24, toggleY + 3,
+					getter.getAsBoolean() ? GuiTheme.SUCCESS : GuiTheme.TEXT_DISABLED, false);
 		}
 
 		@Override
@@ -157,11 +158,12 @@ public final class GuiWidgets {
 				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
 			double value = getter.getAsDouble();
-			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
-			String valueText = valueFormatter.apply(value);
-			int valueW = font.width(valueText);
-			g.text(font, UiFont.text(valueText), x + w - valueW - GuiTheme.PADDING, y + 3,
-					GuiTheme.ACCENT_BRIGHT);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY, false);
+			// 幅計測も描画も同一のstyled Componentを使用(フォント指定を一致させる)
+			Component valueComponent = UiFont.text(valueFormatter.apply(value));
+			int valueW = font.width(valueComponent);
+			g.text(font, valueComponent, x + w - valueW - GuiTheme.PADDING, y + 3,
+					GuiTheme.ACCENT_BRIGHT, false);
 			// slider
 			int sliderX = x + GuiTheme.PADDING;
 			int sliderW = w - GuiTheme.PADDING * 2;
@@ -292,7 +294,7 @@ public final class GuiWidgets {
 			if (hovered && !open) {
 				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY, false);
 			int ddX = dropdownX(x, w);
 			int ddW = dropdownW(x, w);
 			int ddY = y + 3;
@@ -411,8 +413,9 @@ public final class GuiWidgets {
 			if (hovered) {
 				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
-			g.text(font, UiFont.text(valueSupplier.get()), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT_BRIGHT);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY, false);
+			g.text(font, UiFont.text(valueSupplier.get()), x + GuiTheme.PADDING, y + 13,
+					GuiTheme.ACCENT_BRIGHT, false);
 			int btnW = 72;
 			int btnH = height() - 8;
 			int btnX = x + w - btnW - GuiTheme.PADDING;
@@ -480,8 +483,9 @@ public final class GuiWidgets {
 			if (hovered) {
 				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY);
-			g.text(font, UiFont.text(valueSupplier.get()), x + GuiTheme.PADDING, y + 13, GuiTheme.ACCENT_BRIGHT);
+			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY, false);
+			g.text(font, UiFont.text(valueSupplier.get()), x + GuiTheme.PADDING, y + 13,
+					GuiTheme.ACCENT_BRIGHT, false);
 			int btnW = 84;
 			int btnH = height() - 10;
 			int btnX = x + w - btnW - GuiTheme.PADDING;

@@ -25,33 +25,33 @@ import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
 /**
- * NORMAL ESP(スクリーン空間2DコーナーESP)。DEBUG表示はEspOverlay/PathDebugOverlay/DebugHudが担当。
+ * NORMAL ESP(繧ｹ繧ｯ繝ｪ繝ｼ繝ｳ遨ｺ髢・D繧ｳ繝ｼ繝翫・ESP)縲・EBUG陦ｨ遉ｺ縺ｯEspOverlay/PathDebugOverlay/DebugHud縺梧球蠖薙・
  *
- * データフロー(描画ループ内で検出/レイトレ/パース/スコア計算はしない):
- *   ZealotDetector(スキャン時判定)
- *     → TargetSelector が評価済みの候補リスト(0.5秒毎更新)
- *       → 毎フレーム: project → draw のみ
+ * 繝・・繧ｿ繝輔Ο繝ｼ(謠冗判繝ｫ繝ｼ繝怜・縺ｧ讀懷・/繝ｬ繧､繝医Ξ/繝代・繧ｹ/繧ｹ繧ｳ繧｢險育ｮ励・縺励↑縺・:
+ *   ZealotDetector(繧ｹ繧ｭ繝｣繝ｳ譎ょ愛螳・
+ *     竊・TargetSelector 縺瑚ｩ穂ｾ｡貂医∩縺ｮ蛟呵｣懊Μ繧ｹ繝・0.5遘呈ｯ取峩譁ｰ)
+ *       竊・豈弱ヵ繝ｬ繝ｼ繝: project 竊・draw 縺ｮ縺ｿ
  *
- * 投影はvanilla公式APIと同一の数式に統一:
- *   GameRenderer#projectPointToScreen と同じく
- *   (worldPos - camera.position()) を Camera#getViewRotationProjectionMatrix
- *   (= projection * viewRotation の複合行列) で transform する。
- *   viewRotationMatrix は純回転(カメラ平行移動を含まない)のため、
- *   カメラ相対座標への変換が必須。
+ * 謚募ｽｱ縺ｯvanilla蜈ｬ蠑就PI縺ｨ蜷御ｸ縺ｮ謨ｰ蠑上↓邨ｱ荳:
+ *   GameRenderer#projectPointToScreen 縺ｨ蜷後§縺・
+ *   (worldPos - camera.position()) 繧・Camera#getViewRotationProjectionMatrix
+ *   (= projection * viewRotation 縺ｮ隍・粋陦悟・) 縺ｧ transform 縺吶ｋ縲・
+ *   viewRotationMatrix 縺ｯ邏泌屓霆｢(繧ｫ繝｡繝ｩ蟷ｳ陦檎ｧｻ蜍輔ｒ蜷ｫ縺ｾ縺ｪ縺・縺ｮ縺溘ａ縲・
+ *   繧ｫ繝｡繝ｩ逶ｸ蟇ｾ蠎ｧ讓吶∈縺ｮ螟画鋤縺悟ｿ・医・
  *
- * 最終描画座標はGUI scaled coordinate
+ * 譛邨よ緒逕ｻ蠎ｧ讓吶・GUI scaled coordinate
  *   x = (ndcX + 1) / 2 * guiScaledWidth
  *   y = (1 - ndcY) / 2 * guiScaledHeight
- * (NDCは左下原点/Y上方向、GUIは左上原点/Y下方向)。
+ * (NDC縺ｯ蟾ｦ荳句次轤ｹ/Y荳頑婿蜷代；UI縺ｯ蟾ｦ荳雁次轤ｹ/Y荳区婿蜷・縲・
  *
- * 性能:
- *   - 描画対象は最大 MAX_DRAWN 体(Targetは常に描画)
- *   - 早期除外: RANGE / DEAD / カメラ後方 / 完全画面外
- *   - Matrix4f/Vector4fは使い回し、ラベル文字列はスキャン更新時のみ生成
- *   - 診断HUD/ログはPIPELINE_DEBUG=true時のみ(本番はfalse)
+ * 諤ｧ閭ｽ:
+ *   - 謠冗判蟇ｾ雎｡縺ｯ譛螟ｧ MAX_DRAWN 菴・Target縺ｯ蟶ｸ縺ｫ謠冗判)
+ *   - 譌ｩ譛滄勁螟・ RANGE / DEAD / 繧ｫ繝｡繝ｩ蠕梧婿 / 螳悟・逕ｻ髱｢螟・
+ *   - Matrix4f/Vector4f縺ｯ菴ｿ縺・屓縺励√Λ繝吶Ν譁・ｭ怜・縺ｯ繧ｹ繧ｭ繝｣繝ｳ譖ｴ譁ｰ譎ゅ・縺ｿ逕滓・
+ *   - 險ｺ譁ｭHUD/繝ｭ繧ｰ縺ｯPIPELINE_DEBUG=true譎ゅ・縺ｿ(譛ｬ逡ｪ縺ｯfalse)
  */
 public class CornerEspOverlay implements HudElement {
-	// 色はGuiTheme(黒×紫トークン)から参照。ハードコードしない
+	// 濶ｲ縺ｯGuiTheme(鮟津礼ｴｫ繝医・繧ｯ繝ｳ)縺九ｉ蜿ら・縲ゅワ繝ｼ繝峨さ繝ｼ繝峨＠縺ｪ縺・
 	private static final int RGB_NORMAL = GuiTheme.ESP_NORMAL;
 	private static final int RGB_TARGET = GuiTheme.ESP_TARGET;
 	private static final int RGB_SPECIAL = GuiTheme.ESP_SPECIAL;
@@ -59,22 +59,22 @@ public class CornerEspOverlay implements HudElement {
 	private static final int RGB_GATE_READY = GuiTheme.SUCCESS;
 	private static final int RGB_GATE_WAIT = GuiTheme.TEXT_SECONDARY;
 	private static final int ALPHA_NORMAL_MAX = 150;
-	// Targetは通常Zealotよりopacity高め(AttackGate状態色と分離し常にaccent)
+	// Target縺ｯ騾壼ｸｸZealot繧医ｊopacity鬮倥ａ(AttackGate迥ｶ諷玖牡縺ｨ蛻・屬縺怜ｸｸ縺ｫaccent)
 	private static final int ALPHA_TARGET_MAX = 250;
 	private static final int ALPHA_SPECIAL_MAX = 190;
 	private static final int ALPHA_ID_TEXT = 120;
 	private static final double BOX_HALF_WIDTH = 0.3;
-	// Target Cornerは少し太い/少し長い(minimal design維持)
+	// Target Corner縺ｯ蟆代＠螟ｪ縺・蟆代＠髟ｷ縺・minimal design邯ｭ謖・
 	private static final double TARGET_CORNER_LEN_SCALE = 1.35;
-	/** 1フレーム最大描画体数(Target除く)。性能上限(定数化) */
+	/** 1繝輔Ξ繝ｼ繝譛螟ｧ謠冗判菴捺焚(Target髯､縺・縲よｧ閭ｽ荳企剞(螳壽焚蛹・ */
 	private static final int MAX_DRAWN = 16;
 
-	// パイプライン診断(NORMAL表示不具合調査用)。本番はfalse(診断HUD/ログ無効)
+	// 繝代う繝励Λ繧､繝ｳ險ｺ譁ｭ(NORMAL陦ｨ遉ｺ荳榊・蜷郁ｪｿ譟ｻ逕ｨ)縲よ悽逡ｪ縺ｯfalse(險ｺ譁ｭHUD/繝ｭ繧ｰ辟｡蜉ｹ)
 	private static final boolean PIPELINE_DEBUG = false;
-	// ターゲット1体の低頻度診断ログ間隔
+	// 繧ｿ繝ｼ繧ｲ繝・ヨ1菴薙・菴朱ｻ蠎ｦ險ｺ譁ｭ繝ｭ繧ｰ髢馴囈
 	private static final long TARGET_LOG_INTERVAL_MS = 2000;
 
-	// 固定ラベル(起動時に一度だけ生成。毎フレーム生成しない)
+	// 蝗ｺ螳壹Λ繝吶Ν(襍ｷ蜍墓凾縺ｫ荳蠎ｦ縺縺醍函謌舌よｯ弱ヵ繝ｬ繝ｼ繝逕滓・縺励↑縺・
 	private static final Component LABEL_TARGET = UiFont.text("TARGET");
 	private static final Component LABEL_GATE_READY = UiFont.text("READY");
 	private static final Component LABEL_GATE_WAIT = UiFont.text("WAIT");
@@ -85,11 +85,11 @@ public class CornerEspOverlay implements HudElement {
 	private final AttackGate attackGate;
 	private final Map<Integer, LabelCache> labels = new HashMap<>();
 
-	// 毎フレーム使い回すバッファ(アロケーション削減)
+	// 豈弱ヵ繝ｬ繝ｼ繝菴ｿ縺・屓縺吶ヰ繝・ヵ繧｡(繧｢繝ｭ繧ｱ繝ｼ繧ｷ繝ｧ繝ｳ蜑頑ｸ・
 	private final Matrix4f viewProjection = new Matrix4f();
 	private final Vector4f projOut = new Vector4f();
 
-	// フレーム計測カウンタ(HUD/debug参照用。本番ではログ出力しない)
+	// 繝輔Ξ繝ｼ繝險域ｸｬ繧ｫ繧ｦ繝ｳ繧ｿ(HUD/debug蜿ら・逕ｨ縲よ悽逡ｪ縺ｧ縺ｯ繝ｭ繧ｰ蜃ｺ蜉帙＠縺ｪ縺・
 	private int entries;
 	private int projected;
 	private int drawn;
@@ -106,7 +106,7 @@ public class CornerEspOverlay implements HudElement {
 	private String targetProjDetail;
 	private long lastTargetLog;
 
-	/** 最終フレームの描画統計(デバッグHUD用getter。本番ログは出さない) */
+	/** 譛邨ゅヵ繝ｬ繝ｼ繝縺ｮ謠冗判邨ｱ險・繝・ヰ繝・げHUD逕ｨgetter縲よ悽逡ｪ繝ｭ繧ｰ縺ｯ蜃ｺ縺輔↑縺・ */
 	public int getLastEntries() {
 		return entries;
 	}
@@ -165,9 +165,9 @@ public class CornerEspOverlay implements HudElement {
 			return;
 		}
 
-		// バニラのカメラ行列を取得(FOV/エフェクト込みで正確な投影)。
-		// CameraRenderStateを直接使うとHUD extract時点でのpopulate順序に依存するため、
-		// 実績のある mainCamera() から公式API経由で取得する。
+		// 繝舌ル繝ｩ縺ｮ繧ｫ繝｡繝ｩ陦悟・繧貞叙蠕・FOV/繧ｨ繝輔ぉ繧ｯ繝郁ｾｼ縺ｿ縺ｧ豁｣遒ｺ縺ｪ謚募ｽｱ)縲・
+		// CameraRenderState繧堤峩謗･菴ｿ縺・→HUD extract譎らせ縺ｧ縺ｮpopulate鬆・ｺ上↓萓晏ｭ倥☆繧九◆繧√・
+		// 螳溽ｸｾ縺ｮ縺ゅｋ mainCamera() 縺九ｉ蜈ｬ蠑就PI邨檎罰縺ｧ蜿門ｾ励☆繧九・
 		Camera camera = mc.gameRenderer.mainCamera();
 		camera.getViewRotationProjectionMatrix(viewProjection);
 		Vec3 camPos = camera.position();
@@ -198,16 +198,16 @@ public class CornerEspOverlay implements HudElement {
 			double maxX = 0;
 			double maxY = 0;
 			if (reject == null) {
-				// AABB: 生存中の実体が取れれば実ボックス、無ければスナップショット由来
+				// AABB: 逕溷ｭ倅ｸｭ縺ｮ螳滉ｽ薙′蜿悶ｌ繧後・螳溘・繝・け繧ｹ縲∫┌縺代ｌ縺ｰ繧ｹ繝翫ャ繝励す繝ｧ繝・ヨ逕ｱ譚･
 				AABB box = live != null
 						? live.getBoundingBox()
 						: new AABB(
 								snapshot.x() - BOX_HALF_WIDTH, snapshot.boxMinY(), snapshot.z() - BOX_HALF_WIDTH,
 								snapshot.x() + BOX_HALF_WIDTH, snapshot.boxMaxY(), snapshot.z() + BOX_HALF_WIDTH);
 
-				// 8隅を投影してスクリーン矩形へ。
-				// w <= eps (カメラ平面の後方) / 非有限 を reject する。
-				// 視錐台z判定は投影行列のz慣習(GL/DX)に依存しないよう使わない。
+				// 8髫・ｒ謚募ｽｱ縺励※繧ｹ繧ｯ繝ｪ繝ｼ繝ｳ遏ｩ蠖｢縺ｸ縲・
+				// w <= eps (繧ｫ繝｡繝ｩ蟷ｳ髱｢縺ｮ蠕梧婿) / 髱樊怏髯・繧・reject 縺吶ｋ縲・
+				// 隕夜倹蜿ｰz蛻､螳壹・謚募ｽｱ陦悟・縺ｮz諷｣鄙・GL/DX)縺ｫ萓晏ｭ倥＠縺ｪ縺・ｈ縺・ｽｿ繧上↑縺・・
 				boolean anyValid = false;
 				boolean allBehind = true;
 				minX = Double.MAX_VALUE;
@@ -242,7 +242,7 @@ public class CornerEspOverlay implements HudElement {
 						}
 						continue;
 					}
-					// NDC(左下原点) → GUI scaled coordinate(左上原点)
+					// NDC(蟾ｦ荳句次轤ｹ) 竊・GUI scaled coordinate(蟾ｦ荳雁次轤ｹ)
 					double sx = (ndcX + 1.0F) * 0.5 * guiW;
 					double sy = (1.0F - ndcY) * 0.5 * guiH;
 					anyValid = true;
@@ -266,7 +266,7 @@ public class CornerEspOverlay implements HudElement {
 				if (!anyValid) {
 					reject = allBehind ? "BEHIND_CAMERA" : "NO_VALID_CORNERS";
 				} else if (maxX < 0 || minX > guiW || maxY < 0 || minY > guiH) {
-					// 完全に画面外の矩形はスキップ(screen bounds culling)
+					// 螳悟・縺ｫ逕ｻ髱｢螟悶・遏ｩ蠖｢縺ｯ繧ｹ繧ｭ繝・・(screen bounds culling)
 					reject = "OFFSCREEN";
 				}
 			}
@@ -288,13 +288,13 @@ public class CornerEspOverlay implements HudElement {
 
 			projected++;
 
-			// 描画数上限(定数)。Targetは常に描画
+			// 謠冗判謨ｰ荳企剞(螳壽焚)縲５arget縺ｯ蟶ｸ縺ｫ謠冗判
 			if (drawn >= MAX_DRAWN && !isTarget) {
 				continue;
 			}
 
 			boolean isTargetDrawn = isTarget;
-			// Phase 6.6: 非Target Special Zealotはpurpleで識別(落ち着いたviolet)
+			// Phase 6.6: 髱杁arget Special Zealot縺ｯpurple縺ｧ隴伜挨(關ｽ縺｡逹縺・◆violet)
 			boolean isSpecial = ZealotDetector.typeOf(snapshot) == ZealotDetector.ZealotType.SPECIAL;
 			int baseColor = isTargetDrawn ? RGB_TARGET
 					: (isSpecial && MacroConfig.get().specialEspHighlight ? RGB_SPECIAL : RGB_NORMAL);
@@ -307,7 +307,7 @@ public class CornerEspOverlay implements HudElement {
 			drawCorners(graphics, minX, minY, maxX, maxY, lineWidth, lineColor,
 					isTargetDrawn ? TARGET_CORNER_LEN_SCALE : 1.0);
 
-			// ラベル: 文字列/Componentはスキャン更新時のみ生成(毎フレームのString.format回避)
+			// 繝ｩ繝吶Ν: 譁・ｭ怜・/Component縺ｯ繧ｹ繧ｭ繝｣繝ｳ譖ｴ譁ｰ譎ゅ・縺ｿ逕滓・(豈弱ヵ繝ｬ繝ｼ繝縺ｮString.format蝗樣∩)
 			LabelCache cache = labels.get(snapshot.id());
 			if (cache == null || cache.snapshot() != snapshot) {
 				cache = new LabelCache(snapshot,
@@ -323,12 +323,12 @@ public class CornerEspOverlay implements HudElement {
 			if (isTargetDrawn) {
 				int targetColor = withAlpha(RGB_TARGET, alpha);
 
-				// Aim Marker(Phase 4.0): ロック中Target 1体のみ。
-				// RENDER_SMOOTH時はrender controllerが計算した同じtime basisの
-				// Aim Pointをそのまま使用(表示とAimのtime axis統一)。
+				// Aim Marker(Phase 4.0): 繝ｭ繝・け荳ｭTarget 1菴薙・縺ｿ縲・
+				// RENDER_SMOOTH譎ゅ・render controller縺瑚ｨ育ｮ励＠縺溷酔縺・ime basis縺ｮ
+				// Aim Point繧偵◎縺ｮ縺ｾ縺ｾ菴ｿ逕ｨ(陦ｨ遉ｺ縺ｨAim縺ｮtime axis邨ｱ荳)縲・
 				AimSolution aim = aimSolver.getSolution();
 				if (aim.valid() && aim.entityId() == candidate.entityId() && live != null && live.isAlive()) {
-					// 同一time basis(RENDER_SMOOTH) or 直前のtick補間(fallback)
+					// 蜷御ｸtime basis(RENDER_SMOOTH) or 逶ｴ蜑阪・tick陬憺俣(fallback)
 					double[] marker = null;
 					if (rotationController.isRenderAimPointFresh()) {
 						marker = projectToGui(rotationController.getRenderAimX(),
@@ -354,8 +354,8 @@ public class CornerEspOverlay implements HudElement {
 					drawCentered(graphics, font, LABEL_TARGET, cx, y, targetColor);
 					drawCentered(graphics, font, cache.distText(), cx, y + font.lineHeight + 1, targetColor);
 
-					// Phase 5.0: Attack Gate indicator(Target 1体のみ、極小)
-					// AttackGate状態色はTarget色と分離(Target=accent / READY=success / WAIT=secondary)
+					// Phase 5.0: Attack Gate indicator(Target 1菴薙・縺ｿ縲∵･ｵ蟆・
+					// AttackGate迥ｶ諷玖牡縺ｯTarget濶ｲ縺ｨ蛻・屬(Target=accent / READY=success / WAIT=secondary)
 					AttackReadiness gate = attackGate.getReadiness();
 					if (gate.entityId() == candidate.entityId()) {
 						int gateColor = gate.ready() ? withAlpha(RGB_GATE_READY, 230) : withAlpha(RGB_GATE_WAIT, 180);
@@ -371,7 +371,7 @@ public class CornerEspOverlay implements HudElement {
 			int idY = (int) Math.round(maxY) + 2;
 			if (idY + font.lineHeight < guiH) {
 				graphics.text(font, cache.idText(),
-						(int) (cx - font.width(cache.idText()) / 2.0), idY, idColor, true);
+						(int) (cx - font.width(cache.idText()) / 2.0), idY, idColor, false);
 			}
 
 			drawn++;
@@ -391,28 +391,28 @@ public class CornerEspOverlay implements HudElement {
 	}
 
 	/**
-	 * パイプライン診断HUD(左上固定)。DEBUGモード併用で
-	 * 「登録経路の問題か」「projectionの問題か」を切り分ける。
+	 * 繝代う繝励Λ繧､繝ｳ險ｺ譁ｭHUD(蟾ｦ荳雁崋螳・縲・EBUG繝｢繝ｼ繝我ｽｵ逕ｨ縺ｧ
+	 * 縲檎匳骭ｲ邨瑚ｷｯ縺ｮ蝠城｡後°縲阪継rojection縺ｮ蝠城｡後°縲阪ｒ蛻・ｊ蛻・￠繧九・
 	 */
 	private void drawPipelineHud(GuiGraphicsExtractor graphics, Minecraft mc, String status) {
 		Font font = mc.font;
 		int x = 6;
 		int y = 96;
-		graphics.text(font, Component.literal("ESP PIPELINE " + status), x, y, GuiTheme.WARNING, true);
+		graphics.text(font, Component.literal("ESP PIPELINE " + status), x, y, GuiTheme.WARNING, false);
 		graphics.text(font, Component.literal(String.format(Locale.ROOT,
 				"entries=%d projected=%d drawn=%d", entries, projected, drawn)),
-				x, y + 12, GuiTheme.TEXT_SECONDARY, true);
+				x, y + 12, GuiTheme.TEXT_SECONDARY, false);
 		graphics.text(font, Component.literal(String.format(Locale.ROOT,
 				"behind=%d corner=%d off=%d rng=%d dead=%d",
 				cornersBehind, rejectedNoCorner, rejectedOffscreen, rejectedRange, rejectedDead)),
-				x, y + 24, GuiTheme.TEXT_SECONDARY, true);
-		// 固定位置の小さな矩形(HUD登録経路の疎通確認用)
+				x, y + 24, GuiTheme.TEXT_SECONDARY, false);
+		// 蝗ｺ螳壻ｽ咲ｽｮ縺ｮ蟆上＆縺ｪ遏ｩ蠖｢(HUD逋ｻ骭ｲ邨瑚ｷｯ縺ｮ逍朱夂｢ｺ隱咲畑)
 		graphics.fill(x, y + 40, x + 20, y + 60, GuiTheme.ACCENT);
 	}
 
 	/**
-	 * ターゲット1体のみ、低頻度でパイプライン詳細をログする。
-	 * reject理由: BEHIND_CAMERA / NO_VALID_CORNERS / OFFSCREEN / RANGE / DEAD /
+	 * 繧ｿ繝ｼ繧ｲ繝・ヨ1菴薙・縺ｿ縲∽ｽ朱ｻ蠎ｦ縺ｧ繝代う繝励Λ繧､繝ｳ隧ｳ邏ｰ繧偵Ο繧ｰ縺吶ｋ縲・
+	 * reject逅・罰: BEHIND_CAMERA / NO_VALID_CORNERS / OFFSCREEN / RANGE / DEAD /
 	 * NOT_IN_CANDIDATES / DRAWN
 	 */
 	private void logTargetDiagnostics(Minecraft mc, int guiW, int guiH) {
@@ -463,9 +463,9 @@ public class CornerEspOverlay implements HudElement {
 	}
 
 	/**
-	 * world 1点 → GUI scaled coordinate。
-	 * AABB 8隅投影と同一のパイプライン(viewProjection / camPos / w判定)を再利用する。
-	 * カメラ後方/非有限はnull。
+	 * world 1轤ｹ 竊・GUI scaled coordinate縲・
+	 * AABB 8髫・兜蠖ｱ縺ｨ蜷御ｸ縺ｮ繝代う繝励Λ繧､繝ｳ(viewProjection / camPos / w蛻､螳・繧貞・蛻ｩ逕ｨ縺吶ｋ縲・
+	 * 繧ｫ繝｡繝ｩ蠕梧婿/髱樊怏髯舌・null縲・
 	 */
 	private double[] projectToGui(double wx, double wy, double wz, Vec3 camPos, int guiW, int guiH) {
 		projOut.set(
@@ -489,25 +489,25 @@ public class CornerEspOverlay implements HudElement {
 	}
 
 	/**
-	 * Aim Pointレティクル: 9px角のコーナーブラケット + 中心点。
-	 * EntityボックスのコーナーESPと紛らわしくない小ささ。
+	 * Aim Point繝ｬ繝・ぅ繧ｯ繝ｫ: 9px隗偵・繧ｳ繝ｼ繝翫・繝悶Λ繧ｱ繝・ヨ + 荳ｭ蠢・せ縲・
+	 * Entity繝懊ャ繧ｯ繧ｹ縺ｮ繧ｳ繝ｼ繝翫・ESP縺ｨ邏帙ｉ繧上＠縺上↑縺・ｰ上＆縺輔・
 	 */
 	private void drawAimMarker(GuiGraphicsExtractor graphics, double sx, double sy, int color) {
 		int x = (int) Math.round(sx);
 		int y = (int) Math.round(sy);
-		// 左上
+		// 蟾ｦ荳・
 		graphics.fill(x - 4, y - 4, x - 1, y - 3, color);
 		graphics.fill(x - 4, y - 4, x - 3, y - 1, color);
-		// 右上
+		// 蜿ｳ荳・
 		graphics.fill(x + 2, y - 4, x + 5, y - 3, color);
 		graphics.fill(x + 4, y - 4, x + 5, y - 1, color);
-		// 右下
+		// 蜿ｳ荳・
 		graphics.fill(x + 2, y + 3, x + 5, y + 4, color);
 		graphics.fill(x + 4, y + 2, x + 5, y + 4, color);
-		// 左下
+		// 蟾ｦ荳・
 		graphics.fill(x - 4, y + 3, x - 1, y + 4, color);
 		graphics.fill(x - 4, y + 2, x - 3, y + 4, color);
-		// 中心点
+		// 荳ｭ蠢・せ
 		graphics.fill(x, y, x + 1, y + 1, color);
 	}
 
@@ -523,16 +523,16 @@ public class CornerEspOverlay implements HudElement {
 		int ilen = (int) Math.round(len);
 		int lw = Math.max(1, lineWidth);
 
-		// 左上
+		// 蟾ｦ荳・
 		graphics.fill(ix1, iy1, ix1 + ilen, iy1 + lw, color);
 		graphics.fill(ix1, iy1, ix1 + lw, iy1 + ilen, color);
-		// 右上
+		// 蜿ｳ荳・
 		graphics.fill(ix2 - ilen, iy1, ix2, iy1 + lw, color);
 		graphics.fill(ix2 - lw, iy1, ix2, iy1 + ilen, color);
-		// 右下
+		// 蜿ｳ荳・
 		graphics.fill(ix2 - ilen, iy2 - lw, ix2, iy2, color);
 		graphics.fill(ix2 - lw, iy2 - ilen, ix2, iy2, color);
-		// 左下
+		// 蟾ｦ荳・
 		graphics.fill(ix1, iy2 - lw, ix1 + ilen, iy2, color);
 		graphics.fill(ix1, iy2 - ilen, ix1 + lw, iy2, color);
 	}
@@ -542,7 +542,7 @@ public class CornerEspOverlay implements HudElement {
 			return;
 		}
 		graphics.text(font, text,
-				(int) (centerX - font.width(text) / 2.0), y, color, true);
+				(int) (centerX - font.width(text) / 2.0), y, color, false);
 	}
 
 	private static int alphaFor(double distance, double range, double fadeStart, int maxAlpha) {
