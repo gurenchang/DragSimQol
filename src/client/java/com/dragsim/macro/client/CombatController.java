@@ -549,6 +549,14 @@ public class CombatController {
 			rotationController.setBallisticAim(scytheInterceptX, scytheInterceptY, scytheInterceptZ);
 		}
 
+		// Hold Right Click mode: Use入力はScytheHoldUseが所有する。
+		// この経路のuseItem/発射は行わない(単一操作の単一経路を保証)。
+		// 観測・速度推定・偏差照準(ballistic aim)は継続する。
+		if (config.getFrozenScytheUseMode() != FrozenScytheUseMode.AIMED) {
+			scytheSkipReason = "HOLD_MODE";
+			return;
+		}
+
 		// ---- 同一tickの射程/視線/遮蔽(発射判定用の最新値。Gate READYキャッシュには依存しない) ----
 		double distance = Math.sqrt(live.getBoundingBox().distanceToSqr(eye));
 		boolean inRange = distance <= maxFlight;

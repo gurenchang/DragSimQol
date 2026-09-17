@@ -49,8 +49,10 @@ public final class MacroConfig {
 	public double frozenScytheRangeBlocks = 15.0;
 	/** 弾速(blocks/second)。観測概算10〜13.3の範囲内の仮値(実測未確認) */
 	public double frozenScytheProjectileSpeed = 12.0;
-	/** 発射試行間隔(ms)。MOD側の初期間隔であり武器の実クールダウンではない */
+	/** 発射試行間隔(ms)。MOD側の初期間隔であり武器の実クールダウンではない。Aimed専用 */
 	public long frozenScytheFireIntervalMs = 600;
+	/** 使用モード。AIMED=照準自動発射 / HOLD_RIGHT_CLICK=Use入力保持。旧config既定はAIMED */
+	public String frozenScytheUseMode = "AIMED";
 
 	// ==== tunables ====
 	public double meleePreferredRange = 2.8;
@@ -288,6 +290,19 @@ public final class MacroConfig {
 		frozenScytheFireIntervalMs = Double.isFinite(value)
 				? Math.max(200L, Math.min(5000L, value))
 				: 600L;
+		save();
+	}
+
+	public FrozenScytheUseMode getFrozenScytheUseMode() {
+		try {
+			return FrozenScytheUseMode.valueOf(frozenScytheUseMode);
+		} catch (Exception e) {
+			return FrozenScytheUseMode.AIMED;
+		}
+	}
+
+	public void setFrozenScytheUseMode(String mode) {
+		frozenScytheUseMode = mode;
 		save();
 	}
 

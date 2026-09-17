@@ -51,6 +51,18 @@ public class MacroController {
 	private boolean debugCandidates = false;
 	private EspMode espMode = EspMode.OFF;
 	private java.util.function.BooleanSupplier combatLockSupplier = () -> false;
+	/** マクロOFF時の即時解除フック(Frozen Scythe Hold入力など) */
+	private Runnable macroOffListener;
+
+	public void setMacroOffListener(Runnable listener) {
+		macroOffListener = listener;
+	}
+
+	private void onMacroOff() {
+		if (macroOffListener != null) {
+			macroOffListener.run();
+		}
+	}
 
 	/** CombatControllerのcombat session状態をTargetSelectorのstickinessへ渡す軽量DI */
 	public void setCombatLockSupplier(BooleanSupplier supplier) {
@@ -154,6 +166,7 @@ public class MacroController {
 			return;
 		}
 		setState(State.IDLE);
+		onMacroOff();
 		seen.clear();
 		lastSnapshots = List.of();
 		targetSelector.resetSessionState();
@@ -175,6 +188,7 @@ public class MacroController {
 	 */
 	public void resetSession(String reason) {
 		MacroLogger.get().log("SESSION_RESET reason=" + reason);
+		onMacroOff();
 		state = State.IDLE;
 		seen.clear();
 		lastSnapshots = List.of();

@@ -20,15 +20,18 @@ public class DebugHud implements HudElement {
 	private final AttackGate attackGate;
 	private final CombatController combatController;
 	private final ApproachPlanner approachPlanner;
+	private final ScytheHoldUse scytheHoldUse;
 
 	public DebugHud(MacroController controller, AimSolver aimSolver, RotationController rotationController,
-			AttackGate attackGate, CombatController combatController, ApproachPlanner approachPlanner) {
+			AttackGate attackGate, CombatController combatController, ApproachPlanner approachPlanner,
+			ScytheHoldUse scytheHoldUse) {
 		this.controller = controller;
 		this.aimSolver = aimSolver;
 		this.rotationController = rotationController;
 		this.attackGate = attackGate;
 		this.combatController = combatController;
 		this.approachPlanner = approachPlanner;
+		this.scytheHoldUse = scytheHoldUse;
 	}
 
 	@Override
@@ -199,21 +202,24 @@ public class DebugHud implements HudElement {
 					+ "  Timeout: " + combat.getWeaponProfile().maxCombatTimeMs() + "ms"
 					+ "  lastSkip=" + combat.getLastSkipReason()),
 					x, kx + 24 + 24, color, false);
-			// Frozen Scythe: mode/target/wait reason/attempts(診断)/next fire/motion/approach
+			// Frozen Scythe: mode/use mode/auto use/target uuid/wait/attempts/next fire/motion
 			String scytheUuid = combat.getSessionTargetUuid();
 			if (scytheUuid != null && scytheUuid.length() > 8) {
 				scytheUuid = scytheUuid.substring(0, 8);
 			}
 			graphics.text(font, Component.literal(String.format(Locale.ROOT,
-					" Scythe: mode=%s target=#%d wait=%s attempts=%d nextFire=%dms",
-					MacroConfig.get().getCombatMode(), combat.getSessionTargetId(),
-					combat.getScytheSkipReason(), combat.getScytheAttempts(),
-					combat.getScytheMsUntilNextFire())), x, kx + 24 + 36, color, false);
+					" Scythe: mode=%s use=%s autoUse=%s(%s) target=#%d uuid=%s",
+					MacroConfig.get().getCombatMode(),
+					MacroConfig.get().getFrozenScytheUseMode(),
+					scytheHoldUse.isHolding(), scytheHoldUse.getLastStopReason(),
+					combat.getSessionTargetId(), scytheUuid != null ? scytheUuid : "-")),
+					x, kx + 24 + 36, color, false);
 			graphics.text(font, Component.literal(String.format(Locale.ROOT,
-					" Scythe: uuid=%s intercept=%s motion=%s approach=%s",
-					scytheUuid != null ? scytheUuid : "-",
-					combat.isScytheInterceptValid(), combat.isScytheMotionValid(),
-					approachPlanner.getState())), x, kx + 24 + 48, color, false);
+					" Scythe: wait=%s attempts=%d nextFire=%dms intercept=%s motion=%s approach=%s",
+					combat.getScytheSkipReason(), combat.getScytheAttempts(),
+					combat.getScytheMsUntilNextFire(), combat.isScytheInterceptValid(),
+					combat.isScytheMotionValid(), approachPlanner.getState())),
+					x, kx + 24 + 48, color, false);
 
 			// Phase 6.1: Approach状態
 			int ax = kx + 60;

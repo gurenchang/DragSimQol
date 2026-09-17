@@ -4,6 +4,7 @@ import com.dragsim.macro.client.ApproachPlanner;
 import com.dragsim.macro.client.CombatController;
 import com.dragsim.macro.client.CombatMode;
 import com.dragsim.macro.client.EspMode;
+import com.dragsim.macro.client.FrozenScytheUseMode;
 import com.dragsim.macro.client.ItemBinding;
 import com.dragsim.macro.client.MacroConfig;
 import com.dragsim.macro.client.MacroController;
@@ -338,6 +339,24 @@ public class DragsimMacroScreen extends Screen {
 						},
 						() -> bindHeld("warp")));
 				settings.add(header("FROZEN SCYTHE"));
+				settings.add(new DropdownSetting("Scythe Use Mode",
+						"Hold Use Item while the macro is on and the bound Frozen Scythe is held."
+								+ " Independent of the Attack toggle.",
+						new String[]{"AIMED", "HOLD_RIGHT_CLICK"},
+						() -> MacroConfig.get().getFrozenScytheUseMode().name(),
+						v -> {
+							MacroConfig.get().setFrozenScytheUseMode(v);
+							settingsPerCategory.remove(2);
+						}));
+				if (MacroConfig.get().getFrozenScytheUseMode() == FrozenScytheUseMode.HOLD_RIGHT_CLICK) {
+					settings.add(header("INTERVAL IS AIMED-ONLY"));
+				} else {
+					settings.add(new SliderSetting("Scythe Interval", "Fire attempt interval (ms, Aimed mode only)",
+							200.0, 2000.0, 50.0,
+							() -> (double) MacroConfig.get().getFrozenScytheFireIntervalMs(),
+							v -> MacroConfig.get().setFrozenScytheFireIntervalMs((long) (double) v),
+							v -> String.format(Locale.ROOT, "%.0fms", v)));
+				}
 				settings.add(new SliderSetting("Scythe Range", "Effective range (blocks, provisional)",
 						8.0, 24.0, 0.5,
 						() -> MacroConfig.get().getFrozenScytheRangeBlocks(),

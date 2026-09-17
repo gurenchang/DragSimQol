@@ -18,13 +18,15 @@ public final class LifecycleSafety {
 
 	public static void register(MacroController controller, RotationController rotationController,
 			AttackGate attackGate, CombatController combatController, ApproachPlanner approachPlanner,
-			AimSolver aimSolver) {
+			AimSolver aimSolver, ScytheHoldUse scytheHoldUse) {
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
+			scytheHoldUse.release("WORLD_LOST");
 			resetRuntime(controller, rotationController, attackGate, combatController,
 					approachPlanner, aimSolver, mc, "DISCONNECT");
 		});
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, mc) -> {
+			scytheHoldUse.release("WORLD_LOST");
 			resetRuntime(controller, rotationController, attackGate, combatController,
 					approachPlanner, aimSolver, mc, "JOIN");
 		});

@@ -34,6 +34,9 @@ public class DragsimMacroClient implements ClientModInitializer {
 		ApproachPlanner approachPlanner = new ApproachPlanner(controller, rotationController, attackGate);
 		CombatController combatController = new CombatController(controller, rotationController, attackGate,
 				approachPlanner, aimSolver);
+		// Frozen Scythe "Hold Right Click"入力管理(対象処理と独立)
+		ScytheHoldUse scytheHoldUse = new ScytheHoldUse(controller);
+		controller.setMacroOffListener(() -> scytheHoldUse.release("MACRO_OFF"));
 		AttackCommand.register(attackGate, combatController);
 		ApproachCommand.register(attackGate, approachPlanner);
 		WeaponCommand.register();
@@ -86,7 +89,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 				GLFW.GLFW_KEY_G,
 				DRAGSIM_CATEGORY));
 
-		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_hud"), new DebugHud(controller, aimSolver, rotationController, attackGate, combatController, approachPlanner));
+		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_hud"), new DebugHud(controller, aimSolver, rotationController, attackGate, combatController, approachPlanner, scytheHoldUse));
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp"), new EspOverlay(controller, aimSolver));
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp_normal"), new CornerEspOverlay(controller, aimSolver, rotationController, attackGate));
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_path"), new PathDebugOverlay(controller, approachPlanner));
@@ -142,7 +145,10 @@ public class DragsimMacroClient implements ClientModInitializer {
 
 		// Phase 7.0: disconnect/join lifecycle safety
 		LifecycleSafety.register(controller, rotationController, attackGate, combatController,
-				approachPlanner, aimSolver);
+				approachPlanner, aimSolver, scytheHoldUse);
+
+		// Hold Right Click入力はvanilla keybind読み取り前に確定させる(START_CLIENT_TICK)
+		ClientTickEvents.START_CLIENT_TICK.register(scytheHoldUse::tickStart);
 
 		DragsimMacroMod.LOGGER.info("ZealotDebug (Phase 1 entity scanner) initialized");
 	}
