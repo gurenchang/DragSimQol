@@ -4,7 +4,11 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "ScytheHoldMinecraftMixin",
-    "MiningCameraMixin"
+    "MiningCameraMixin",
+    "MiningBotMouseHandlerMixin",
+    "FullbrightLightmapMixin",
+    "MiningBotBreakObservationMixin",
+    "MiningBotServerBlockUpdateMixin"
   ],
   "injectors": {
     "defaultRequire": 1

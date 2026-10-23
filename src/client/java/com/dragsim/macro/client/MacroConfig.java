@@ -116,6 +116,8 @@ public final class MacroConfig {
 	public boolean attackSpecialZealot = false;
 	public long specialCombatTimeoutMs = 10000;
 	public boolean specialEspHighlight = true;
+	/** Client-only lightmap boost; default OFF and independent from macro state. */
+	public boolean fullbrightEnabled = false;
 
 	// ==== Target filters(Phase 7.0) ====
 	public boolean targetNormalZealot = true;

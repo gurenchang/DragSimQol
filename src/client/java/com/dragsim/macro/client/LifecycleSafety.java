@@ -18,12 +18,14 @@ public final class LifecycleSafety {
 
 	public static void register(MacroController controller, RotationController rotationController,
 			AttackGate attackGate, CombatController combatController, ApproachPlanner approachPlanner,
-			AimSolver aimSolver, ScytheHoldUse scytheHoldUse, MiningController mining) {
+			AimSolver aimSolver, ScytheHoldUse scytheHoldUse, MiningController mining,
+			ObsidianController obsidian) {
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
 			scytheHoldUse.release("WORLD_LOST");
 			if (mining != null) {
 				mining.stop(mc, "WORLD_LOST");
 			}
+			if (obsidian != null) obsidian.stop(mc, "WORLD_LOST");
 			resetRuntime(controller, rotationController, attackGate, combatController,
 					approachPlanner, aimSolver, mc, "DISCONNECT");
 		});
@@ -33,6 +35,7 @@ public final class LifecycleSafety {
 			if (mining != null) {
 				mining.stop(mc, "WORLD_LOST");
 			}
+			if (obsidian != null) obsidian.stop(mc, "WORLD_LOST");
 			resetRuntime(controller, rotationController, attackGate, combatController,
 					approachPlanner, aimSolver, mc, "JOIN");
 		});

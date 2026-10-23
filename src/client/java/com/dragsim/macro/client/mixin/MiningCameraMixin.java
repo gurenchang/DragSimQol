@@ -32,4 +32,19 @@ abstract class MiningCameraMixin {
 			return vanilla;
 		}
 	}
+
+	@Redirect(method = "alignWithEntity", at = @At(value = "INVOKE",
+			target = "Lnet/minecraft/world/entity/Entity;getViewXRot(F)F", ordinal = 1))
+	private float dragsim$miningSmoothCameraPitch(Entity entity, float partialTick) {
+		float vanilla = entity.getViewXRot(partialTick);
+		try {
+			Minecraft mc = Minecraft.getInstance();
+			boolean own = mc.player != null && entity == mc.player;
+			boolean uiClear = mc.screen == null;
+			return MiningCameraSmoothing.resolvePitch(own, entity.isPassenger(), uiClear,
+					entity.isAlive(), partialTick, vanilla);
+		} catch (Exception e) {
+			return vanilla;
+		}
+	}
 }

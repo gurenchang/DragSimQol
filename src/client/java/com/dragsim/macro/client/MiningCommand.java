@@ -12,11 +12,11 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
-/** /mining コマンド群。表示は英語。 */
+/** /routewalker command group with /mining as a compatibility alias. */
 public final class MiningCommand {
 	/** 旧accelerationコマンドの互換応答。設定は変えない。 */
 	public static final String ACCEL_RETIRED_MESSAGE =
-			"[DragSim] Mining rotation is linear; acceleration is no longer used.";
+			"[DragSim] Route Walker rotation is linear; acceleration is no longer used.";
 
 	private MiningCommand() {
 	}
@@ -26,24 +26,13 @@ public final class MiningCommand {
 			var root = ClientCommands.literal("mining");
 
 			var route = ClientCommands.literal("route");
-			route.then(ClientCommands.literal("add").executes(ctx -> {
-				Minecraft mc = Minecraft.getInstance();
-				if (mc.player == null) {
-					feedback(ctx.getSource(), "[DragSim] Mining route add failed — no active world");
-					return Command.SINGLE_SUCCESS;
-				}
-				String err = mining.addNode(mc.player.getX(), mc.player.getY(), mc.player.getZ());
-				if (err != null) {
-					feedback(ctx.getSource(), "[DragSim] Mining route add rejected — " + err);
-				} else {
-					int n = mining.nodeCount();
-					var added = mining.routeSnapshot().get(n - 1);
-					feedback(ctx.getSource(), String.format(Locale.ROOT,
-							"[DragSim] Mining route node #%d added (%.2f, %.2f, %.2f)",
-							n, added.x(), added.y(), added.z()));
-				}
-				return Command.SINGLE_SUCCESS;
-			}));
+			var add = ClientCommands.literal("add");
+			add.executes(ctx -> addCurrentPosition(ctx.getSource(), mining,
+					mining.nodeCount() + 1, false));
+			add.then(ClientCommands.argument("index", IntegerArgumentType.integer(1))
+					.executes(ctx -> addCurrentPosition(ctx.getSource(), mining,
+							IntegerArgumentType.getInteger(ctx, "index"), true)));
+			route.then(add);
 			route.then(ClientCommands.literal("remove")
 					.then(ClientCommands.argument("index", IntegerArgumentType.integer(1))
 							.executes(ctx -> {
@@ -51,33 +40,35 @@ public final class MiningCommand {
 								String err = mining.removeNode(index);
 								if (err != null) {
 									feedback(ctx.getSource(),
-											"[DragSim] Mining route remove failed — " + err);
+											"[DragSim] Route Walker route remove failed — " + err);
 								} else {
-									feedback(ctx.getSource(), "[DragSim] Mining route node #"
+									feedback(ctx.getSource(), "[DragSim] Route Walker node #"
 											+ index + " removed (" + mining.nodeCount() + " nodes)");
 								}
 								return Command.SINGLE_SUCCESS;
 							})));
 			route.then(ClientCommands.literal("clear").executes(ctx -> {
-				mining.clearRoute();
-				feedback(ctx.getSource(), "[DragSim] Mining route cleared");
+				String err = mining.clearRouteChecked();
+				feedback(ctx.getSource(), err == null
+						? "[DragSim] Route Walker route cleared"
+						: "[DragSim] Route Walker route clear failed — " + err);
 				return Command.SINGLE_SUCCESS;
 			}));
 			route.then(ClientCommands.literal("show")
 					.then(ClientCommands.literal("on").executes(ctx -> {
 						mining.getSettings().setShowRoute(true);
-						feedback(ctx.getSource(), "[DragSim] Mining route display ON");
+						feedback(ctx.getSource(), "[DragSim] Route Walker route display ON");
 						return Command.SINGLE_SUCCESS;
 					}))
 					.then(ClientCommands.literal("off").executes(ctx -> {
 						mining.getSettings().setShowRoute(false);
-						feedback(ctx.getSource(), "[DragSim] Mining route display OFF");
+						feedback(ctx.getSource(), "[DragSim] Route Walker route display OFF");
 						return Command.SINGLE_SUCCESS;
 					})));
 			route.then(ClientCommands.literal("list").executes(ctx -> {
 				List<MiningRouteNode> nodes = mining.routeSnapshot();
 				if (nodes.isEmpty()) {
-					feedback(ctx.getSource(), "[DragSim] Mining route is empty");
+					feedback(ctx.getSource(), "[DragSim] Route Walker route is empty");
 				} else {
 					int limit = Math.min(nodes.size(), 20);
 					for (int i = 0; i < limit; i++) {
@@ -105,14 +96,14 @@ public final class MiningCommand {
 								double v = DoubleArgumentType.getDouble(ctx, "degreesPerSecond");
 								mining.getSettings().setTurnSpeedDps(v);
 								feedback(ctx.getSource(), String.format(Locale.ROOT,
-										"[DragSim] Mining turn speed %.0f deg/s",
+										"[DragSim] Route Walker turn speed %.0f deg/s",
 										mining.getSettings().getTurnSpeedDps()));
 								return Command.SINGLE_SUCCESS;
 							})));
 			rotation.then(ClientCommands.literal("reset").executes(ctx -> {
 				mining.getSettings().resetTurnSpeed();
 				feedback(ctx.getSource(), String.format(Locale.ROOT,
-						"[DragSim] Mining turn speed reset to %.0f deg/s",
+						"[DragSim] Route Walker turn speed reset to %.0f deg/s",
 						mining.getSettings().getTurnSpeedDps()));
 				return Command.SINGLE_SUCCESS;
 			}));
@@ -132,12 +123,12 @@ public final class MiningCommand {
 				String state = mining.isActive()
 						? (mining.isJoining() ? "JOINING" : "ON") : "OFF";
 				feedback(ctx.getSource(), String.format(Locale.ROOT,
-						"[DragSim] Mining %s — nodes=%d target=#%d laps=%d lastStop=%s",
+						"[DragSim] Route Walker %s — nodes=%d target=#%d laps=%d lastStop=%s",
 						state, mining.nodeCount(),
 						mining.nodeCount() == 0 ? 0 : mining.currentTarget1Based(),
 						mining.laps(), mining.getStopReason()));
 				feedback(ctx.getSource(), String.format(Locale.ROOT,
-						"[DragSim] Mining settings — turnMode=%s turnSpeed=%.0f deg/s showRoute=%s",
+						"[DragSim] Route Walker settings — turnMode=%s turnSpeed=%.0f deg/s showRoute=%s",
 						MiningSettings.TURN_MODE,
 						mining.getSettings().getTurnSpeedDps(),
 						mining.getSettings().isShowRoute() ? "ON" : "OFF"));
@@ -147,16 +138,37 @@ public final class MiningCommand {
 			root.then(ClientCommands.literal("stop").executes(ctx -> {
 				Minecraft mc = Minecraft.getInstance();
 				mining.stop(mc, "MANUAL_STOP");
-				feedback(ctx.getSource(), "[DragSim] Mining OFF — manual stop");
+				feedback(ctx.getSource(), "[DragSim] Route Walker OFF — manual stop");
 				return Command.SINGLE_SUCCESS;
 			}));
 
-			dispatcher.register(root);
+			var miningRoot = dispatcher.register(root);
+			dispatcher.register(ClientCommands.literal("routewalker").redirect(miningRoot));
 		});
 	}
 
 	private static void feedback(FabricClientCommandSource source, String message) {
 		source.sendFeedback(Component.literal(message));
 		MacroLogger.get().log(message);
+	}
+
+	private static int addCurrentPosition(FabricClientCommandSource source, MiningController mining,
+			int index1Based, boolean inserting) {
+		Minecraft mc = Minecraft.getInstance();
+		if (mc == null || mc.player == null || mc.level == null) {
+			feedback(source, "[DragSim] Route Walker route add failed — no active world");
+			return Command.SINGLE_SUCCESS;
+		}
+		String err = mining.insertNode(index1Based, mc.player.getX(), mc.player.getY(), mc.player.getZ());
+		if (err != null) {
+			feedback(source, "[DragSim] Route Walker route add rejected — " + err);
+			return Command.SINGLE_SUCCESS;
+		}
+		var inserted = mining.routeSnapshot().get(index1Based - 1);
+		feedback(source, String.format(Locale.ROOT,
+				"[DragSim] Route Walker node #%d %s (%.2f, %.2f, %.2f)",
+				index1Based, inserting ? "inserted" : "added",
+				inserted.x(), inserted.y(), inserted.z()));
+		return Command.SINGLE_SUCCESS;
 	}
 }

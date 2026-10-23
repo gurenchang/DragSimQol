@@ -106,12 +106,8 @@ public final class MiningRouteOverlay implements HudElement {
 		if (view.nodes().isEmpty()) {
 			return;
 		}
-		// 描くルートと同じworld/dimensionのときだけ表示する。
-		if (!MiningController.sameWorld(view.worldId(), MiningController.currentWorldId(mc))
-				|| !view.dimension().isEmpty()
-						&& !view.dimension().equals(MiningController.currentDimension(mc))) {
-			return;
-		}
+		// Route nodes are saved coordinates. Legacy world/dimension metadata is
+		// retained in the view but does not hide coordinates from the overlay.
 		refreshCache(view);
 
 		Camera camera = mc.gameRenderer.getMainCamera();

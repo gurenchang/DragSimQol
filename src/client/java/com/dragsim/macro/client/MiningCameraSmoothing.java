@@ -9,26 +9,51 @@ package com.dragsim.macro.client;
  * tick状態を進めない。停止・再開時は古いsnapshotを捨てる(invalidate)。
  */
 public final class MiningCameraSmoothing {
+	public enum Owner { NONE, ROUTE_WALKER, MINING_BOT }
+
 	private static double previousYaw;
 	private static double currentYaw;
-	private static boolean valid;
+	private static double previousPitch;
+	private static double currentPitch;
+	private static boolean smoothPitch;
+	private static Owner owner = Owner.NONE;
 
 	private MiningCameraSmoothing() {
 	}
 
 	/** tick確定値の公開。連続角のまま保持し、正規化は補間後に行う。 */
 	public static void publish(double previousContinuous, double currentContinuous) {
+		publishRoute(previousContinuous, currentContinuous);
+	}
+
+	public static void publishRoute(double previousContinuous, double currentContinuous) {
 		previousYaw = previousContinuous;
 		currentYaw = currentContinuous;
-		valid = true;
+		previousPitch = 90.0;
+		currentPitch = 90.0;
+		smoothPitch = false;
+		owner = Owner.ROUTE_WALKER;
+	}
+
+	public static void publishObsidian(double prevYaw, double yaw, double prevPitch, double pitch) {
+		previousYaw = prevYaw;
+		currentYaw = yaw;
+		previousPitch = prevPitch;
+		currentPitch = pitch;
+		smoothPitch = true;
+		owner = Owner.MINING_BOT;
 	}
 
 	public static void invalidate() {
-		valid = false;
+		owner = Owner.NONE;
+	}
+
+	public static void invalidate(Owner releasing) {
+		if (owner == releasing) owner = Owner.NONE;
 	}
 
 	public static boolean isValid() {
-		return valid;
+		return owner != Owner.NONE;
 	}
 
 	/** tick側のテスト用に現在のsnapshotを読む。 */
@@ -54,9 +79,18 @@ public final class MiningCameraSmoothing {
 	 */
 	public static float resolve(boolean isOwnPlayer, boolean passenger, boolean uiClear,
 			boolean alive, float partialTick, float vanillaYaw) {
-		if (!valid || !isOwnPlayer || passenger || !uiClear || !alive) {
+		if (!isValid() || !isOwnPlayer || passenger || !uiClear || !alive) {
 			return vanillaYaw;
 		}
 		return (float) lerpAngle(previousYaw, currentYaw, partialTick);
+	}
+
+	public static float resolvePitch(boolean isOwnPlayer, boolean passenger, boolean uiClear,
+			boolean alive, float partialTick, float vanillaPitch) {
+		if (!isValid() || !smoothPitch || !isOwnPlayer || passenger || !uiClear || !alive) {
+			return vanillaPitch;
+		}
+		double t = Math.max(0.0, Math.min(1.0, partialTick));
+		return (float) (previousPitch + (currentPitch - previousPitch) * t);
 	}
 }

@@ -42,13 +42,17 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// 採掘マクロ(独立Controller。戦闘とは排他)
 		MiningController mining = new MiningController(controller);
 		MiningCommand.register(mining);
+		ObsidianController obsidian = new ObsidianController();
+		ObsidianCommand.register(obsidian);
 		ScreenEvents.BEFORE_INIT.register((mc, screen, width, height) -> {
 			scytheHoldUse.release("GUI_OPEN");
 			mining.stop(mc, "GUI_OPENED");
+			obsidian.stop(mc, "GUI_OPENED");
 		});
 		ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> {
 			scytheHoldUse.release("CLIENT_STOPPING");
 			mining.stop(mc, "CLIENT_STOPPING");
+			obsidian.stop(mc, "CLIENT_STOPPING");
 		});
 		AttackCommand.register(attackGate, combatController);
 		ApproachCommand.register(attackGate, approachPlanner);
@@ -63,7 +67,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 			dispatcher.register(ClientCommands
 					.literal("zealotgui").executes(ctx -> {
 						openGui(Minecraft.getInstance(), controller, rotationController,
-								attackGate, combatController, approachPlanner, mining);
+								attackGate, combatController, approachPlanner, mining, obsidian);
 						return com.mojang.brigadier.Command.SINGLE_SUCCESS;
 					}));
 		});
@@ -106,6 +110,11 @@ public class DragsimMacroClient implements ClientModInitializer {
 				InputConstants.Type.KEYSYM,
 				GLFW.GLFW_KEY_H,
 				DRAGSIM_CATEGORY));
+		KeyMapping obsidianToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.dragsimmacro.obsidian_toggle",
+				InputConstants.Type.KEYSYM,
+				GLFW.GLFW_KEY_J,
+				DRAGSIM_CATEGORY));
 
 		// GをvanillaのUse読み取りより前に処理する。OFFしたtickの自動使用を止める。
 		// 開始・停止キーはフォーカス中にだけ受け付ける。非フォーカス中の残留clickは実行しない。
@@ -117,7 +126,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 			if (toggleRequested && mc.screen == null && mc.isWindowActive()) {
 				if (mining.isActive()) {
 					MacroNotifications.send(mc,
-							"[DragSim] Macro cannot start — mining macro is active");
+							"[DragSim] Cannot start Combat Macro — Route Walker is active");
 					MacroLogger.get().log("MACRO_ON_REJECTED reason=MINING_ACTIVE");
 				} else {
 					controller.toggle();
@@ -129,6 +138,11 @@ public class DragsimMacroClient implements ClientModInitializer {
 			}
 			if (miningToggleRequested && mc.screen == null && mc.isWindowActive()) {
 				mining.toggle(mc);
+			}
+			boolean obsidianToggleRequested = false;
+			while (obsidianToggleKey.consumeClick()) obsidianToggleRequested = true;
+			if (obsidianToggleRequested && mc.screen == null && mc.isWindowActive()) {
+				obsidian.toggle(mc);
 			}
 			scytheHoldUse.tickStart(mc);
 		});
@@ -144,6 +158,10 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// 採掘中は戦闘側が採掘入力・回転を上書きしないよう調停する。
 		// 戦闘の保存設定は書き換えず、採掘停止後に戦闘は自動開始しない。
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+			if (obsidian.isActive()) {
+				obsidian.tickEnd(mc);
+				return;
+			}
 			if (mining.isActive()) {
 				mining.tickEnd(mc);
 				return;
@@ -153,7 +171,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 			}
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			if (mining.isActive()) {
+			if (mining.isActive() || obsidian.isActive()) {
 				return;
 			}
 			if (!(mc.screen instanceof DragsimMacroScreen)) {
@@ -163,12 +181,12 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// combat/approachをrotation tickより先に実行する:
 		// CombatControllerが算出した迎撃点を同tickのrotationで使用する(1tick遅れの排除)。
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			if (!mining.isActive()) {
+			if (!mining.isActive() && !obsidian.isActive()) {
 				combatController.tick(mc);
 			}
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			if (!mining.isActive()) {
+			if (!mining.isActive() && !obsidian.isActive()) {
 				approachPlanner.tick(mc);
 			}
 		});
@@ -181,9 +199,9 @@ public class DragsimMacroClient implements ClientModInitializer {
 			}
 			while (guiKey.consumeClick()) {
 				openGui(mc, controller, rotationController, attackGate, combatController, approachPlanner,
-						mining);
+						mining, obsidian);
 			}
-			if (mining.isActive()) {
+			if (mining.isActive() || obsidian.isActive()) {
 				return;
 			}
 			// Target探索ではなくAimSolutionのみ入力
@@ -200,7 +218,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 				return;
 			}
 			// 採掘中はtick側が回転を所有する。render側の戦闘追従で上書きしない。
-			if (mining.isActive()) {
+			if (mining.isActive() || obsidian.isActive()) {
 				return;
 			}
 			rotationController.renderFrame(ctx, aimSolver.getSolution());
@@ -210,7 +228,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 
 		// Phase 7.0: disconnect/join lifecycle safety
 		LifecycleSafety.register(controller, rotationController, attackGate, combatController,
-				approachPlanner, aimSolver, scytheHoldUse, mining);
+				approachPlanner, aimSolver, scytheHoldUse, mining, obsidian);
 
 		DragsimMacroMod.LOGGER.info("ZealotDebug (Phase 1 entity scanner) initialized");
 	}
@@ -218,12 +236,13 @@ public class DragsimMacroClient implements ClientModInitializer {
 	private static void openGui(Minecraft mc, MacroController controller,
 			RotationController rotationController, AttackGate attackGate,
 			CombatController combatController, ApproachPlanner approachPlanner,
-			MiningController mining) {
+			MiningController mining, ObsidianController obsidian) {
 		mining.stop(mc, "GUI_OPENED");
+		obsidian.stop(mc, "GUI_OPENED");
 		combatController.stopAndReleaseAll(mc);
 		approachPlanner.stopAndReleaseAll(mc);
 		attackGate.resetSessionState();
 		mc.setScreen(new DragsimMacroScreen(controller, rotationController,
-				combatController, approachPlanner, mining));
+				combatController, approachPlanner, mining, obsidian));
 	}
 }

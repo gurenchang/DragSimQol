@@ -55,6 +55,21 @@ public final class MiningController {
 		}
 
 		@Override
+		public boolean physicalBackwardDown() {
+			return isPhysicalDown(Minecraft.getInstance(), Minecraft.getInstance().options.keyDown);
+		}
+
+		@Override
+		public boolean physicalLeftDown() {
+			return isPhysicalDown(Minecraft.getInstance(), Minecraft.getInstance().options.keyLeft);
+		}
+
+		@Override
+		public boolean physicalRightDown() {
+			return isPhysicalDown(Minecraft.getInstance(), Minecraft.getInstance().options.keyRight);
+		}
+
+		@Override
 		public boolean physicalSprintDown() {
 			return isPhysicalDown(Minecraft.getInstance(), Minecraft.getInstance().options.keySprint);
 		}
@@ -73,6 +88,24 @@ public final class MiningController {
 			if (mc != null && mc.options != null) {
 				mc.options.keyUp.setDown(down);
 			}
+		}
+
+		@Override
+		public void setBackwardDown(boolean down) {
+			Minecraft mc = Minecraft.getInstance();
+			if (mc != null && mc.options != null) mc.options.keyDown.setDown(down);
+		}
+
+		@Override
+		public void setLeftDown(boolean down) {
+			Minecraft mc = Minecraft.getInstance();
+			if (mc != null && mc.options != null) mc.options.keyLeft.setDown(down);
+		}
+
+		@Override
+		public void setRightDown(boolean down) {
+			Minecraft mc = Minecraft.getInstance();
+			if (mc != null && mc.options != null) mc.options.keyRight.setDown(down);
 		}
 
 		@Override
@@ -103,6 +136,9 @@ public final class MiningController {
 	private long routeVersion;
 	private final MiningSettings settings = new MiningSettings();
 	private final MiningRotationController rotation = new MiningRotationController();
+	/** Runtime session identity; saved route metadata never gates route use. */
+	private Object sessionPlayer;
+	private Object sessionLevel;
 
 	public MiningController(MacroController combatMacro) {
 		this.combatMacro = combatMacro;
@@ -132,14 +168,6 @@ public final class MiningController {
 				active ? follower.getTargetIndex() : -1, active, joining, routeVersion);
 	}
 
-	/** 保存識別と現在識別の一致判定。旧形式"singleplayer"はローカル新形式と互換扱いする。 */
-	static boolean sameWorld(String saved, String current) {
-		if (saved.equals(current)) {
-			return true;
-		}
-		return "singleplayer".equals(saved) && current.startsWith("local:");
-	}
-
 	public static MiningController get() {
 		return instance;
 	}
@@ -154,6 +182,8 @@ public final class MiningController {
 		if (!active || mc == null || mc.player == null || mc.level == null) {
 			return false;
 		}
+		if (sessionPlayer != null && mc.player != sessionPlayer) return false;
+		if (sessionLevel != null && mc.level != sessionLevel) return false;
 		if (!mc.player.isAlive() || mc.player.isDeadOrDying()) {
 			return false;
 		}
@@ -171,20 +201,32 @@ public final class MiningController {
 	}
 
 	public synchronized String addNode(double x, double y, double z) {
+		return insertNode(route.size() + 1, x, y, z);
+	}
+
+	public synchronized String insertNode(int index1Based, double x, double y, double z) {
+		if (active) {
+			return "stop Route Walker before editing route";
+		}
 		MiningRouteNode node = new MiningRouteNode(x, y, z);
-		String reason = MiningRouteStore.canAppend(route, node);
+		String reason = MiningRouteStore.canInsert(route, index1Based, node);
 		if (reason != null) {
 			return reason;
 		}
-		// 別ワールドのルートへ黙って現在ワールドのノードを混ぜない。
-		Minecraft mc = Minecraft.getInstance();
-		if (!route.isEmpty() && !worldId.isEmpty() && mc != null && mc.level != null
-				&& !sameWorld(worldId, worldId(mc))) {
-			return "route belongs to another world (clear first to start a new route here)";
+		// Existing nodes and their legacy metadata are retained; coordinates alone
+		// determine the route being edited.
+		List<MiningRouteNode> edited = new ArrayList<>(route);
+		edited.add(index1Based - 1, node);
+		String saveWorld = route.isEmpty() ? currentWorldOrSaved() : savedWorldForEdit();
+		String saveDimension = route.isEmpty() ? currentDimensionOrSaved() : savedDimensionForEdit();
+		if (!MiningRouteStore.replaceAfterSave(route, edited,
+				() -> MiningRouteFile.saveAtomic(edited, saveWorld, saveDimension))) {
+			MacroLogger.get().log("MINING_ROUTE_SAVE_FAILED operation=insert nodes=" + edited.size());
+			return "could not save route";
 		}
-		route.add(node);
+		worldId = saveWorld;
+		dimension = saveDimension;
 		routeVersion++;
-		persist();
 		return null;
 	}
 
@@ -192,50 +234,55 @@ public final class MiningController {
 		if (index1Based < 1 || index1Based > route.size()) {
 			return "index out of range (1-" + route.size() + ")";
 		}
-		route.remove(index1Based - 1);
+		List<MiningRouteNode> edited = new ArrayList<>(route);
+		edited.remove(index1Based - 1);
+		if (!MiningRouteStore.replaceAfterSave(route, edited,
+				() -> MiningRouteFile.saveAtomic(edited, savedWorldForEdit(), savedDimensionForEdit()))) {
+			MacroLogger.get().log("MINING_ROUTE_SAVE_FAILED operation=remove nodes=" + edited.size());
+			return "could not save route";
+		}
 		routeVersion++;
-		persist();
 		return null;
 	}
 
 	public synchronized void clearRoute() {
+		clearRouteChecked();
+	}
+
+	public synchronized String clearRouteChecked() {
+		String saveWorld = currentWorldOrSaved();
+		String saveDimension = currentDimensionOrSaved();
+		if (!MiningRouteFile.saveAtomic(List.of(), saveWorld, saveDimension)) {
+			MacroLogger.get().log("MINING_ROUTE_SAVE_FAILED operation=clear nodes=0");
+			return "could not save route";
+		}
 		route.clear();
+		worldId = saveWorld;
+		dimension = saveDimension;
 		routeVersion++;
-		persist();
+		return null;
 	}
 
-	private void persist() {
-		List<MiningRouteNode> copy = new ArrayList<>(route);
-		boolean ok = MiningRouteFile.saveAtomic(copy, worldIdForSave(), dimensionForSave());
-		if (!ok) {
-			MacroLogger.get().log("MINING_ROUTE_SAVE_FAILED nodes=" + copy.size());
-		}
-	}
-
-	private String worldIdForSave() {
+	private String currentWorldOrSaved() {
 		Minecraft mc = Minecraft.getInstance();
-		if (mc == null || mc.level == null) {
-			return worldId == null ? "" : worldId;
+		if (mc != null && mc.level != null) {
+			String current = worldId(mc);
+			if (!current.isEmpty()) return current;
 		}
-		String current = worldId(mc);
-		if (current.isEmpty()) {
-			return worldId == null ? "" : worldId;
-		}
-		if (worldId == null || worldId.isEmpty()) {
-			// 初回保存時は現在ワールドへ紐付ける。
-			worldId = current;
-			dimension = dimension(mc);
-		} else if (sameWorld(worldId, current)) {
-			worldId = current;
-			dimension = dimension(mc);
-		}
-		// 不一致時は保存済みの識別情報を維持し、黙って付け替えない。
-		return worldId == null ? "" : worldId;
+		return savedWorldForEdit();
 	}
 
-	private String dimensionForSave() {
-		return dimension == null ? "" : dimension;
+	private String currentDimensionOrSaved() {
+		Minecraft mc = Minecraft.getInstance();
+		if (mc != null && mc.level != null) {
+			String current = dimension(mc);
+			if (!current.isEmpty()) return current;
+		}
+		return savedDimensionForEdit();
 	}
+
+	private String savedWorldForEdit() { return worldId == null ? "" : worldId; }
+	private String savedDimensionForEdit() { return dimension == null ? "" : dimension; }
 
 	// ==== 開始・停止 ====
 
@@ -289,20 +336,23 @@ public final class MiningController {
 			return;
 		}
 		if (mc == null || mc.player == null || mc.level == null) {
-			notify(mc, "[DragSim] Mining cannot start — no active world");
+			notify(mc, "[DragSim] Route Walker cannot start — no active world");
 			return;
 		}
 		if (mc.screen != null) {
-			notify(mc, "[DragSim] Mining cannot start — GUI is open");
+			notify(mc, "[DragSim] Route Walker cannot start — GUI is open");
 			return;
 		}
-		if (combatMacro != null && combatMacro.getState() != MacroController.State.IDLE) {
-			notify(mc, "[DragSim] Mining cannot start — combat macro is active");
-			MacroLogger.get().log("MINING_START_REJECTED reason=COMBAT_ACTIVE");
+		AutomationCoordinator.Owner currentOwner = AutomationCoordinator.owner();
+		if (currentOwner != AutomationCoordinator.Owner.NONE
+				&& currentOwner != AutomationCoordinator.Owner.ROUTE_WALKER) {
+			notify(mc, "[DragSim] Cannot start Route Walker — "
+					+ currentOwner.displayName() + " is active");
+			MacroLogger.get().log("MINING_START_REJECTED reason=" + currentOwner);
 			return;
 		}
 		if (route.size() < 2) {
-			notify(mc, "[DragSim] Mining cannot start — need at least 2 route nodes");
+			notify(mc, "[DragSim] Route Walker cannot start — need at least 2 route nodes");
 			return;
 		}
 		int slot = mc.player.getInventory().getSelectedSlot();
@@ -310,7 +360,7 @@ public final class MiningController {
 		MiningToolPolicy.ToolState tool = MiningToolCheck.snapshot(slot, held);
 		if (!MiningToolPolicy.canStart(tool)) {
 			String why = tool.empty() ? "empty hand" : "unsuitable tool for End Stone";
-			notify(mc, "[DragSim] Mining cannot start — " + why);
+			notify(mc, "[DragSim] Route Walker cannot start — " + why);
 			MacroLogger.get().log("MINING_START_REJECTED reason=TOOL hold=" + MiningToolPolicy.describe(tool));
 			return;
 		}
@@ -320,27 +370,20 @@ public final class MiningController {
 		follower.setRoute(new ArrayList<>(route));
 		int join = follower.selectJoinIndex(px, py, pz);
 		if (join < 0) {
-			notify(mc, "[DragSim] Mining cannot start — too far from route");
+			notify(mc, "[DragSim] Route Walker cannot start — too far from route");
 			MacroLogger.get().log("MINING_START_REJECTED reason=TOO_FAR");
 			return;
 		}
-		// 開始時のワールド識別を記録する。
-		String fileWorld = lastSavedWorldId();
-		String fileDim = lastSavedDimension();
 		String nowWorld = worldId(mc);
 		String nowDim = dimension(mc);
-		if (!fileWorld.isEmpty() && !sameWorld(fileWorld, nowWorld)) {
-			notify(mc, "[DragSim] Mining cannot start — route was saved in another world");
-			MacroLogger.get().log("MINING_START_REJECTED reason=WORLD_MISMATCH");
-			return;
-		}
-		if (!fileDim.isEmpty() && !fileDim.equals(nowDim)) {
-			notify(mc, "[DragSim] Mining cannot start — route dimension mismatch");
-			MacroLogger.get().log("MINING_START_REJECTED reason=DIMENSION_MISMATCH");
+		if (!AutomationCoordinator.tryAcquire(AutomationCoordinator.Owner.ROUTE_WALKER)) {
+			notify(mc, "[DragSim] Route Walker cannot start — another automation is active");
 			return;
 		}
 		follower.join(join, px, py, pz);
 		startTool = tool;
+		sessionPlayer = mc.player;
+		sessionLevel = mc.level;
 		worldId = nowWorld;
 		dimension = nowDim;
 		regenWaitTicks = 0;
@@ -355,11 +398,16 @@ public final class MiningController {
 		lastAppliedYaw = mc.player.getYRot();
 		lastAppliedPitch = mc.player.getXRot();
 		// 開始時点のsnapshotを公開し、古い旋回の再生を防ぐ。
-		MiningCameraSmoothing.publish(rotation.previousContinuous(), rotation.currentContinuous());
+		if (settings.isWASDMovement()) {
+			// Camera yaw must remain the player's own yaw in WASD mode.
+			MiningCameraSmoothing.invalidate(MiningCameraSmoothing.Owner.ROUTE_WALKER);
+		} else {
+			MiningCameraSmoothing.publishRoute(rotation.previousContinuous(), rotation.currentContinuous());
+		}
 		MacroLogger.get().log(String.format(Locale.ROOT,
 				"MINING_START nodes=%d join=%d tool=%s", route.size(), join + 1,
 				MiningToolPolicy.describe(tool)));
-		notify(mc, "[DragSim] Mining ON — " + route.size() + " nodes");
+		notify(mc, "[DragSim] Route Walker ON — " + route.size() + " nodes");
 	}
 
 	public void stop(Minecraft mc, String reason) {
@@ -372,15 +420,18 @@ public final class MiningController {
 		regenWaitTicks = 0;
 		aligned = false;
 		lastWant = MiningInputSession.Want.none();
+		sessionPlayer = null;
+		sessionLevel = null;
 		rotation.reset();
 		// 停止・再開時に古い旋回を再生しないようsnapshotを捨てる。
-		MiningCameraSmoothing.invalidate();
+		MiningCameraSmoothing.invalidate(MiningCameraSmoothing.Owner.ROUTE_WALKER);
+		AutomationCoordinator.release(AutomationCoordinator.Owner.ROUTE_WALKER);
 		// 所有入力だけを解除する。フォーカス復帰後の物理押下は壊さない。
 		boolean focused = mc != null && mc.isWindowActive();
 		session.update(sessionInput, MiningInputSession.Want.none(), stopReason, focused);
 		MacroLogger.get().log("MINING_STOP reason=" + stopReason + " laps=" + follower.getLaps());
 		if (!"SILENT".equals(reason)) {
-			notify(mc, "[DragSim] Mining OFF — " + stopReasonDisplay(stopReason));
+			notify(mc, "[DragSim] Route Walker OFF — " + stopReasonDisplay(stopReason));
 		}
 	}
 
@@ -421,11 +472,14 @@ public final class MiningController {
 		if (mc.player.isDeadOrDying() || !mc.player.isAlive()) {
 			return "PLAYER_DIED";
 		}
+		if (sessionPlayer != null && mc.player != sessionPlayer) {
+			return "WORLD_LOST";
+		}
+		if (sessionLevel != null && mc.level != sessionLevel) {
+			return "WORLD_LOST";
+		}
 		if (mc.screen != null) {
 			return "GUI_OPENED";
-		}
-		if (!dimension(mc).equals(dimension)) {
-			return "DIMENSION_CHANGED";
 		}
 		// 持ち替え検知(スロット・識別子・適性)。
 		int slot = mc.player.getInventory().getSelectedSlot();
@@ -455,7 +509,7 @@ public final class MiningController {
 		double px = mc.player.getX();
 		double py = mc.player.getY();
 		double pz = mc.player.getZ();
-		MiningRouteFollower.AdvanceStop adv = follower.tick(px, py, pz);
+		MiningRouteFollower.AdvanceStop adv = follower.tick(px, py, pz, settings.isDeviationCheck());
 		if (adv == MiningRouteFollower.AdvanceStop.TELEPORT) {
 			stop(mc, "TELEPORTED");
 			return;
@@ -470,8 +524,11 @@ public final class MiningController {
 		}
 
 		double targetYaw = follower.desiredYaw(px, pz);
-		// リニア旋回(開始・再生待ちを含む全経路で同一)。目標へ直接スナップしない。
-		double appliedYaw = rotation.update(targetYaw, settings.getTurnSpeedDps());
+		boolean wasdMovement = settings.isWASDMovement();
+		// Auto Turn keeps the established linear yaw controller. WASD Only leaves
+		// horizontal camera yaw entirely under the player's control.
+		double appliedYaw = wasdMovement ? mc.player.getYRot()
+				: rotation.update(targetYaw, settings.getTurnSpeedDps());
 		// 前進判定は制限後の実際のyawで行う(15°で再開・20°で停止のヒステリシス)。
 		double err = MiningRotationController.angleError(targetYaw, appliedYaw);
 		if (aligned) {
@@ -483,7 +540,13 @@ public final class MiningController {
 		}
 
 		// 安全確認: 前方・足元・落下・未ロード。
-		Safety safety = evaluateSafety(mc, appliedYaw);
+		// In WASD mode safety follows the quantized direction actually emitted to
+		// the standard key mappings, while Auto Turn follows its applied yaw.
+		MovementInput plannedMovement = wasdMovement
+				? wasdInputForTarget(targetYaw, mc.player.getYRot()) : MovementInput.none();
+		double movementYaw = wasdMovement
+				? movementYawForInput(plannedMovement, mc.player.getYRot()) : appliedYaw;
+		Safety safety = evaluateSafety(mc, movementYaw);
 		if (safety == Safety.WALL || safety == Safety.UNLOADED) {
 			stop(mc, safety == Safety.WALL ? "WALL_BLOCKED" : "CHUNK_UNLOADED");
 			return;
@@ -495,7 +558,11 @@ public final class MiningController {
 		boolean floorMissing = safety == Safety.FLOOR_MISSING;
 		if (floorMissing) {
 			regenWaitTicks++;
-			applyRotationAndPublish(mc, appliedYaw, 90.0);
+			if (wasdMovement) {
+				applyPitchOnly(mc, 90.0);
+			} else {
+				applyRotationAndPublish(mc, appliedYaw, 90.0);
+			}
 			// 待機中は前進・Attackを残さない。
 			lastWant = MiningInputSession.Want.none();
 			session.update(sessionInput, lastWant, null, mc.isWindowActive());
@@ -507,18 +574,32 @@ public final class MiningController {
 		}
 		regenWaitTicks = 0;
 
-		// 旋回が必要な間は前進・スプリントを解除する。
-		boolean wantForward = aligned;
-		boolean wantSprint = aligned && !joining;
+		// 合流完了後は、次ノードへ旋回している間も巡回を継続する。
+		// 角度だけで入力を止めると90度/折返しで不自然に停止し、実際の
+		// 進行方向に対する安全判定・逸脱判定と矛盾するため、停止条件は
+		// evaluateSafety/deviated/stuck側に集約する。初期合流中だけ停止。
+		// WASD can approach the initial node without waiting for yaw alignment.
+		boolean wantMovement = wasdMovement || shouldHoldForward(follower.isJoined(), aligned);
+		boolean wantSprint = shouldHoldSprint(follower.isJoined(), joining);
 		// 合流中は採掘を開始しない。
 		boolean wantAttack = !joining && isEndStoneBelow(mc);
 
 		tickCount++;
-		applyRotationAndPublish(mc, appliedYaw, 90.0);
-		lastWant = new MiningInputSession.Want(wantAttack, wantForward, wantSprint);
+		if (wasdMovement) {
+			applyPitchOnly(mc, 90.0);
+		} else {
+			applyRotationAndPublish(mc, appliedYaw, 90.0);
+		}
+		if (wasdMovement) {
+			MovementInput movement = plannedMovement;
+			lastWant = new MiningInputSession.Want(wantAttack, movement.forward(), movement.backward(),
+					movement.left(), movement.right(), wantSprint && movement.forward());
+		} else {
+			lastWant = new MiningInputSession.Want(wantAttack, wantMovement, wantSprint);
+		}
 		session.update(sessionInput, lastWant, null, mc.isWindowActive());
 
-		if (wantForward) {
+		if (wantMovement) {
 			boolean stuck = follower.updateStuck(px, pz, true);
 			if (stuck) {
 				stop(mc, "STUCK");
@@ -526,6 +607,48 @@ public final class MiningController {
 		} else {
 			follower.clearStuckBaseline();
 		}
+	}
+
+	/** Movement policy shared by the live controller and route regression tests. */
+	static boolean shouldHoldForward(boolean routeJoined, boolean initiallyAligned) {
+		return routeJoined || initiallyAligned;
+	}
+
+	static boolean shouldHoldSprint(boolean routeJoined, boolean joining) {
+		return routeJoined && !joining;
+	}
+
+	/** Standard digital WASD directions for a route vector in world X/Z. */
+	record MovementInput(boolean forward, boolean backward, boolean left, boolean right) {
+		static MovementInput none() {
+			return new MovementInput(false, false, false, false);
+		}
+	}
+
+	/**
+	 * Maps a target yaw to the player's current local WASD axes. The yaw is
+	 * never changed by this helper; Minecraft normalizes diagonal key input.
+	 */
+	static MovementInput wasdInputForTarget(double targetYaw, double playerYaw) {
+		int sector = (int) Math.round(MiningRouteFollower.wrapDegrees(targetYaw - playerYaw) / 45.0);
+		sector = ((sector % 8) + 8) % 8;
+		return switch (sector) {
+			case 0 -> new MovementInput(true, false, false, false);
+			case 1 -> new MovementInput(true, false, false, true);
+			case 2 -> new MovementInput(false, false, false, true);
+			case 3 -> new MovementInput(false, true, false, true);
+			case 4 -> new MovementInput(false, true, false, false);
+			case 5 -> new MovementInput(false, true, true, false);
+			case 6 -> new MovementInput(false, false, true, false);
+			default -> new MovementInput(true, false, true, false);
+		};
+	}
+
+	static double movementYawForInput(MovementInput input, double playerYaw) {
+		double forward = (input.forward() ? 1.0 : 0.0) - (input.backward() ? 1.0 : 0.0);
+		double right = (input.right() ? 1.0 : 0.0) - (input.left() ? 1.0 : 0.0);
+		if (forward == 0.0 && right == 0.0) return playerYaw;
+		return playerYaw + Math.toDegrees(Math.atan2(right, forward));
 	}
 
 	private enum Safety {
@@ -628,7 +751,21 @@ public final class MiningController {
 
 	private void applyRotationAndPublish(Minecraft mc, double yaw, double pitch) {
 		applyRotation(mc, yaw, pitch);
-		MiningCameraSmoothing.publish(rotation.previousContinuous(), rotation.currentContinuous());
+		MiningCameraSmoothing.publishRoute(rotation.previousContinuous(), rotation.currentContinuous());
+	}
+
+	/** WASD mode owns the downward pitch but deliberately leaves player yaw alone. */
+	private void applyPitchOnly(Minecraft mc, double pitch) {
+		MiningCameraSmoothing.invalidate(MiningCameraSmoothing.Owner.ROUTE_WALKER);
+		try {
+			lastAppliedYaw = mc.player.getYRot();
+			rotation.syncTo(lastAppliedYaw);
+			mc.player.setXRot((float) pitch);
+			mc.player.xRotO = (float) lastAppliedPitch;
+			lastAppliedYaw = mc.player.getYRot();
+			lastAppliedPitch = pitch;
+		} catch (Exception ignored) {
+		}
 	}
 
 	public double getAppliedYaw() {
@@ -672,16 +809,6 @@ public final class MiningController {
 
 	public static String currentDimension(Minecraft mc) {
 		return dimension(mc);
-	}
-
-	private String lastSavedWorldId() {
-		MiningRouteFile.LoadedRoute loaded = MiningRouteFile.load();
-		return loaded.parseFailed() ? "" : loaded.worldId();
-	}
-
-	private String lastSavedDimension() {
-		MiningRouteFile.LoadedRoute loaded = MiningRouteFile.load();
-		return loaded.parseFailed() ? "" : loaded.dimension();
 	}
 
 	private void notify(Minecraft mc, String message) {

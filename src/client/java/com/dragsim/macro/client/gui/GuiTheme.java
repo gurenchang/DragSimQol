@@ -12,15 +12,15 @@ public final class GuiTheme {
 	/** 全画面のdark translucent overlay(#08060D基準) */
 	public static final int BACKGROUND = 0xFF08060D;
 	/** main panel(#100C1A) */
-	public static final int PANEL = 0xF7100C1A;
+	public static final int PANEL = 0xFC14141D;
 	/** card / secondary panel(#171025) */
-	public static final int SURFACE = 0xFF171025;
+	public static final int SURFACE = 0xFF101018;
 	/** hover時のsurface(#211536) */
-	public static final int SURFACE_HOVER = 0xFF211536;
+	public static final int SURFACE_HOVER = 0xFF252331;
 	/** 1px border / separator(#302047) */
-	public static final int BORDER = 0xFF302047;
+	public static final int BORDER = 0xFF353541;
 	/** 選択category背景(surfaceより一段明るい紫) */
-	public static final int SIDEBAR_SELECTED = 0xFF1E1533;
+	public static final int SIDEBAR_SELECTED = 0xFF30263E;
 
 	// ==== accent ====
 	public static final int ACCENT = 0xFFA855F7;

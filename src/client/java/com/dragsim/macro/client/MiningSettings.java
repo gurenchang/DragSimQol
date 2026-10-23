@@ -23,6 +23,9 @@ import net.fabricmc.loader.api.FabricLoader;
  * 保持・再保存するが、旋回計算には使わない。保存済みの速度値は黙って上書きしない。
  */
 public final class MiningSettings {
+	public enum RouteMovementMode {
+		AUTO_TURN, WASD_ONLY
+	}
 	public static final int SCHEMA_VERSION = 1;
 	public static final String TURN_MODE = "LINEAR";
 
@@ -36,12 +39,16 @@ public final class MiningSettings {
 	public static final double DEFAULT_TURN_ACCEL_DPS2 = 240.0;
 
 	public static final boolean DEFAULT_SHOW_ROUTE = true;
+	public static final boolean DEFAULT_DEVIATION_CHECK = true;
+	public static final RouteMovementMode DEFAULT_ROUTE_MOVEMENT_MODE = RouteMovementMode.AUTO_TURN;
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
 	private double turnSpeedDps = DEFAULT_TURN_SPEED_DPS;
 	private double legacyTurnAccelDps2 = DEFAULT_TURN_ACCEL_DPS2;
 	private boolean showRoute = DEFAULT_SHOW_ROUTE;
+	private boolean deviationCheck = DEFAULT_DEVIATION_CHECK;
+	private RouteMovementMode routeMovementMode = DEFAULT_ROUTE_MOVEMENT_MODE;
 
 	public double getTurnSpeedDps() {
 		return clampSpeed(turnSpeedDps);
@@ -51,20 +58,61 @@ public final class MiningSettings {
 		return showRoute;
 	}
 
-	public void setTurnSpeedDps(double value) {
+	public boolean isDeviationCheck() {
+		return deviationCheck;
+	}
+
+	public RouteMovementMode getRouteMovementMode() {
+		return routeMovementMode;
+	}
+
+	public boolean isWASDMovement() {
+		return routeMovementMode == RouteMovementMode.WASD_ONLY;
+	}
+
+	public boolean setRouteMovementMode(RouteMovementMode value) {
+		RouteMovementMode previous = routeMovementMode;
+		routeMovementMode = value == null ? DEFAULT_ROUTE_MOVEMENT_MODE : value;
+		if (save()) return true;
+		routeMovementMode = previous;
+		return false;
+	}
+
+	public boolean setWASDMovement(boolean value) {
+		return setRouteMovementMode(value ? RouteMovementMode.WASD_ONLY : RouteMovementMode.AUTO_TURN);
+	}
+
+	public boolean setTurnSpeedDps(double value) {
+		double previous = turnSpeedDps;
 		turnSpeedDps = clampSpeed(value);
-		save();
+		if (save()) return true;
+		turnSpeedDps = previous;
+		return false;
 	}
 
 	/** 速度を既定値(120)へ戻す。 */
-	public void resetTurnSpeed() {
+	public boolean resetTurnSpeed() {
+		double previous = turnSpeedDps;
 		turnSpeedDps = DEFAULT_TURN_SPEED_DPS;
-		save();
+		if (save()) return true;
+		turnSpeedDps = previous;
+		return false;
 	}
 
-	public void setShowRoute(boolean value) {
+	public boolean setShowRoute(boolean value) {
+		boolean previous = showRoute;
 		showRoute = value;
-		save();
+		if (save()) return true;
+		showRoute = previous;
+		return false;
+	}
+
+	public boolean setDeviationCheck(boolean value) {
+		boolean previous = deviationCheck;
+		deviationCheck = value;
+		if (save()) return true;
+		deviationCheck = previous;
+		return false;
 	}
 
 	public static double clampSpeed(double value) {
@@ -123,12 +171,22 @@ public final class MiningSettings {
 			legacyTurnAccelDps2 = sanitizeLegacyAccel(obj.has("turnAccelerationDps2")
 					? obj.get("turnAccelerationDps2").getAsDouble() : DEFAULT_TURN_ACCEL_DPS2);
 			showRoute = !obj.has("showRoute") || obj.get("showRoute").getAsBoolean();
+			deviationCheck = !obj.has("deviationCheck") || obj.get("deviationCheck").getAsBoolean();
+			if (obj.has("routeMovementMode")) {
+				routeMovementMode = RouteMovementMode.valueOf(obj.get("routeMovementMode").getAsString());
+			} else {
+				// Compatibility with an early boolean spelling, and old JSON defaults.
+				routeMovementMode = obj.has("wasdMovement") && obj.get("wasdMovement").getAsBoolean()
+						? RouteMovementMode.WASD_ONLY : DEFAULT_ROUTE_MOVEMENT_MODE;
+			}
 			return true;
 		} catch (Exception e) {
 			MacroLogger.get().log("MINING_SETTINGS_LOAD_FAILED invalid data: " + e.getMessage());
 			turnSpeedDps = DEFAULT_TURN_SPEED_DPS;
 			legacyTurnAccelDps2 = DEFAULT_TURN_ACCEL_DPS2;
 			showRoute = DEFAULT_SHOW_ROUTE;
+			deviationCheck = DEFAULT_DEVIATION_CHECK;
+			routeMovementMode = DEFAULT_ROUTE_MOVEMENT_MODE;
 			return false;
 		}
 	}
@@ -148,6 +206,8 @@ public final class MiningSettings {
 			obj.addProperty("turnSpeedDps", getTurnSpeedDps());
 			obj.addProperty("turnAccelerationDps2", legacyTurnAccelDps2);
 			obj.addProperty("showRoute", showRoute);
+			obj.addProperty("deviationCheck", deviationCheck);
+			obj.addProperty("routeMovementMode", routeMovementMode.name());
 			Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
 			Files.writeString(tmp, GSON.toJson(obj), StandardCharsets.UTF_8);
 			try {

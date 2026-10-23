@@ -144,6 +144,15 @@ public class MacroController {
 		if (state != State.IDLE) {
 			return;
 		}
+		AutomationCoordinator.Owner owner = AutomationCoordinator.owner();
+		if (owner != AutomationCoordinator.Owner.NONE
+				&& owner != AutomationCoordinator.Owner.COMBAT) {
+			Minecraft mc = Minecraft.getInstance();
+			MacroLogger.get().log("MACRO_ON_REJECTED reason=" + owner);
+			MacroNotifications.send(mc, "[DragSim] Cannot start Combat Macro — "
+					+ owner.displayName() + " is active");
+			return;
+		}
 		seen.clear();
 		lastSnapshots = List.of();
 		targetSelector.resetSessionState();
@@ -151,11 +160,15 @@ public class MacroController {
 		scanCount = 0;
 		Minecraft mc = Minecraft.getInstance();
 		if (mc.player != null && mc.level != null) {
+			if (!AutomationCoordinator.tryAcquire(AutomationCoordinator.Owner.COMBAT)) {
+				return;
+			}
 			MacroLogger.get().logSessionStart(mc.player, range);
 			setState(State.SCAN);
 			MacroLogger.get().log("MACRO_ON mode=" + MacroConfig.get().getCombatMode());
 			MacroNotifications.send(mc, "[DragSim] Macro ON — " + combatModeDisplayName());
 		} else {
+			AutomationCoordinator.release(AutomationCoordinator.Owner.COMBAT);
 			MacroLogger.get().log("MACRO_ON_FAILED reason=NO_WORLD");
 			MacroNotifications.send(mc, "[DragSim] Macro cannot start — no active world");
 		}
@@ -163,6 +176,7 @@ public class MacroController {
 
 	public void disable() {
 		if (state == State.IDLE) {
+			AutomationCoordinator.release(AutomationCoordinator.Owner.COMBAT);
 			return;
 		}
 		setState(State.IDLE);
@@ -172,6 +186,7 @@ public class MacroController {
 		targetSelector.resetSessionState();
 		MacroLogger.get().log("MACRO_OFF");
 		MacroNotifications.send(Minecraft.getInstance(), "[DragSim] Macro OFF");
+		AutomationCoordinator.release(AutomationCoordinator.Owner.COMBAT);
 	}
 
 	/** 通知/ログ用のcombat mode表示名(英語) */
@@ -190,6 +205,7 @@ public class MacroController {
 		MacroLogger.get().log("SESSION_RESET reason=" + reason);
 		onMacroOff();
 		state = State.IDLE;
+		AutomationCoordinator.release(AutomationCoordinator.Owner.COMBAT);
 		seen.clear();
 		lastSnapshots = List.of();
 		targetSelector.resetSessionState();

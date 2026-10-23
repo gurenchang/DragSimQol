@@ -5,6 +5,7 @@ import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.FormattedCharSequence;
 
 /**
  * UIフォント適用ヘルパ(Oxanium / SIL Open Font License 1.1)。
@@ -33,5 +34,9 @@ public final class UiFont {
 	/** 動的な値表示用(呼び出し頻度は既存のString.format表示と同等) */
 	public static MutableComponent text(String value) {
 		return Component.literal(value).setStyle(STYLE);
+	}
+
+	public static FormattedCharSequence sequence(String value) {
+		return FormattedCharSequence.forward(value, STYLE);
 	}
 }

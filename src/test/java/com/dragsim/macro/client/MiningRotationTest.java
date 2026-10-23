@@ -188,6 +188,10 @@ class MiningRotationTest {
 		assertEquals(90.0, old.getTurnSpeedDps(), 1e-9);
 		assertEquals(240.0, old.legacyAccelForTest(), 1e-9);
 		assertFalse(old.isShowRoute());
+		assertTrue(old.isDeviationCheck(), "missing setting in older JSON must default on");
+		assertTrue(old.parse(
+				"{\"schemaVersion\":1,\"turnSpeedDps\":90,\"deviationCheck\":false}"));
+		assertFalse(old.isDeviationCheck());
 		// 旧加速度は読めても旋回には使わない。reset相当の再読込は120へ戻す。
 		assertTrue(old.parse("{\"schemaVersion\":1,\"turnSpeedDps\":120}"));
 		assertEquals(120.0, old.getTurnSpeedDps(), 1e-9);
@@ -200,8 +204,22 @@ class MiningRotationTest {
 
 	@Test
 	void accelRetiredMessageIsUnchanged() {
-		assertEquals("[DragSim] Mining rotation is linear; acceleration is no longer used.",
+		assertEquals("[DragSim] Route Walker rotation is linear; acceleration is no longer used.",
 				MiningCommand.ACCEL_RETIRED_MESSAGE);
+	}
+
+	@Test
+	void cameraPitchIsOwnedOnlyByObsidianSnapshot() {
+		MiningCameraSmoothing.publishRoute(10, 16);
+		assertEquals(42f, MiningCameraSmoothing.resolvePitch(
+				true, false, true, true, 0.5f, 42f), 1e-6);
+		MiningCameraSmoothing.publishObsidian(10, 16, 20, 30);
+		assertEquals(25f, MiningCameraSmoothing.resolvePitch(
+				true, false, true, true, 0.5f, 42f), 1e-6);
+		MiningCameraSmoothing.invalidate(MiningCameraSmoothing.Owner.ROUTE_WALKER);
+		assertTrue(MiningCameraSmoothing.isValid(), "non-owner must not invalidate camera snapshot");
+		MiningCameraSmoothing.invalidate(MiningCameraSmoothing.Owner.MINING_BOT);
+		assertFalse(MiningCameraSmoothing.isValid());
 	}
 
 	@Test

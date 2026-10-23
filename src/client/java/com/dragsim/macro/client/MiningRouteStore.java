@@ -3,6 +3,7 @@ package com.dragsim.macro.client;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * 採掘ルートの検証・JSON往復(Minecraft非依存部分)。
@@ -71,6 +72,25 @@ public final class MiningRouteStore {
 				&& Math.abs(dy) <= DEDUP_RADIUS_Y;
 	}
 
+	/** Insert as node #index1Based; size + 1 appends. Check both cyclic neighbours. */
+	public static String canInsert(List<MiningRouteNode> current, int index1Based, MiningRouteNode node) {
+		if (index1Based < 1 || index1Based > current.size() + 1) {
+			return "index out of range (1-" + (current.size() + 1) + ")";
+		}
+		// Keep the established append validation and its error messages.
+		if (index1Based == current.size() + 1) return canAppend(current, node);
+		String reason = rejectReason(node);
+		if (reason != null) return reason;
+		if (current.size() >= MAX_NODES) return "route is full (max " + MAX_NODES + ")";
+		int index = index1Based - 1;
+		MiningRouteNode previous = current.get((index + current.size() - 1) % current.size());
+		MiningRouteNode next = current.get(index);
+		if (previous == null || next == null) return "invalid route";
+		if (isDuplicate(previous, node)) return "duplicate of previous node";
+		if (isDuplicate(next, node)) return "duplicate of next node";
+		return null;
+	}
+
 	/** 読込時の検証。無効ノード・連続重複・上限・件数不足を検査する。 */
 	public static List<String> validateLoaded(List<MiningRouteNode> nodes) {
 		List<String> errors = new ArrayList<>();
@@ -98,5 +118,14 @@ public final class MiningRouteStore {
 
 	public static List<MiningRouteNode> copyOf(List<MiningRouteNode> nodes) {
 		return Collections.unmodifiableList(new ArrayList<>(nodes));
+	}
+
+	/** Save-first transaction: the live list is replaced only after persistence succeeds. */
+	public static boolean replaceAfterSave(List<MiningRouteNode> live, List<MiningRouteNode> edited,
+			BooleanSupplier save) {
+		if (!save.getAsBoolean()) return false;
+		live.clear();
+		live.addAll(edited);
+		return true;
 	}
 }

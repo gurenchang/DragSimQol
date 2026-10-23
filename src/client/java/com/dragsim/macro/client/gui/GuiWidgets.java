@@ -22,6 +22,23 @@ public final class GuiWidgets {
 	private GuiWidgets() {
 	}
 
+	private static Component fitted(Font font, String text, int width) {
+		if (text == null || width <= 0) return UiFont.text("");
+		Component full = UiFont.text(text);
+		if (font.width(full) <= width) return full;
+		String ellipsis = "…";
+		Component styledEllipsis = UiFont.text(ellipsis);
+		int budget = Math.max(0, width - font.width(styledEllipsis));
+		int low = 0;
+		int high = text.length();
+		while (low < high) {
+			int mid = (low + high + 1) >>> 1;
+			if (font.width(UiFont.text(text.substring(0, mid))) <= budget) low = mid;
+			else high = mid - 1;
+		}
+		return UiFont.text(text.substring(0, low) + ellipsis);
+	}
+
 	public interface Setting {
 		int height();
 
@@ -34,6 +51,11 @@ public final class GuiWidgets {
 		boolean mouseDragged(double mx, double my, int x, int y, int w);
 
 		boolean mouseScrolled(double mx, double my, double amount, int x, int y, int w);
+
+		default Component help() { return null; }
+
+		/** Optional local tooltip for a sub-region within a complex setting. */
+		default Component tooltipAt(Font font, double mx, double my, int x, int y, int w) { return help(); }
 	}
 
 	// ==== toggle setting ====
@@ -46,6 +68,7 @@ public final class GuiWidgets {
 		private final BooleanSupplier getter;
 		private final Consumer<Boolean> setter;
 		private float animT;
+		private long lastAnimationNanos;
 
 		public ToggleSetting(String name, String description, BooleanSupplier getter, Consumer<Boolean> setter) {
 			this.name = name;
@@ -55,6 +78,7 @@ public final class GuiWidgets {
 			this.getter = getter;
 			this.setter = setter;
 		}
+		@Override public Component help() { return UiFont.text(name + (description.isEmpty() ? "" : "\n" + description)); }
 
 		@Override
 		public int height() {
@@ -66,9 +90,11 @@ public final class GuiWidgets {
 			if (hovered) {
 				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY, false);
+			g.text(font, fitted(font, name, Math.max(20, w - 105)),
+					x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY, false);
 			if (!description.isEmpty()) {
-				g.text(font, descriptionComponent, x + GuiTheme.PADDING, y + 14, GuiTheme.TEXT_SECONDARY, false);
+				g.text(font, fitted(font, description, Math.max(0, w - 105)),
+						x + GuiTheme.PADDING, y + 14, GuiTheme.TEXT_SECONDARY, false);
 			}
 			int toggleW = 34;
 			int toggleH = 14;
@@ -107,8 +133,12 @@ public final class GuiWidgets {
 
 		public void tickAnimation() {
 			float target = getter.getAsBoolean() ? 1.0F : 0.0F;
-			float speed = 1.0F / GuiTheme.ANIMATION_MS * 50.0F;
-			animT = animT + Math.signum(target - animT) * Math.min(speed, Math.abs(target - animT));
+			long now = System.nanoTime();
+			if (lastAnimationNanos == 0L) animT = target;
+			float deltaMs = Math.min(50F, (now - lastAnimationNanos) / 1_000_000F);
+			lastAnimationNanos = now;
+			float step = deltaMs / GuiTheme.ANIMATION_MS;
+			animT += Math.signum(target - animT) * Math.min(step, Math.abs(target - animT));
 		}
 	}
 
@@ -126,6 +156,8 @@ public final class GuiWidgets {
 		private final Component nameComponent;
 		private boolean dragging;
 		private boolean dirty;
+		private Double previewValue;
+		private boolean scrollAdjustment;
 
 		public SliderSetting(String name, String description, double min, double max, double step,
 				DoubleSupplier getter, DoubleConsumer setter) {
@@ -146,6 +178,16 @@ public final class GuiWidgets {
 			this.valueFormatter = valueFormatter;
 			this.nameComponent = UiFont.text(name);
 		}
+		@Override public Component help() {
+			return UiFont.text(name + (description.isEmpty() ? "" : "\n" + description)
+					+ (scrollAdjustment ? "\nScroll on the slider for fine adjustment." : ""));
+		}
+
+		/** Opt-in fine control for timing ranges wider than the slider's pixel width. */
+		public SliderSetting withScrollAdjustment() {
+			scrollAdjustment = true;
+			return this;
+		}
 
 		@Override
 		public int height() {
@@ -157,8 +199,9 @@ public final class GuiWidgets {
 			if (hovered || dragging) {
 				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
-			double value = getter.getAsDouble();
-			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY, false);
+			double value = previewValue != null ? previewValue : getter.getAsDouble();
+			g.text(font, fitted(font, name, Math.max(20, w - 90)),
+					x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY, false);
 			// 幅計測も描画も同一のstyled Componentを使用(フォント指定を一致させる)
 			Component valueComponent = UiFont.text(valueFormatter.apply(value));
 			int valueW = font.width(valueComponent);
@@ -200,10 +243,11 @@ public final class GuiWidgets {
 			if (dragging) {
 				dragging = false;
 				if (dirty) {
-					// ドラッグ終了時に保存(#12: 毎frame書込しない)
+					setter.accept(previewValue);
 					MacroConfig.save();
 					dirty = false;
 				}
+				previewValue = null;
 				return true;
 			}
 			return false;
@@ -220,6 +264,11 @@ public final class GuiWidgets {
 
 		@Override
 		public boolean mouseScrolled(double mx, double my, double amount, int x, int y, int w) {
+			if (scrollAdjustment && !dragging && amount != 0 && inSliderArea(mx, my, x, y, w)) {
+				double value = Math.max(min, Math.min(max, getter.getAsDouble() + Math.signum(amount) * step));
+				if (Double.compare(value, getter.getAsDouble()) != 0) setter.accept(value);
+				return true;
+			}
 			return false;
 		}
 
@@ -233,9 +282,9 @@ public final class GuiWidgets {
 			double raw = min + t * (max - min);
 			double snapped = Math.round(raw / step) * step;
 			double clamped = Math.max(min, Math.min(max, snapped));
-			double current = getter.getAsDouble();
+			double current = previewValue != null ? previewValue : getter.getAsDouble();
 			if (Math.abs(clamped - current) > 1.0E-6) {
-				setter.accept(clamped);
+				previewValue = clamped;
 				dirty = true;
 			}
 		}
@@ -252,6 +301,7 @@ public final class GuiWidgets {
 		private final Component nameComponent;
 		private boolean open;
 		private int openHoverIndex = -1;
+		private int keyboardIndex;
 
 		public DropdownSetting(String name, String description, String[] options,
 				Supplier<String> getter, Consumer<String> setter) {
@@ -267,10 +317,11 @@ public final class GuiWidgets {
 			this.setter = setter;
 			this.nameComponent = UiFont.text(name);
 		}
+		@Override public Component help() { return UiFont.text(name + (description.isEmpty() ? "" : "\n" + description)); }
 
 		@Override
 		public int height() {
-			return GuiTheme.ROW_HEIGHT + (open ? optionCount() * GuiTheme.ROW_HEIGHT + 4 : 0);
+			return 48;
 		}
 
 		public boolean isOpen() {
@@ -282,11 +333,11 @@ public final class GuiWidgets {
 		}
 
 		private int dropdownX(int x, int w) {
-			return x + w / 2 + GuiTheme.PADDING;
+			return x + GuiTheme.PADDING;
 		}
 
 		private int dropdownW(int x, int w) {
-			return w - w / 2 - GuiTheme.PADDING * 2;
+			return w - GuiTheme.PADDING * 2;
 		}
 
 		@Override
@@ -294,33 +345,70 @@ public final class GuiWidgets {
 			if (hovered && !open) {
 				g.fill(x, y, x + w, y + GuiTheme.ROW_HEIGHT, GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY, false);
+			g.text(font, fitted(font, name, w - GuiTheme.PADDING * 2),
+					x + GuiTheme.PADDING, y + 4, GuiTheme.TEXT_PRIMARY, false);
 			int ddX = dropdownX(x, w);
 			int ddW = dropdownW(x, w);
-			int ddY = y + 3;
-			int ddH = GuiTheme.ROW_HEIGHT - 6;
+			int ddY = y + 19;
+			int ddH = 25;
 			GuiPaint.roundedRect(g, ddX, ddY, ddW, ddH, 4, GuiTheme.SURFACE);
 			GuiPaint.border(g, ddX, ddY, ddW, ddH, open ? GuiTheme.ACCENT_DIM : GuiTheme.BORDER);
 			String current = getter.get();
-			g.text(font, UiFont.text(current), ddX + 6, ddY + (ddH - 8) / 2, GuiTheme.TEXT_PRIMARY, false);
+			g.text(font, fitted(font, current, ddW - 24), ddX + 6, ddY + (ddH - 8) / 2,
+					GuiTheme.TEXT_PRIMARY, false);
 			g.text(font, UiFont.ARROW_DOWN, ddX + ddW - 10, ddY + (ddH - 8) / 2, GuiTheme.ACCENT_BRIGHT, false);
-			if (open) {
-				String[] options = optionsSupplier.get();
-				for (int i = 0; i < options.length; i++) {
-					int oy = y + GuiTheme.ROW_HEIGHT + 4 + i * GuiTheme.ROW_HEIGHT;
-					boolean isCurrent = options[i].equals(current);
-					boolean isHover = openHoverIndex == i;
-					GuiPaint.roundedRect(g, ddX, oy, ddW, GuiTheme.ROW_HEIGHT - 2, 4,
-							isCurrent ? GuiTheme.SIDEBAR_SELECTED
-									: (isHover ? GuiTheme.SURFACE_HOVER : GuiTheme.SURFACE));
-					if (isCurrent) {
-						GuiPaint.accentBar(g, ddX, oy, GuiTheme.ROW_HEIGHT - 2);
-					}
-					g.text(font, UiFont.text(options[i]), ddX + 8, oy + 5,
-							isCurrent ? GuiTheme.ACCENT_BRIGHT : GuiTheme.TEXT_PRIMARY, false);
+		}
+
+		/** Popup is rendered by Screen after the scissored row pass. */
+		public void renderPopup(GuiGraphicsExtractor g, Font font, int x, int y, int w,
+				int clipTop, int clipBottom, int mouseX, int mouseY) {
+			if (!open) return;
+			String[] options = optionsSupplier.get();
+			int ddX = dropdownX(x, w);
+			int ddW = dropdownW(x, w);
+			int popupH = options.length * GuiTheme.ROW_HEIGHT + 4;
+			int popupY = popupY(y, height(), options.length, clipTop, clipBottom);
+			GuiPaint.roundedRect(g, ddX - 1, popupY - 1, ddW + 2, popupH + 2, 4, GuiTheme.PANEL);
+			GuiPaint.border(g, ddX - 1, popupY - 1, ddW + 2, popupH + 2, GuiTheme.ACCENT_DIM);
+			String current = getter.get();
+			openHoverIndex = -1;
+			for (int i = 0; i < options.length; i++) {
+				int oy = popupY + 2 + i * GuiTheme.ROW_HEIGHT;
+				boolean hover = i == keyboardIndex || (mouseX >= ddX && mouseX <= ddX + ddW
+						&& mouseY >= oy && mouseY <= oy + GuiTheme.ROW_HEIGHT - 2);
+				if (hover) openHoverIndex = i;
+				if (hover || options[i].equals(current)) {
+					g.fill(ddX, oy, ddX + ddW, oy + GuiTheme.ROW_HEIGHT - 2,
+							options[i].equals(current) ? GuiTheme.SIDEBAR_SELECTED : GuiTheme.SURFACE_HOVER);
 				}
-				openHoverIndex = -1;
+				g.text(font, UiFont.text(options[i]), ddX + 7, oy + 6,
+						options[i].equals(current) ? GuiTheme.ACCENT_BRIGHT : GuiTheme.TEXT_PRIMARY, false);
 			}
+		}
+
+		public boolean popupClicked(double mx, double my, int button, int x, int y, int w,
+				int clipTop, int clipBottom) {
+			if (!open || button != 0) return false;
+			String[] options = optionsSupplier.get();
+			int popupH = options.length * GuiTheme.ROW_HEIGHT + 4;
+			int popupY = popupY(y, height(), options.length, clipTop, clipBottom);
+			int ddX = dropdownX(x, w);
+			int ddW = dropdownW(x, w);
+			if (mx >= ddX && mx <= ddX + ddW && my >= popupY && my <= popupY + popupH) {
+				int index = Math.min(options.length - 1, Math.max(0,
+						(int) ((my - popupY - 2) / GuiTheme.ROW_HEIGHT)));
+				setter.accept(options[index]);
+				open = false;
+				return true;
+			}
+			open = false;
+			return true; // consume outside click; never click through to rows behind popup
+		}
+
+		static int popupY(int rowY, int rowHeight, int optionCount, int clipTop, int clipBottom) {
+			int popupH = optionCount * GuiTheme.ROW_HEIGHT + 4;
+			int below = rowY + rowHeight + 2;
+			return below + popupH <= clipBottom ? below : Math.max(clipTop, rowY - popupH);
 		}
 
 		@Override
@@ -330,23 +418,17 @@ public final class GuiWidgets {
 			}
 			int ddX = dropdownX(x, w);
 			int ddW = dropdownW(x, w);
-			int ddY = y + 3;
-			int ddH = GuiTheme.ROW_HEIGHT - 6;
+			int ddY = y + 19;
+			int ddH = 25;
 			if (open) {
-				String[] options = optionsSupplier.get();
-				for (int i = 0; i < options.length; i++) {
-					int oy = y + GuiTheme.ROW_HEIGHT + 4 + i * GuiTheme.ROW_HEIGHT;
-					if (mx >= ddX && mx <= ddX + ddW && my >= oy && my <= oy + GuiTheme.ROW_HEIGHT - 2) {
-						setter.accept(options[i]);
-						open = false;
-						return true;
-					}
-				}
-				open = false;
-				return mx >= ddX && mx <= ddX + ddW;
+				return true;
 			}
 			if (mx >= ddX && mx <= ddX + ddW && my >= ddY && my <= ddY + ddH) {
 				open = true;
+				String current = getter.get();
+				String[] options = optionsSupplier.get();
+				keyboardIndex = 0;
+				for (int i = 0; i < options.length; i++) if (options[i].equals(current)) keyboardIndex = i;
 				return true;
 			}
 			return false;
@@ -359,20 +441,6 @@ public final class GuiWidgets {
 
 		@Override
 		public boolean mouseDragged(double mx, double my, int x, int y, int w) {
-			// 展開optionのhover追跡
-			if (open) {
-				int ddX = dropdownX(x, w);
-				int ddW = dropdownW(x, w);
-				String[] options = optionsSupplier.get();
-				openHoverIndex = -1;
-				for (int i = 0; i < options.length; i++) {
-					int oy = y + GuiTheme.ROW_HEIGHT + 4 + i * GuiTheme.ROW_HEIGHT;
-					if (mx >= ddX && mx <= ddX + ddW && my >= oy && my <= oy + GuiTheme.ROW_HEIGHT - 2) {
-						openHoverIndex = i;
-						break;
-					}
-				}
-			}
 			return false;
 		}
 
@@ -383,6 +451,26 @@ public final class GuiWidgets {
 
 		public void closeDropdown() {
 			open = false;
+		}
+
+		public boolean keyPressed(int key) {
+			if (!open) return false;
+			String[] options = optionsSupplier.get();
+			if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) { open = false; return true; }
+			if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN) {
+				keyboardIndex = (keyboardIndex + 1) % options.length; return true;
+			}
+			if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_UP) {
+				keyboardIndex = Math.floorMod(keyboardIndex - 1, options.length); return true;
+			}
+			if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER
+					|| key == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER
+					|| key == org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE) {
+				setter.accept(options[Math.max(0, Math.min(options.length - 1, keyboardIndex))]);
+				open = false;
+				return true;
+			}
+			return true;
 		}
 	}
 
@@ -414,7 +502,7 @@ public final class GuiWidgets {
 				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
 			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY, false);
-			g.text(font, UiFont.text(valueSupplier.get()), x + GuiTheme.PADDING, y + 13,
+			g.text(font, fitted(font, valueSupplier.get(), Math.max(0, w - 104)), x + GuiTheme.PADDING, y + 13,
 					GuiTheme.ACCENT_BRIGHT, false);
 			int btnW = 72;
 			int btnH = height() - 8;
@@ -472,10 +560,16 @@ public final class GuiWidgets {
 			this.valueSupplier = valueSupplier;
 			this.bindAction = bindAction;
 		}
+		@Override public Component help() {
+			return UiFont.text(name + "\nCurrent: " + valueSupplier.get());
+		}
+		@Override public Component tooltipAt(Font font, double mx, double my, int x, int y, int w) {
+			return my >= y && my < y + 37 ? help() : null;
+		}
 
 		@Override
 		public int height() {
-			return GuiTheme.ROW_HEIGHT + 10;
+			return 68;
 		}
 
 		@Override
@@ -483,13 +577,15 @@ public final class GuiWidgets {
 			if (hovered) {
 				g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
 			}
-			g.text(font, nameComponent, x + GuiTheme.PADDING, y + 3, GuiTheme.TEXT_PRIMARY, false);
-			g.text(font, UiFont.text(valueSupplier.get()), x + GuiTheme.PADDING, y + 13,
+			int contentW = Math.max(20, w - GuiTheme.PADDING * 2);
+			g.text(font, fitted(font, name, contentW), x + GuiTheme.PADDING, y + 4,
+					GuiTheme.TEXT_PRIMARY, false);
+			g.text(font, fitted(font, valueSupplier.get(), contentW), x + GuiTheme.PADDING, y + 19,
 					GuiTheme.ACCENT_BRIGHT, false);
-			int btnW = 84;
-			int btnH = height() - 10;
-			int btnX = x + w - btnW - GuiTheme.PADDING;
-			int btnY = y + 5;
+			int btnW = contentW;
+			int btnH = 25;
+			int btnX = x + GuiTheme.PADDING;
+			int btnY = y + 37;
 			GuiPaint.roundedRect(g, btnX, btnY, btnW, btnH, 4, GuiTheme.SURFACE_HOVER);
 			GuiPaint.border(g, btnX, btnY, btnW, btnH, GuiTheme.BORDER);
 			int labelW = font.width(UiFont.BIND_HELD);
@@ -498,10 +594,10 @@ public final class GuiWidgets {
 		}
 
 		private boolean inBindButton(double mx, double my, int x, int y, int w) {
-			int btnW = 84;
-			int btnX = x + w - btnW - GuiTheme.PADDING;
-			int btnY = y + 5;
-			return mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + height() - 10;
+			int btnW = Math.max(20, w - GuiTheme.PADDING * 2);
+			int btnX = x + GuiTheme.PADDING;
+			int btnY = y + 37;
+			return mx >= btnX && mx <= btnX + btnW && my >= btnY && my <= btnY + 25;
 		}
 
 		@Override
@@ -527,5 +623,183 @@ public final class GuiWidgets {
 		public boolean mouseScrolled(double mx, double my, double amount, int x, int y, int w) {
 			return false;
 		}
+	}
+
+	public interface KeyboardAction {
+		void activate();
+	}
+
+	/** Read-only status/value row. */
+	public static class InfoSetting implements Setting {
+		private final Component name;
+		private final String description;
+		private final Supplier<String> value;
+
+		public InfoSetting(String name, String description, Supplier<String> value) {
+			this.name = UiFont.text(name);
+			this.description = description == null ? "" : description;
+			this.value = value;
+		}
+		@Override public Component help() { return UiFont.text(name.getString() + (description.isEmpty() ? "" : "\n" + description)); }
+
+		@Override public int height() { return description.isEmpty() ? 30 : 40; }
+		@Override public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
+			g.text(font, fitted(font, name.getString(), Math.max(20, w / 2 - 12)),
+					x + GuiTheme.PADDING, y + 5, GuiTheme.TEXT_PRIMARY, false);
+			String current = value.get();
+			Component rendered = fitted(font, current, Math.max(20, w / 2 - GuiTheme.PADDING * 2));
+			g.text(font, rendered, x + w - GuiTheme.PADDING - font.width(rendered), y + 5,
+					GuiTheme.ACCENT_BRIGHT, false);
+			if (!description.isEmpty()) {
+				g.text(font, fitted(font, description, w - GuiTheme.PADDING * 2),
+						x + GuiTheme.PADDING, y + 19, GuiTheme.TEXT_SECONDARY, false);
+			}
+		}
+		@Override public boolean mouseClicked(double mx, double my, int button, int x, int y, int w) { return false; }
+		@Override public boolean mouseReleased(double mx, double my) { return false; }
+		@Override public boolean mouseDragged(double mx, double my, int x, int y, int w) { return false; }
+		@Override public boolean mouseScrolled(double mx, double my, double amount, int x, int y, int w) { return false; }
+	}
+
+	/** One explicit action with a stable right-side hit target. */
+	public static class ButtonSetting implements Setting, KeyboardAction {
+		private final Component name;
+		private final String description;
+		private final Component button;
+		private final Runnable action;
+
+		public ButtonSetting(String name, String description, String button, Runnable action) {
+			this.name = UiFont.text(name);
+			this.description = description == null ? "" : description;
+			this.button = UiFont.text(button);
+			this.action = action;
+		}
+		@Override public Component help() { return UiFont.text(name.getString() + (description.isEmpty() ? "" : "\n" + description)); }
+		@Override public Component tooltipAt(Font font, double mx, double my, int x, int y, int w) {
+			return my >= y && my < y + 37 ? help() : null;
+		}
+
+		@Override public int height() { return 68; }
+		@Override public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
+			if (hovered) g.fill(x, y, x + w, y + height(), GuiTheme.SURFACE_HOVER);
+			int buttonW = w - GuiTheme.PADDING * 2;
+			int bx = x + GuiTheme.PADDING;
+			g.text(font, fitted(font, name.getString(), buttonW),
+					x + GuiTheme.PADDING, y + 6, GuiTheme.TEXT_PRIMARY, false);
+			g.text(font, fitted(font, description, buttonW),
+					x + GuiTheme.PADDING, y + 21, GuiTheme.TEXT_SECONDARY, false);
+			GuiPaint.roundedRect(g, bx, y + 37, buttonW, 25, 4, GuiTheme.ACCENT_DIM);
+			Component label = fitted(font, button.getString(), buttonW - 10);
+			g.text(font, label, bx + (buttonW - font.width(label)) / 2, y + 46,
+					GuiTheme.TEXT_PRIMARY, false);
+		}
+		@Override public boolean mouseClicked(double mx, double my, int buttonId, int x, int y, int w) {
+			int buttonW = w - GuiTheme.PADDING * 2;
+			int bx = x + GuiTheme.PADDING;
+			if (buttonId == 0 && mx >= bx && mx <= bx + buttonW && my >= y + 37 && my <= y + 62) {
+				action.run();
+				return true;
+			}
+			return false;
+		}
+		@Override public void activate() { action.run(); }
+		@Override public boolean mouseReleased(double mx, double my) { return false; }
+		@Override public boolean mouseDragged(double mx, double my, int x, int y, int w) { return false; }
+		@Override public boolean mouseScrolled(double mx, double my, double amount, int x, int y, int w) { return false; }
+	}
+
+	/** Compact page heading, state, key and primary operation. */
+	public static class PageActionSetting implements Setting, KeyboardAction {
+		private final Component title;
+		private final Component description;
+		private final Supplier<String> status;
+		private final Supplier<String> key;
+		private final Runnable action;
+
+		public PageActionSetting(String title, String description, Supplier<String> status,
+				Supplier<String> key, Runnable action) {
+			this.title = UiFont.text(title);
+			this.description = UiFont.text(description);
+			this.status = status;
+			this.key = key;
+			this.action = action;
+		}
+		@Override public Component help() {
+			return UiFont.text(title.getString() + "\n" + description.getString()
+					+ "\nStatus: " + status.get() + "\n" + key.get());
+		}
+		@Override public Component tooltipAt(Font font, double mx, double my, int x, int y, int w) {
+			int buttonW = Math.min(112, Math.max(82, w / 3));
+			int buttonX = x + w - buttonW - 10;
+			boolean onButton = mx >= buttonX && mx <= buttonX + buttonW
+					&& my >= y + 9 && my <= y + 43;
+			return onButton ? null : help();
+		}
+
+		@Override public int height() { return 72; }
+		@Override public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
+			int buttonW = Math.min(112, Math.max(82, w / 3));
+			int bx = x + w - buttonW - 10;
+			g.text(font, fitted(font, title.getString(), Math.max(30, bx - x - 20)),
+					x + 10, y + 8, GuiTheme.TEXT_PRIMARY, false);
+			g.text(font, fitted(font, description.getString(), Math.max(30, bx - x - 20)),
+					x + 10, y + 24, GuiTheme.TEXT_SECONDARY, false);
+			Component state = fitted(font, status.get() + "  ·  " + key.get(), w - 20);
+			g.text(font, state, x + 10, y + 51, GuiTheme.ACCENT_BRIGHT, false);
+			GuiPaint.roundedRect(g, bx, y + 9, buttonW, 34, 4,
+					hovered ? GuiTheme.ACCENT : GuiTheme.ACCENT_DIM);
+			Component label = UiFont.text("Start & Close");
+			g.text(font, label, bx + Math.max(5, (buttonW - font.width(label)) / 2), y + 22,
+					GuiTheme.TEXT_PRIMARY, false);
+			g.fill(x + 10, y + 69, x + w - 10, y + 70, GuiTheme.BORDER);
+		}
+		@Override public boolean mouseClicked(double mx,double my,int b,int x,int y,int w) {
+			int buttonW = Math.min(112, Math.max(82, w / 3));
+			if (b == 0 && mx >= x + w - buttonW - 10 && mx <= x + w - 10 && my >= y + 9 && my <= y + 43) {
+				action.run(); return true;
+			}
+			return false;
+		}
+		@Override public void activate() { action.run(); }
+		@Override public boolean mouseReleased(double a,double b){return false;}
+		@Override public boolean mouseDragged(double a,double b,int c,int d,int e){return false;}
+		@Override public boolean mouseScrolled(double a,double b,double c,int d,int e,int f){return false;}
+	}
+
+	public static class SegmentedSetting implements Setting {
+		private final String[] labels;
+		private final java.util.function.IntSupplier selected;
+		private final java.util.function.IntConsumer change;
+
+		public SegmentedSetting(String[] labels, java.util.function.IntSupplier selected,
+				java.util.function.IntConsumer change) {
+			this.labels = labels;
+			this.selected = selected;
+			this.change = change;
+		}
+		@Override public int height() { return 62; }
+		@Override public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
+			int each = Math.max(1, (w - 18) / 2);
+			for (int i = 0; i < labels.length; i++) {
+				int col = i % 2, row = i / 2;
+				int bx = x + 8 + col * (each + 2), by = y + 5 + row * 28;
+				g.fill(bx, by, bx + each, by + 24,
+						i == selected.getAsInt() ? GuiTheme.SIDEBAR_SELECTED : GuiTheme.PANEL);
+				Component label = fitted(font, labels[i], each - 8);
+				g.text(font, label, bx + 4, by + 8,
+						i == selected.getAsInt() ? GuiTheme.ACCENT_BRIGHT : GuiTheme.TEXT_SECONDARY, false);
+			}
+		}
+		@Override public boolean mouseClicked(double mx,double my,int b,int x,int y,int w) {
+			if (b != 0 || my < y + 5 || my > y + 57 || mx < x + 8 || mx > x + w - 8) return false;
+			int each = Math.max(1, (w - 18) / 2);
+			int col = Math.min(1, Math.max(0, (int) ((mx - x - 8) / (each + 2))));
+			int row = Math.min(1, Math.max(0, (int) ((my - y - 5) / 28)));
+			change.accept(Math.min(labels.length - 1, row * 2 + col));
+			return true;
+		}
+		@Override public boolean mouseReleased(double a,double b){return false;}
+		@Override public boolean mouseDragged(double a,double b,int c,int d,int e){return false;}
+		@Override public boolean mouseScrolled(double a,double b,double c,int d,int e,int f){return false;}
 	}
 }

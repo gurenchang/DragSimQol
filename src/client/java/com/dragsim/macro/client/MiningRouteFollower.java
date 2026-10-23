@@ -22,9 +22,9 @@ public final class MiningRouteFollower {
 	/** 不連続移動(テレポート)とみなす1tickの移動距離。 */
 	public static final double TELEPORT_DISTANCE_BLOCKS = 6.0;
 	/** ルートからの逸脱とみなす水平距離。 */
-	public static final double DEVIATION_RADIUS_XZ = 3.0;
+	public static final double DEVIATION_RADIUS_XZ = 6.0;
 	/** ルートからの逸脱とみなす高さ差。 */
-	public static final double DEVIATION_RADIUS_Y = 2.5;
+	public static final double DEVIATION_RADIUS_Y = 4.0;
 	/** スタック判定: このtick数で水平0.25ブロック未満。 */
 	public static final int STUCK_WINDOW_TICKS = 40;
 	public static final double STUCK_MIN_PROGRESS_XZ = 0.25;
@@ -133,6 +133,14 @@ public final class MiningRouteFollower {
 	 * @return 停止が必要な場合はTELEPORT/DEVIATED、継続可能ならNONE。
 	 */
 	public AdvanceStop tick(double px, double py, double pz) {
+		return tick(px, py, pz, true);
+	}
+
+	/**
+	 * 1tick分の追従更新。逸脱チェックを無効にしても、テレポート検知、
+	 * ノード到達、周回更新は継続する。
+	 */
+	public AdvanceStop tick(double px, double py, double pz, boolean checkDeviation) {
 		if (nodes.size() < 2) {
 			return AdvanceStop.DEVIATED;
 		}
@@ -162,7 +170,7 @@ public final class MiningRouteFollower {
 		}
 		observe(px, py, pz);
 		// 逸脱チェック: 現在区間の線分からの距離。
-		if (deviated(px, py, pz)) {
+		if (checkDeviation && deviated(px, py, pz)) {
 			return AdvanceStop.DEVIATED;
 		}
 		return AdvanceStop.NONE;

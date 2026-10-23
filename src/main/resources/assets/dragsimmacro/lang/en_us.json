@@ -3,6 +3,7 @@
 	"key.dragsimmacro.rotation": "Toggle Rotation Assist",
 	"key.dragsimmacro.attack": "Toggle Combat Attack",
   "key.dragsimmacro.gui": "Open DragSim GUI",
-  "key.dragsimmacro.mining_toggle": "Toggle End Stone Mining",
+  "key.dragsimmacro.mining_toggle": "Toggle Route Walker",
+  "key.dragsimmacro.obsidian_toggle": "Toggle Mining Bot",
 	"key.categories.dragsimmacro.controls": "DragSim Macro"
 }
