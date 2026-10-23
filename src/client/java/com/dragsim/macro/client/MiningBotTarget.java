@@ -44,10 +44,11 @@ public enum MiningBotTarget {
 		};
 	}
 
-	/** Empty hands are rejected even if a block happens not to require a tool. */
+	/** Empty hands are rejected even if a block happens not to require a tool. Prismarine shards are always allowed. */
 	public boolean isSuitableTool(ItemStack stack) {
 		return stack != null && !stack.isEmpty()
-				&& stack.isCorrectToolForDrops(block().defaultBlockState());
+				&& (MiningToolCheck.isExtraMiningTool(stack)
+						|| stack.isCorrectToolForDrops(block().defaultBlockState()));
 	}
 
 	private Block block() {

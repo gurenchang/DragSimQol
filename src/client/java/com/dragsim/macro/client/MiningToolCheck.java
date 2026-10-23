@@ -1,13 +1,15 @@
 package com.dragsim.macro.client;
 
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 
 /**
- * エンドストーンに対する標準の適正ツール判定。
- * レジストリIDや表示名だけの独自許可リストで代用しない。
- * 標準判定で分かるのはクライアント側の適性のみであり、
+ * エンドストーンに対する適正ツール判定。
+ * 基本はバニラの適性判定(ピッケル等)で判断し、追加でprismarine_shardも許可する。
+ * 判定で分かるのはクライアント側の適性のみであり、
  * サーバー独自の採掘速度・権限までは保証しない。
  */
 public final class MiningToolCheck {
@@ -19,11 +21,23 @@ public final class MiningToolCheck {
 		if (stack == null || stack.isEmpty()) {
 			return false;
 		}
+		if (isExtraMiningTool(stack)) {
+			return true;
+		}
 		try {
 			return stack.isCorrectToolForDrops(Blocks.END_STONE.defaultBlockState());
 		} catch (Exception e) {
 			return false;
 		}
+	}
+
+	/** バニラ判定とは別に採掘ツールとして許可するアイテム。 */
+	public static boolean isExtraMiningTool(ItemStack stack) {
+		return stack != null && !stack.isEmpty() && isExtraMiningItem(stack.getItem());
+	}
+
+	static boolean isExtraMiningItem(Item item) {
+		return item == Items.PRISMARINE_SHARD;
 	}
 
 	/** 持ち替え検知用の識別子。個数・ダメージ値を含めない。 */

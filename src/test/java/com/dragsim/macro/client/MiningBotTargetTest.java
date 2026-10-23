@@ -17,6 +17,7 @@ import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 
 class MiningBotTargetTest {
@@ -169,6 +170,14 @@ class MiningBotTargetTest {
 				Blocks.BUDDING_AMETHYST.defaultBlockState()));
 
 		assertFalse(MiningBotTarget.LARGE_AMETHYST_BUD.isSuitableTool(ItemStack.EMPTY));
+	}
+
+	@Test
+	void prismarineShardIsAcceptedAsMiningTool() {
+		assertTrue(MiningToolCheck.isExtraMiningItem(Items.PRISMARINE_SHARD));
+		assertFalse(MiningToolCheck.isExtraMiningItem(Items.PRISMARINE_CRYSTALS));
+		assertFalse(MiningToolCheck.isExtraMiningItem(Items.STICK));
+		assertFalse(MiningToolCheck.isExtraMiningTool(ItemStack.EMPTY));
 	}
 
 	@Test
