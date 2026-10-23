@@ -101,7 +101,7 @@ public class AttackGate {
 	}
 
 	/**
-	 * render-rate(LevelExtractionEvents.END_EXTRACTION)で毎frame呼ぶ。
+	 * render-rate(LevelRenderEvents.END_EXTRACTION)で毎frame呼ぶ。
 	 * 対象はcurrent Target 1体のみ。スキャン/レイトレ全走査は行わない。
 	 */
 	public void update(Minecraft mc, AimSolution solution) {
@@ -191,7 +191,7 @@ public class AttackGate {
 		// ==== AimOverlap(Phase 5.2b): 視線Ray × Target Hitbox(+margin) ====
 		// ray originはこのframeの実camera(vanilla crosshair pickと同一origin)
 		Vec3 rayOrigin = eye;
-		Camera camera = mc.gameRenderer != null ? mc.gameRenderer.mainCamera() : null;
+		Camera camera = mc.gameRenderer != null ? mc.gameRenderer.getMainCamera() : null;
 		if (camera != null && camera.position() != null) {
 			rayOrigin = camera.position();
 		}

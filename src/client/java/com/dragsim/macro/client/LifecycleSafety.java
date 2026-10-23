@@ -18,15 +18,21 @@ public final class LifecycleSafety {
 
 	public static void register(MacroController controller, RotationController rotationController,
 			AttackGate attackGate, CombatController combatController, ApproachPlanner approachPlanner,
-			AimSolver aimSolver, ScytheHoldUse scytheHoldUse) {
+			AimSolver aimSolver, ScytheHoldUse scytheHoldUse, MiningController mining) {
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
 			scytheHoldUse.release("WORLD_LOST");
+			if (mining != null) {
+				mining.stop(mc, "WORLD_LOST");
+			}
 			resetRuntime(controller, rotationController, attackGate, combatController,
 					approachPlanner, aimSolver, mc, "DISCONNECT");
 		});
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, mc) -> {
 			scytheHoldUse.release("WORLD_LOST");
+			if (mining != null) {
+				mining.stop(mc, "WORLD_LOST");
+			}
 			resetRuntime(controller, rotationController, attackGate, combatController,
 					approachPlanner, aimSolver, mc, "JOIN");
 		});
@@ -40,6 +46,10 @@ public final class LifecycleSafety {
 		// input cleanup(ownership付きのみ)
 		combatController.stopAndReleaseAll(mc);
 		approachPlanner.stopAndReleaseAll(mc);
+		MiningController mining = MiningController.get();
+		if (mining != null && mining.isActive()) {
+			mining.stop(mc, "WORLD_LOST");
+		}
 
 		// world依存stateのreset
 		controller.resetSession(reason);
@@ -51,9 +61,9 @@ public final class LifecycleSafety {
 		MotionMetrics.get().resetSessionState();
 
 		// GUI開放(disconnect画面にGUI objectを残さない)
-		if (mc.gui != null && mc.gui.screen() instanceof DragsimMacroScreen) {
+		if (mc.screen instanceof DragsimMacroScreen) {
 			MacroConfig.save();
-			mc.gui.setScreen(null);
+			mc.setScreen(null);
 		}
 	}
 }

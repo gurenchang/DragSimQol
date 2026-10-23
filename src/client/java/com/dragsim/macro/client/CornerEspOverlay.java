@@ -168,7 +168,7 @@ public class CornerEspOverlay implements HudElement {
 		// バニラのカメラ行列を取得(FOV/エフェクト込みで正確な投影)。
 		// CameraRenderStateを直接使うとHUD extract時点でのpopulate順序に依存するため、
 		// 実績のある mainCamera() から公式API経由で取得する。
-		Camera camera = mc.gameRenderer.mainCamera();
+		Camera camera = mc.gameRenderer.getMainCamera();
 		camera.getViewRotationProjectionMatrix(viewProjection);
 		Vec3 camPos = camera.position();
 

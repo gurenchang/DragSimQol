@@ -229,7 +229,7 @@ public class CombatController {
 			state = CombatState.IDLE;
 			return;
 		}
-		if (mc.gui.screen() != null) {
+		if (mc.screen != null) {
 			if (loadout.isFrozenScytheMode()) {
 				scytheSkipReason = ScytheFireGate.REASON_GUI_OPEN;
 			}

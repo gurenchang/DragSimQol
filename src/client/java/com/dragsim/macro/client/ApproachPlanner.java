@@ -300,7 +300,7 @@ public class ApproachPlanner {
 		}
 
 		// player/world nullやscreen表示中はMOD所有のauto inputのみ解放
-		if (mc.player == null || mc.level == null || mc.gui.screen() != null || !mc.mouseHandler.isMouseGrabbed()) {
+		if (mc.player == null || mc.level == null || mc.screen != null || !mc.mouseHandler.isMouseGrabbed()) {
 			if (state != ApproachState.IDLE && state != ApproachState.PAUSED_MANUAL) {
 				abort("UNFOCUSED");
 			} else {

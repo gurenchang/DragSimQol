@@ -26,7 +26,7 @@ class ScytheHoldInputPolicyTest {
 
 	@Test
 	void keepWhenUserPhysicallyHolds() {
-		// ユーザーが既に物理押下中 → MODは押さない(所有の二重化をしない)
+		// 既に物理押下中でもKEEPを返す。入力の再適用と所有はSession側で管理する。
 		ScytheHoldInputPolicy.Action a = ScytheHoldInputPolicy.next(
 				new ScytheHoldInputPolicy.State(true, false, true));
 		assertEquals(ScytheHoldInputPolicy.Action.KEEP, a);
@@ -57,7 +57,7 @@ class ScytheHoldInputPolicyTest {
 
 	@Test
 	void reHoldsAfterUserReleasesWhileConditionsHold() {
-		// ユーザー物理押下中はKEEP(非所有) → ユーザー離した後はMODがPRESSを引き継ぐ
+		// 所有前の入力状態に応じたポリシー分岐(実際の継続保持はSessionTestで検証)
 		assertEquals(ScytheHoldInputPolicy.Action.KEEP, ScytheHoldInputPolicy.next(
 				new ScytheHoldInputPolicy.State(true, false, true)));
 		assertEquals(ScytheHoldInputPolicy.Action.PRESS, ScytheHoldInputPolicy.next(

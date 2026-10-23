@@ -70,7 +70,7 @@ public class EspOverlay implements HudElement {
 		}
 
 		LocalPlayer player = mc.player;
-		net.minecraft.client.Camera camera = mc.gameRenderer.mainCamera();
+		net.minecraft.client.Camera camera = mc.gameRenderer.getMainCamera();
 		Vec3 eye = camera.position();
 		double yawRad = Math.toRadians(camera.yRot());
 		double pitchRad = Math.toRadians(camera.xRot());

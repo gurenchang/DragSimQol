@@ -541,7 +541,7 @@ public class RotationController {
 	 * render frame側(renderFrame)が全stateを所有する(二重適用防止)。
 	 */
 	public void tick(Minecraft mc, AimSolution solution) {
-		if (mc.gui.screen() != null) {
+		if (mc.screen != null) {
 			lastSolution = solution;
 			return;
 		}
@@ -702,7 +702,7 @@ public class RotationController {
 	// ==== Render-rate camera tracking(Phase 4.1e) ====
 
 	/**
-	 * render frame毎に1回呼ばれる(LevelExtractionEvents.END_EXTRACTION)。
+	 * render frame毎に1回呼ばれる(LevelRenderEvents.END_EXTRACTION)。
 	 * 呼び出し時点で:
 	 *   - MouseHandler.handleAccumulatedMovement()は実行済み(マウスdeltaがplayer rotationへ反映済み)
 	 *   - Cameraはこのframe用に抽出済み(camera()は本frameの実camera)

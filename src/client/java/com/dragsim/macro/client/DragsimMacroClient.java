@@ -7,9 +7,11 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
@@ -37,6 +39,17 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// Frozen Scythe "Hold Right Click"入力管理(対象処理と独立)
 		ScytheHoldUse scytheHoldUse = new ScytheHoldUse(controller);
 		controller.setMacroOffListener(() -> scytheHoldUse.release("MACRO_OFF"));
+		// 採掘マクロ(独立Controller。戦闘とは排他)
+		MiningController mining = new MiningController(controller);
+		MiningCommand.register(mining);
+		ScreenEvents.BEFORE_INIT.register((mc, screen, width, height) -> {
+			scytheHoldUse.release("GUI_OPEN");
+			mining.stop(mc, "GUI_OPENED");
+		});
+		ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> {
+			scytheHoldUse.release("CLIENT_STOPPING");
+			mining.stop(mc, "CLIENT_STOPPING");
+		});
 		AttackCommand.register(attackGate, combatController);
 		ApproachCommand.register(attackGate, approachPlanner);
 		WeaponCommand.register();
@@ -50,7 +63,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 			dispatcher.register(ClientCommands
 					.literal("zealotgui").executes(ctx -> {
 						openGui(Minecraft.getInstance(), controller, rotationController,
-								attackGate, combatController, approachPlanner);
+								attackGate, combatController, approachPlanner, mining);
 						return com.mojang.brigadier.Command.SINGLE_SUCCESS;
 					}));
 		});
@@ -88,34 +101,78 @@ public class DragsimMacroClient implements ClientModInitializer {
 				InputConstants.Type.KEYSYM,
 				GLFW.GLFW_KEY_G,
 				DRAGSIM_CATEGORY));
+		KeyMapping miningToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.dragsimmacro.mining_toggle",
+				InputConstants.Type.KEYSYM,
+				GLFW.GLFW_KEY_H,
+				DRAGSIM_CATEGORY));
+
+		// GをvanillaのUse読み取りより前に処理する。OFFしたtickの自動使用を止める。
+		// 開始・停止キーはフォーカス中にだけ受け付ける。非フォーカス中の残留clickは実行しない。
+		ClientTickEvents.START_CLIENT_TICK.register(mc -> {
+			boolean toggleRequested = false;
+			while (macroToggleKey.consumeClick()) {
+				toggleRequested = true;
+			}
+			if (toggleRequested && mc.screen == null && mc.isWindowActive()) {
+				if (mining.isActive()) {
+					MacroNotifications.send(mc,
+							"[DragSim] Macro cannot start — mining macro is active");
+					MacroLogger.get().log("MACRO_ON_REJECTED reason=MINING_ACTIVE");
+				} else {
+					controller.toggle();
+				}
+			}
+			boolean miningToggleRequested = false;
+			while (miningToggleKey.consumeClick()) {
+				miningToggleRequested = true;
+			}
+			if (miningToggleRequested && mc.screen == null && mc.isWindowActive()) {
+				mining.toggle(mc);
+			}
+			scytheHoldUse.tickStart(mc);
+		});
 
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_hud"), new DebugHud(controller, aimSolver, rotationController, attackGate, combatController, approachPlanner, scytheHoldUse));
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp"), new EspOverlay(controller, aimSolver));
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp_normal"), new CornerEspOverlay(controller, aimSolver, rotationController, attackGate));
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_path"), new PathDebugOverlay(controller, approachPlanner));
+		// 採掘ルート描画(戦闘ESP・マクロ状態に非依存。OFF中・1ノード・再起動直後も表示)。
+		// チャットより下に描くため先頭へ登録する(チャット入力・補完を遮らない)。
+		HudElementRegistry.addFirst(DragsimMacroMod.id("mining_route"), new MiningRouteOverlay(mining));
 
+		// 採掘中は戦闘側が採掘入力・回転を上書きしないよう調停する。
+		// 戦闘の保存設定は書き換えず、採掘停止後に戦闘は自動開始しない。
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			if (!(mc.gui.screen() instanceof DragsimMacroScreen)) {
+			if (mining.isActive()) {
+				mining.tickEnd(mc);
+				return;
+			}
+			if (!(mc.screen instanceof DragsimMacroScreen)) {
 				controller.tick(mc);
 			}
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			if (!(mc.gui.screen() instanceof DragsimMacroScreen)) {
+			if (mining.isActive()) {
+				return;
+			}
+			if (!(mc.screen instanceof DragsimMacroScreen)) {
 				aimSolver.tick(mc);
 			}
 		});
 		// combat/approachをrotation tickより先に実行する:
 		// CombatControllerが算出した迎撃点を同tickのrotationで使用する(1tick遅れの排除)。
-		ClientTickEvents.END_CLIENT_TICK.register(combatController::tick);
-		ClientTickEvents.END_CLIENT_TICK.register(approachPlanner::tick);
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			// マクロ全体ON/OFF(G)。押下ごとに1回だけ切替(長押し連続切替なし)。
-			// 画面が開いている間の入力は持ち越さない。
-			while (macroToggleKey.consumeClick()) {
-				if (mc.gui.screen() == null) {
-					controller.toggle();
-				}
+			if (!mining.isActive()) {
+				combatController.tick(mc);
 			}
+		});
+		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+			if (!mining.isActive()) {
+				approachPlanner.tick(mc);
+			}
+		});
+		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
 			while (rotationKey.consumeClick()) {
 				rotationController.toggle(mc);
 			}
@@ -123,7 +180,11 @@ public class DragsimMacroClient implements ClientModInitializer {
 				combatController.toggle();
 			}
 			while (guiKey.consumeClick()) {
-				openGui(mc, controller, rotationController, attackGate, combatController, approachPlanner);
+				openGui(mc, controller, rotationController, attackGate, combatController, approachPlanner,
+						mining);
+			}
+			if (mining.isActive()) {
+				return;
 			}
 			// Target探索ではなくAimSolutionのみ入力
 			rotationController.tick(mc, aimSolver.getSolution());
@@ -132,10 +193,14 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// Phase 4.1e: render-rate camera tracking。
 		// EndExtraction = camera抽出直後(本frameのcamera確定済み)/世界描画前。
 		// ここでのplayer rotation書き込みは次frameのcamera lerp(yRotO→yRot)へ反映される。
-		LevelExtractionEvents.END_EXTRACTION.register(ctx -> {
+		LevelRenderEvents.END_EXTRACTION.register(ctx -> {
 			// Phase 7.0: GUI表示中はrender callback停止(automation pause #33)
-			if (Minecraft.getInstance().gui.screen() != null) {
+			if (Minecraft.getInstance().screen != null) {
 				attackGate.resetSessionState();
+				return;
+			}
+			// 採掘中はtick側が回転を所有する。render側の戦闘追従で上書きしない。
+			if (mining.isActive()) {
 				return;
 			}
 			rotationController.renderFrame(ctx, aimSolver.getSolution());
@@ -145,21 +210,20 @@ public class DragsimMacroClient implements ClientModInitializer {
 
 		// Phase 7.0: disconnect/join lifecycle safety
 		LifecycleSafety.register(controller, rotationController, attackGate, combatController,
-				approachPlanner, aimSolver, scytheHoldUse);
-
-		// Hold Right Click入力はvanilla keybind読み取り前に確定させる(START_CLIENT_TICK)
-		ClientTickEvents.START_CLIENT_TICK.register(scytheHoldUse::tickStart);
+				approachPlanner, aimSolver, scytheHoldUse, mining);
 
 		DragsimMacroMod.LOGGER.info("ZealotDebug (Phase 1 entity scanner) initialized");
 	}
 
 	private static void openGui(Minecraft mc, MacroController controller,
 			RotationController rotationController, AttackGate attackGate,
-			CombatController combatController, ApproachPlanner approachPlanner) {
+			CombatController combatController, ApproachPlanner approachPlanner,
+			MiningController mining) {
+		mining.stop(mc, "GUI_OPENED");
 		combatController.stopAndReleaseAll(mc);
 		approachPlanner.stopAndReleaseAll(mc);
 		attackGate.resetSessionState();
-		mc.gui.setScreen(new DragsimMacroScreen(controller, rotationController,
-				combatController, approachPlanner));
+		mc.setScreen(new DragsimMacroScreen(controller, rotationController,
+				combatController, approachPlanner, mining));
 	}
 }

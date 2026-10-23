@@ -8,6 +8,8 @@ import com.dragsim.macro.client.FrozenScytheUseMode;
 import com.dragsim.macro.client.ItemBinding;
 import com.dragsim.macro.client.MacroConfig;
 import com.dragsim.macro.client.MacroController;
+import com.dragsim.macro.client.MiningController;
+import com.dragsim.macro.client.MiningSettings;
 import com.dragsim.macro.client.RotationController;
 import com.dragsim.macro.client.RotationSmoothing;
 import com.dragsim.macro.client.gui.GuiPaint;
@@ -49,7 +51,8 @@ import org.lwjgl.glfw.GLFW;
  * MouseButtonEvent / KeyEvent(#26)。drawStringではなくtext()を使用。
  */
 public class DragsimMacroScreen extends Screen {
-	private static final String[] CATEGORIES = {"General", "Targets", "Combat", "Movement", "Rotation", "ESP"};
+	private static final String[] CATEGORIES = {"General", "Targets", "Combat", "Movement", "Rotation", "ESP",
+			"Mining"};
 
 	private static final Component TITLE = UiFont.text("DragSim Macro");
 	private static final Component VERSION = UiFont.text("v1.5.0");
@@ -66,6 +69,7 @@ public class DragsimMacroScreen extends Screen {
 	private final RotationController rotationController;
 	private final CombatController combatController;
 	private final ApproachPlanner approachPlanner;
+	private final MiningController miningController;
 
 	private int selectedCategory;
 	private int windowX;
@@ -86,12 +90,14 @@ public class DragsimMacroScreen extends Screen {
 	private final List<DropdownSetting> activeDropdowns = new ArrayList<>();
 
 	public DragsimMacroScreen(MacroController controller, RotationController rotationController,
-			CombatController combatController, ApproachPlanner approachPlanner) {
+			CombatController combatController, ApproachPlanner approachPlanner,
+			MiningController miningController) {
 		super(Component.literal("DragSim Macro"));
 		this.controller = controller;
 		this.rotationController = rotationController;
 		this.combatController = combatController;
 		this.approachPlanner = approachPlanner;
+		this.miningController = miningController;
 	}
 
 	@Override
@@ -340,7 +346,7 @@ public class DragsimMacroScreen extends Screen {
 						() -> bindHeld("warp")));
 				settings.add(header("FROZEN SCYTHE"));
 				settings.add(new DropdownSetting("Scythe Use Mode",
-						"Hold Use Item while the macro is on and the bound Frozen Scythe is held."
+						"Hold Use Item even in the background while the macro is on and the bound Frozen Scythe is held."
 								+ " Independent of the Attack toggle.",
 						new String[]{"AIMED", "HOLD_RIGHT_CLICK"},
 						() -> MacroConfig.get().getFrozenScytheUseMode().name(),
@@ -460,6 +466,20 @@ public class DragsimMacroScreen extends Screen {
 							MacroConfig.get().specialEspHighlight = v;
 							MacroConfig.save();
 						}));
+			}
+			case "Mining" -> {
+				settings.add(header("MINING TURN"));
+				MiningSettings mining = miningController.getSettings();
+				settings.add(new SliderSetting("Turn Speed",
+						"Linear yaw speed for End Stone route following (deg/s)",
+						MiningSettings.MIN_TURN_SPEED_DPS, MiningSettings.MAX_TURN_SPEED_DPS, 5,
+						mining::getTurnSpeedDps,
+						mining::setTurnSpeedDps,
+						v -> String.format(Locale.ROOT, "%.0f deg/s", v)));
+				settings.add(header("MINING ROUTE"));
+				settings.add(new ToggleSetting("Show Route", "Draw mining nodes and loop lines",
+						mining::isShowRoute,
+						mining::setShowRoute));
 			}
 			default -> {
 			}
@@ -690,7 +710,7 @@ public class DragsimMacroScreen extends Screen {
 	@Override
 	public void onClose() {
 		MacroConfig.save();
-		minecraft.gui.setScreen(null);
+		minecraft.setScreen(null);
 	}
 
 	@Override

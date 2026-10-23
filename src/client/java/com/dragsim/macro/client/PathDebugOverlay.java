@@ -55,7 +55,7 @@ public class PathDebugOverlay implements HudElement {
 			return;
 		}
 
-		Camera camera = mc.gameRenderer.mainCamera();
+		Camera camera = mc.gameRenderer.getMainCamera();
 		if (camera == null || camera.position() == null) {
 			return;
 		}

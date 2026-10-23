@@ -14,9 +14,9 @@ public final class MacroNotifications {
 	}
 
 	public static void send(Minecraft mc, String message) {
-		if (mc != null && mc.gui != null && mc.gui.hud != null) {
+		if (mc != null && mc.gui != null) {
 			// client-only system message (never transmitted to the server)
-			mc.gui.hud.getChat().addClientSystemMessage(Component.literal(message));
+			mc.gui.getChat().addClientSystemMessage(Component.literal(message));
 		}
 		MacroLogger.get().log(message);
 	}

@@ -30,7 +30,12 @@ public final class MacroLogger {
 	}
 
 	public void startup() {
-		logFile = FabricLoader.getInstance().getGameDir().resolve("logs").resolve("zealotmacro.log");
+		try {
+			logFile = FabricLoader.getInstance().getGameDir().resolve("logs").resolve("zealotmacro.log");
+		} catch (Exception e) {
+			// 単体テスト等の非ゲーム環境ではファイル出力を無効化する。ログ呼出しで落とさない。
+			logFile = null;
+		}
 	}
 
 	public void logSessionStart(LocalPlayer player, double range) {
@@ -44,14 +49,23 @@ public final class MacroLogger {
 			startup();
 		}
 		String line = LocalDateTime.now().format(TIME) + " " + message;
-		DragsimMacroMod.LOGGER.info("[ZealotDebug] {}", message);
+		try {
+			DragsimMacroMod.LOGGER.info("[ZealotDebug] {}", message);
+		} catch (Exception ignored) {
+		}
 		synchronized (lock) {
+			if (logFile == null) {
+				return;
+			}
 			try {
 				Files.createDirectories(logFile.getParent());
 				Files.writeString(logFile, line + System.lineSeparator(), StandardCharsets.UTF_8,
 						StandardOpenOption.CREATE, StandardOpenOption.APPEND);
 			} catch (IOException e) {
-				DragsimMacroMod.LOGGER.error("Failed to write zealotmacro.log", e);
+				try {
+					DragsimMacroMod.LOGGER.error("Failed to write zealotmacro.log", e);
+				} catch (Exception ignored) {
+				}
 			}
 		}
 	}
