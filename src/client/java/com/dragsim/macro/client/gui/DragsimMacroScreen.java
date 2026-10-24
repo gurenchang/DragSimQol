@@ -11,7 +11,6 @@ import com.dragsim.macro.client.*;
 import com.dragsim.macro.client.gui.GuiWidgets.*;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -26,12 +25,10 @@ import org.lwjgl.glfw.GLFW;
 /** Six-page, mining-first operational control panel. */
 public class DragsimMacroScreen extends Screen {
 	static final String[] PAGES = {"Mining Bot", "Route Walker", "Combat", "Visuals", "Misc", "Advanced"};
-	private static final Component TITLE = UiFont.text("DragSim Controls");
-	private static final Component VERSION = UiFont.text("v1.5.0");
-	private static final Component CLOSE = UiFont.text("×");
-	private static final Component CONTROLS = UiFont.text("Minecraft Controls");
-	private static final Component[] PAGE_LABELS = new Component[PAGES.length];
-	static { for (int i = 0; i < PAGES.length; i++) PAGE_LABELS[i] = UiFont.text(PAGES[i]); }
+	private static final GuiPaint.Icon[] PAGE_ICONS = {GuiPaint.Icon.PICKAXE, GuiPaint.Icon.ROUTE,
+			GuiPaint.Icon.SWORD, GuiPaint.Icon.EYE, GuiPaint.Icon.BELL, GuiPaint.Icon.GEAR};
+	private static final int HEADER_BUTTON = 22;
+	private static final int SCROLL_STEP = 24;
 
 	private final MacroController controller;
 	private final RotationController rotationController;
@@ -44,7 +41,7 @@ public class DragsimMacroScreen extends Screen {
 	private int keyboardActionIndex = -1;
 	private GuiLayout.Metrics layout;
 	private boolean scrollbarDragging;
-	private int scrollbarX1, scrollbarX2, trackTop, trackBottom, barHeight, maxScroll;
+	private int scrollbarX, trackTop, trackBottom, barHeight, maxScroll;
 	private final Map<Integer, Integer> scrollPerPage = new HashMap<>();
 	private final Map<Integer, List<Setting>> settingsPerPage = new HashMap<>();
 	private final List<DropdownSetting> dropdowns = new ArrayList<>();
@@ -66,52 +63,128 @@ public class DragsimMacroScreen extends Screen {
 		keyboardActionIndex = -1;
 		scrollbarDragging = false;
 		layout = GuiLayout.calculate(width, height);
+		settingsPerPage.clear();
+		dropdowns.clear();
 		clampCurrentScroll();
 	}
+
+	// ==================================================================== header geometry
+
+	private int closeX() { return layout.windowX() + layout.windowW() - HEADER_BUTTON - 8; }
+	private int headerButtonY() { return layout.windowY() + (GuiTheme.HEADER_HEIGHT - HEADER_BUTTON) / 2; }
+	private boolean compactHeader() { return layout.contentW() < 250; }
+	private int controlsW() { return compactHeader() ? HEADER_BUTTON : font.width(UiFont.text("Controls")) + 32; }
+	private int controlsX() { return closeX() - 6 - controlsW(); }
+
+	// ==================================================================== render
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
 		GuiPaint.overlay(g, width, height);
 		int wx = layout.windowX(), wy = layout.windowY(), ww = layout.windowW(), wh = layout.windowH();
-		GuiPaint.roundedRect(g, wx - 4, wy - 4, ww + 8, wh + 8, 8, GuiTheme.SHADOW);
-		GuiPaint.roundedRect(g, wx, wy, ww, wh, GuiTheme.CORNER_RADIUS, GuiTheme.PANEL);
-		g.text(font, TITLE, wx + 10, wy + 9, GuiTheme.TEXT_PRIMARY, false);
-		boolean compact = ww < 430;
-		if (!compact) g.text(font, VERSION, wx + 112, wy + 10, GuiTheme.TEXT_SECONDARY, false);
-		Component controlsLabel = compact ? UiFont.text("Keys") : CONTROLS;
-		int controlsW = compact ? 42 : 106, controlsX = wx + ww - controlsW - 35;
-		boolean controlsHover = inside(mouseX, mouseY, controlsX, wy + 4, controlsW, 22);
-		GuiPaint.roundedRect(g, controlsX, wy + 4, controlsW, 22, 4,
-				controlsHover ? GuiTheme.SURFACE_HOVER : GuiTheme.SURFACE);
-		g.text(font, controlsLabel, controlsX + Math.max(5, (controlsW - font.width(controlsLabel)) / 2), wy + 11,
-				controlsHover ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY, false);
-		boolean closeHover = inside(mouseX, mouseY, wx + ww - 28, wy + 4, 22, 22);
-		if (closeHover) GuiPaint.roundedRect(g, wx + ww - 28, wy + 4, 22, 22, 4, GuiTheme.SURFACE_HOVER);
-		g.text(font, CLOSE, wx + ww - 21, wy + 10,
-				closeHover ? GuiTheme.DANGER : GuiTheme.TEXT_SECONDARY, false);
-		g.fill(wx, wy + 27, wx + ww, wy + 28, GuiTheme.BORDER);
+		int sw = layout.sidebarW();
+		GuiPaint.shadow(g, wx, wy, ww, wh, GuiTheme.CORNER_RADIUS, 14, 0xC0);
+		GuiPaint.roundedRectOutlined(g, wx, wy, ww, wh, GuiTheme.CORNER_RADIUS, GuiTheme.PANEL,
+				GuiTheme.WINDOW_BORDER);
+		// sidebar column (rounded on the window's left corners only)
+		GuiPaint.roundedRect(g, wx + 0.5f, wy + 0.5f, sw, wh - 1, GuiTheme.CORNER_RADIUS - 0.5f, GuiTheme.SIDEBAR);
+		g.fill(wx + sw - GuiTheme.CORNER_RADIUS, wy + 1, wx + sw, wy + wh - 1, GuiTheme.SIDEBAR);
+		GuiPaint.vhairline(g, wx + sw, wy + 1, wy + wh - 1, GuiTheme.BORDER);
+		renderSidebar(g, mouseX, mouseY);
+		renderHeader(g, mouseX, mouseY);
+		renderContent(g, mouseX, mouseY);
+	}
 
-		int sideY = wy + 28;
-		g.fill(wx, sideY, wx + layout.sidebarW(), wy + wh, GuiTheme.SURFACE);
-		g.fill(wx + layout.sidebarW(), sideY, wx + layout.sidebarW() + 1, wy + wh, GuiTheme.BORDER);
+	private void renderSidebar(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+		int wx = layout.windowX(), wy = layout.windowY(), wh = layout.windowH(), sw = layout.sidebarW();
+		// brand
+		int bx = wx + 10, by = wy + (GuiTheme.HEADER_HEIGHT - 22) / 2;
+		GuiPaint.shadow(g, bx, by + 1, 22, 22, 6, 4, 0x60);
+		GuiPaint.roundedGradient(g, bx, by, 22, 22, 6, 0xFFB46BFA, GuiTheme.ACCENT_DIM);
+		GuiPaint.icon(g, GuiPaint.Icon.LOGO, bx + 5, by + 5, 12, 0xFFFFFFFF);
+		int textW = sw - 42;
+		Component brandSub = UiFont.small("CONTROL PANEL");
+		boolean showSub = font.width(brandSub) <= textW;
+		g.text(font, GuiWidgets.fitted(font, "DragSim", textW), bx + 29,
+				showSub ? by + 2 : by + (22 - UiFont.BODY_H) / 2, GuiTheme.TEXT_PRIMARY, false);
+		if (showSub) g.text(font, brandSub, bx + 29, by + 13, GuiTheme.TEXT_SECONDARY, false);
+		// navigation
+		int navX = wx + 6, navW = sw - 12, rowH = layout.navRowH();
+		g.text(font, UiFont.small("MACROS"), wx + 14, GuiLayout.navItemY(layout, 0) - GuiLayout.GROUP_LABEL_H + 5,
+				GuiTheme.TEXT_DISABLED, false);
+		g.text(font, UiFont.small("SETTINGS"), wx + 14,
+				GuiLayout.navItemY(layout, GuiLayout.MACRO_PAGES) - GuiLayout.GROUP_LABEL_H + 5,
+				GuiTheme.TEXT_DISABLED, false);
+		int hoveredNav = GuiLayout.navIndexAt(layout, mouseX, mouseY, PAGES.length);
 		for (int i = 0; i < PAGES.length; i++) {
-			int rowY = sideY + 5 + i * layout.navRowH();
+			int y = GuiLayout.navItemY(layout, i);
 			boolean selected = i == selectedPage;
-			boolean hovered = inside(mouseX, mouseY, wx, rowY, layout.sidebarW(), layout.navRowH());
-			if (selected || hovered) g.fill(wx, rowY, wx + layout.sidebarW(), rowY + layout.navRowH(),
-					selected ? GuiTheme.SIDEBAR_SELECTED : GuiTheme.SURFACE_HOVER);
-			if (selected) GuiPaint.accentBar(g, wx, rowY + 3, layout.navRowH() - 6);
-			g.text(font, PAGE_LABELS[i], wx + 10, rowY + Math.max(7, (layout.navRowH() - 8) / 2),
-					selected ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY, false);
+			boolean hovered = i == hoveredNav;
+			int itemH = rowH - 2;
+			if (selected) {
+				GuiPaint.roundedRect(g, navX, y, navW, itemH, GuiTheme.CONTROL_RADIUS, GuiTheme.SIDEBAR_SELECTED);
+				GuiPaint.horizontalFade(g, navX, y + 2, navW / 2, itemH - 4, GuiPaint.withAlpha(GuiTheme.ACCENT, 0x18));
+				GuiPaint.roundedRect(g, wx + 1, y + 5, 3, itemH - 10, 1.5f, GuiTheme.ACCENT);
+			} else if (hovered) {
+				GuiPaint.roundedRect(g, navX, y, navW, itemH, GuiTheme.CONTROL_RADIUS, GuiTheme.SURFACE_HOVER);
+			}
+			int iconColor = selected ? GuiTheme.ACCENT_BRIGHT : hovered ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY;
+			GuiPaint.icon(g, PAGE_ICONS[i], navX + 8, y + (itemH - 10) / 2f, 10, iconColor);
+			g.text(font, GuiWidgets.fitted(font, PAGES[i], navW - 30), navX + 24, y + (itemH - UiFont.BODY_H) / 2,
+					selected || hovered ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY, false);
 		}
-		if (layout.sidebarW() >= 112) g.text(font,
-				UiFont.text(selectedPage < 2 ? "Mining operations" : "Configuration"),
-				wx + 10, wy + wh - 15, GuiTheme.TEXT_DISABLED, false);
+		// footer
+		int lastBottom = GuiLayout.navItemY(layout, PAGES.length - 1) + rowH;
+		if (wy + wh - 16 > lastBottom + 4)
+			g.text(font, UiFont.small("v1.5.0"), wx + 14, wy + wh - 14, GuiTheme.TEXT_DISABLED, false);
+	}
 
+	private void renderHeader(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+		int wy = layout.windowY();
+		int ty = wy + (GuiTheme.HEADER_HEIGHT - UiFont.BODY_H) / 2;
+		// breadcrumb: GROUP / Page
+		int x = layout.contentX() + 2;
+		if (!compactHeader()) {
+			Component group = UiFont.small(selectedPage < GuiLayout.MACRO_PAGES ? "MACROS" : "SETTINGS");
+			Component slash = UiFont.text("/");
+			g.text(font, group, x, ty + 1, GuiTheme.TEXT_DISABLED, false);
+			x += font.width(group) + 6;
+			g.text(font, slash, x, ty, GuiTheme.TEXT_DISABLED, false);
+			x += font.width(slash) + 6;
+		}
+		g.text(font, GuiWidgets.fitted(font, PAGES[selectedPage], controlsX() - x - 8), x, ty,
+				GuiTheme.TEXT_PRIMARY, false);
+		// Minecraft key binds
+		int by = headerButtonY();
+		int cx = controlsX(), cw = controlsW();
+		boolean controlsHover = inside(mouseX, mouseY, cx, by, cw, HEADER_BUTTON);
+		GuiPaint.button(g, cx, by, cw, HEADER_BUTTON, GuiPaint.ButtonStyle.SECONDARY, controlsHover);
+		int iconColor = controlsHover ? GuiTheme.ACCENT_BRIGHT : GuiTheme.TEXT_SECONDARY;
+		if (compactHeader()) {
+			GuiPaint.icon(g, GuiPaint.Icon.KEYBOARD, cx + 6, by + 6, 10, iconColor);
+			if (controlsHover) g.setTooltipForNextFrame(font, UiFont.text("Minecraft Controls"), mouseX, mouseY);
+		} else {
+			GuiPaint.icon(g, GuiPaint.Icon.KEYBOARD, cx + 9, by + 6, 10, iconColor);
+			g.text(font, UiFont.text("Controls"), cx + 24, by + (HEADER_BUTTON - UiFont.BODY_H) / 2,
+					controlsHover ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY, false);
+		}
+		// close
+		boolean closeHover = inside(mouseX, mouseY, closeX(), by, HEADER_BUTTON, HEADER_BUTTON);
+		if (closeHover) GuiPaint.roundedRect(g, closeX(), by, HEADER_BUTTON, HEADER_BUTTON, GuiTheme.CONTROL_RADIUS,
+				GuiTheme.DANGER_TINT);
+		GuiPaint.icon(g, GuiPaint.Icon.CLOSE, closeX() + 6, by + 6, 10,
+				closeHover ? GuiTheme.DANGER : GuiTheme.TEXT_SECONDARY);
+		GuiPaint.hairline(g, layout.windowX() + layout.sidebarW() + 1, wy + GuiTheme.HEADER_HEIGHT,
+				layout.windowX() + layout.windowW() - 1, GuiTheme.DIVIDER);
+	}
+
+	private void renderContent(GuiGraphicsExtractor g, int mouseX, int mouseY) {
 		int cx = layout.contentX(), cy = layout.contentY(), cw = layout.contentW(), ch = layout.contentH();
-		GuiPaint.roundedRect(g, cx, cy, cw, ch, 4, GuiTheme.SURFACE);
 		List<Setting> settings = currentSettings();
-		int scroll = scrollPerPage.getOrDefault(selectedPage, 0);
+		GuiContent.Layout content = GuiContent.layout(settings, cw);
+		maxScroll = Math.max(0, content.height() - ch);
+		int scroll = GuiLayout.clampScroll(scrollPerPage.getOrDefault(selectedPage, 0), content.height(), ch);
+		scrollPerPage.put(selectedPage, scroll);
 		boolean popupOpen = false;
 		for (Setting setting : settings) {
 			if (setting instanceof DropdownSetting dropdown && dropdown.isOpen()) {
@@ -119,45 +192,54 @@ public class DragsimMacroScreen extends Screen {
 				break;
 			}
 		}
-		g.enableScissor(cx, cy, cx + cw, cy + ch);
-		int y = cy + 5 - scroll;
+		int top = cy - scroll;
+		g.enableScissor(cx - 1, cy, cx + cw + 1, cy + ch);
+		for (GuiContent.Card card : content.cards()) {
+			if (top + card.y() + card.h() < cy || top + card.y() > cy + ch) continue;
+			GuiPaint.roundedRectOutlined(g, cx, top + card.y(), cw, card.h(), GuiTheme.CARD_RADIUS,
+					GuiTheme.SURFACE, GuiTheme.BORDER);
+		}
 		int actionIndex = 0;
-		for (Setting setting : settings) {
-			if (y + setting.height() >= cy && y <= cy + ch) {
+		for (GuiContent.Placed p : content.rows()) {
+			Setting setting = p.setting();
+			int x = cx + p.x(), y = top + p.y();
+			if (y + p.h() >= cy && y <= cy + ch) {
+				if (p.divider()) GuiPaint.hairline(g, x, y, x + p.w(), GuiTheme.DIVIDER);
 				if (setting instanceof ToggleSetting toggle) toggle.tickAnimation();
-				boolean hovered = GuiLayout.hitClipped(mouseX, mouseY, cx, y, cw,
-						setting.height(), cy, cy + ch);
-				setting.render(g, font, cx, y, cw, hovered);
-				if (hovered && !popupOpen) {
-					Component localHelp = setting.tooltipAt(font, mouseX, mouseY, cx, y, cw);
+				setting.hover(popupOpen ? -1 : mouseX, popupOpen ? -1 : mouseY);
+				boolean hovered = !popupOpen && GuiLayout.hitClipped(mouseX, mouseY, x, y, p.w(), p.h(), cy, cy + ch);
+				setting.render(g, font, x, y, p.w(), hovered);
+				if (hovered) {
+					Component localHelp = setting.tooltipAt(font, mouseX, mouseY, x, y, p.w());
 					if (localHelp != null) g.setTooltipForNextFrame(font, localHelp, mouseX, mouseY);
 				}
 				if (setting instanceof KeyboardAction && actionIndex == keyboardActionIndex)
-					GuiPaint.border(g, cx + 2, y + 2, cw - 6, setting.height() - 4, GuiTheme.ACCENT_BRIGHT);
+					GuiPaint.outline(g, x - 4, y + 1, p.w() + 8, p.h() - 2, GuiTheme.ACCENT_BRIGHT);
 			} else if (setting instanceof RouteEditorSetting route) route.setFieldsVisible(false);
 			if (setting instanceof KeyboardAction) actionIndex++;
-			y += setting.height();
 		}
-		y = cy + 5 - scroll;
-		for (Setting setting : settings) {
-			if (setting instanceof DropdownSetting d && d.isOpen()
-					&& y + setting.height() >= cy && y <= cy + ch)
-				d.renderPopup(g, font, cx, y, cw, cy, cy + ch, mouseX, mouseY);
-			y += setting.height();
+		// soft fade where content scrolls under the edges
+		if (scroll > 0) g.fillGradient(cx - 1, cy, cx + cw + 1, cy + 10, GuiTheme.PANEL, GuiTheme.PANEL & 0x00FFFFFF);
+		if (scroll < maxScroll)
+			g.fillGradient(cx - 1, cy + ch - 10, cx + cw + 1, cy + ch, GuiTheme.PANEL & 0x00FFFFFF, GuiTheme.PANEL);
+		for (GuiContent.Placed p : content.rows()) {
+			int y = top + p.y();
+			if (p.setting() instanceof DropdownSetting d && d.isOpen() && y + p.h() >= cy && y <= cy + ch)
+				d.renderPopup(g, font, cx + p.x(), y, p.w(), cy, cy + ch, mouseX, mouseY);
 		}
 		g.disableScissor();
 
-		int totalH = contentHeight(settings);
-		maxScroll = Math.max(0, totalH - ch);
-		scroll = GuiLayout.clampScroll(scroll, totalH, ch);
-		scrollPerPage.put(selectedPage, scroll);
-		scrollbarX1 = cx + cw - 4; scrollbarX2 = cx + cw - 2;
-		trackTop = cy + 2; trackBottom = cy + ch - 2;
+		// scrollbar in the right margin
+		scrollbarX = cx + cw + 4;
+		trackTop = cy + 2;
+		trackBottom = cy + ch - 2;
 		if (maxScroll > 0) {
-			barHeight = Math.max(20, (int) ((long) ch * ch / totalH));
-			int barY = trackTop + (int) ((long) scroll * (trackBottom - trackTop - barHeight) / maxScroll);
-			g.fill(scrollbarX1, barY, scrollbarX2, barY + barHeight,
-					scrollbarDragging ? GuiTheme.ACCENT_BRIGHT : GuiTheme.ACCENT_DIM);
+			int trackH = trackBottom - trackTop;
+			barHeight = Math.max(20, (int) ((long) trackH * ch / content.height()));
+			int barY = trackTop + (int) ((long) scroll * (trackH - barHeight) / maxScroll);
+			boolean hot = scrollbarDragging || inside(mouseX, mouseY, scrollbarX - 2, trackTop, 7, trackH);
+			GuiPaint.roundedRect(g, scrollbarX, barY, 3, barHeight, 1.5f,
+					scrollbarDragging ? GuiTheme.ACCENT : hot ? GuiTheme.ACCENT_DIM : GuiTheme.SCROLL_THUMB);
 		} else barHeight = 0;
 	}
 
@@ -183,10 +265,12 @@ public class DragsimMacroScreen extends Screen {
 	private void buildMiningBot(Minecraft mc, List<Setting> s) {
 		ObsidianSettings settings = obsidianController.getSettings();
 		s.add(new PageActionSetting("Mining Bot", "Mine nearby blocks from one position",
+				GuiPaint.Icon.PICKAXE, obsidianController::isActive,
 				() -> obsidianController.isActive() ? obsidianController.getState().name()
-						: "STOPPED · " + obsidianController.getStopReason(),
-				() -> "Toggle: " + keyName("key.dragsimmacro.obsidian_toggle"),
-				() -> { releaseCaptures(); mc.setScreen(null); obsidianController.start(mc); }));
+						: stopped(obsidianController.getStopReason()),
+				() -> keyName("key.dragsimmacro.obsidian_toggle"),
+				() -> { releaseCaptures(); mc.setScreen(null); obsidianController.start(mc); },
+				() -> obsidianController.stop(mc, "GUI_STOP")));
 		s.add(header("TARGET & AIM"));
 		s.add(dropdown("Target Block",
 				"Automatic aim target; held Attack may mine crossed blocks. Large Bud: down-facing and dry only.",
@@ -195,7 +279,7 @@ public class DragsimMacroScreen extends Screen {
 					if (!obsidianController.changeTarget(mc, MiningBotTarget.fromDisplay(value)))
 						notify("Mining Bot target save failed");
 				}));
-		s.add(new SliderSetting("Turn Speed", "Combined yaw and pitch speed",
+		s.add(new SliderSetting("Turn Speed", "Speed of a 30° turn; smaller turns are slower, larger ones faster",
 				30, 240, 5, settings::getTurnSpeedDps,
 				v -> saveResult(settings.setTurnSpeedDps(v), "turn speed"),
 				v -> String.format(Locale.ROOT, "%.0f deg/s", v)));
@@ -208,18 +292,31 @@ public class DragsimMacroScreen extends Screen {
 				0, 0.03, 0.001, settings::getDriftAmount,
 				v -> saveResult(settings.setDriftAmount(v), "drift amount"),
 				v -> String.format(Locale.ROOT, "%.3f blocks", v)));
+		s.add(header("DRILL"));
+		s.add(new ToggleSetting("Auto Ability", "Right-click ability on start, then every 240s; waits out the cooldown message",
+				settings::isAutoAbilityEnabled,
+				v -> {
+					boolean ok = settings.setAutoAbilityEnabled(v);
+					saveResult(ok, "Auto Ability");
+					if (ok) obsidianController.onAutoAbilityChanged(v);
+				}));
+		s.add(new ToggleSetting("Auto Refuel", "On \"out of fuel\": sneak + right-click with a Void Canister in the off-hand",
+				settings::isAutoRefuelEnabled,
+				v -> saveResult(settings.setAutoRefuelEnabled(v), "Auto Refuel")));
 		s.add(header("MINING TIMING"));
 		s.add(dropdown("Aim Lead Mode",
 				"Starts from the real vanilla mining start; the bot begins turning before arrival. Fixed lead 0ms disables early switching.",
-				new String[]{"Off", "Adaptive", "Fixed"},
+				new String[]{"Off", "Adaptive", "Fixed", "Tick"},
 				() -> switch (settings.getAimLeadMode()) {
 					case OFF -> "Off";
 					case ADAPTIVE -> "Adaptive";
 					case FIXED -> "Fixed";
+					case TICK -> "Tick";
 				}, value -> {
 					ObsidianSettings.AimLeadMode mode = switch (value) {
 						case "Adaptive" -> ObsidianSettings.AimLeadMode.ADAPTIVE;
 						case "Fixed" -> ObsidianSettings.AimLeadMode.FIXED;
+						case "Tick" -> ObsidianSettings.AimLeadMode.TICK;
 						default -> ObsidianSettings.AimLeadMode.OFF;
 					};
 					saveResult(settings.setAimLeadMode(mode), "Aim Lead Mode");
@@ -239,6 +336,23 @@ public class DragsimMacroScreen extends Screen {
 					0, 500, 25, () -> (double) settings.getFixedLeadMs(),
 					v -> saveResult(settings.setFixedLeadMs(Math.round(v)), "Fixed Lead"),
 					v -> String.format(Locale.ROOT, "%.0fms", v)).withScrollAdjustment());
+		}
+		if (settings.getAimLeadMode() == ObsidianSettings.AimLeadMode.TICK) {
+			s.add(new SliderSetting("Break Ticks", "Server ticks one block needs (count of crack stages); the bot moves on after this many",
+					ObsidianSettings.MIN_BREAK_TICKS, 40, 1, () -> (double) settings.getBreakTicks(),
+					v -> saveResult(settings.setBreakTicks((int) Math.round(v)), "Break Ticks"),
+					v -> String.format(Locale.ROOT, "%.0f ticks", v)).withScrollAdjustment());
+			s.add(new SliderSetting("Tick Margin", "Extra ticks held before moving on; lower is faster, too low restarts blocks",
+					ObsidianSettings.MIN_TICK_MARGIN, ObsidianSettings.MAX_TICK_MARGIN, 1, () -> (double) settings.getTickMargin(),
+					v -> saveResult(settings.setTickMargin((int) Math.round(v)), "Tick Margin"),
+					v -> String.format(Locale.ROOT, "+%.0f", v)).withScrollAdjustment());
+			s.add(new ButtonSetting("Use Measured", "Set Break Ticks to the count measured from crack stages this session", "Apply",
+					() -> {
+						int measured = obsidianController.getBreakMeter().measuredBreakTicks();
+						if (measured <= 0) { notify("No tick measurement yet — mine a few blocks first"); return; }
+						if (settings.setBreakTicks(measured)) notify("Break Ticks set to " + measured);
+						else notify("Could not save Break Ticks — check the log");
+					}));
 		}
 		s.add(new ToggleSetting("Mining Timeout", "Skip a target that does not break in time",
 				settings::isMiningTimeoutEnabled,
@@ -260,16 +374,27 @@ public class DragsimMacroScreen extends Screen {
 							: String.format(Locale.ROOT, "FIXED · switch=%dms · lead=%dms",
 									MiningFixedAim.switchAfterMs(settings.getFixedBreakMs(), settings.getFixedLeadMs()),
 									MiningFixedAim.effectiveLeadMs(settings.getFixedBreakMs(), settings.getFixedLeadMs()));
+					case TICK -> {
+						BreakTickMeter<?> meter = obsidianController.getBreakMeter();
+						int measured = meter.measuredBreakTicks();
+						yield String.format(Locale.ROOT, "TICK · hold %d+%d = %dms · measured %s",
+								settings.getBreakTicks(), settings.getTickMargin(),
+								MiningTickAim.switchAfterMs(settings.getBreakTicks(), settings.getTickMargin(),
+										ObsidianController.tickTimingTps()),
+								measured > 0 ? measured + " (" + meter.cleanSamples() + ")" : "-");
+					}
 				}));
 	}
 
 	private void buildRouteWalker(Minecraft mc, List<Setting> s) {
 		MiningSettings settings = miningController.getSettings();
 		s.add(new PageActionSetting("Route Walker", "Walk and mine a saved loop",
+				GuiPaint.Icon.ROUTE, miningController::isActive,
 				() -> miningController.isActive() ? "ON · node " + miningController.currentTarget1Based()
-						: "STOPPED · " + miningController.getStopReason(),
-				() -> "Toggle: " + keyName("key.dragsimmacro.mining_toggle"),
-				() -> { releaseCaptures(); mc.setScreen(null); miningController.start(mc); }));
+						: stopped(miningController.getStopReason()),
+				() -> keyName("key.dragsimmacro.mining_toggle"),
+				() -> { releaseCaptures(); mc.setScreen(null); miningController.start(mc); },
+				() -> miningController.stop(mc, "GUI_STOP")));
 		s.add(header("BASIC SETTINGS"));
 		s.add(new SliderSetting("Turn Speed", "Linear yaw speed in Auto Turn mode", 30, 240, 5,
 				settings::getTurnSpeedDps, v -> saveResult(settings.setTurnSpeedDps(v), "route turn speed"),
@@ -286,6 +411,7 @@ public class DragsimMacroScreen extends Screen {
 				v -> saveResult(settings.setDeviationCheck(v), "route deviation check")));
 		s.add(new ButtonSetting("Turn Speed Default", "Reset only Route Walker turn speed",
 				"Reset Speed", () -> saveResult(settings.resetTurnSpeed(), "route turn speed reset")));
+		s.add(header("ROUTE EDITOR"));
 		s.add(new RouteEditorSetting(miningController, this::confirmClearRoute));
 	}
 
@@ -331,8 +457,21 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Special Highlight", "Purple highlight for Special Zealots",
 				() -> MacroConfig.get().specialEspHighlight,
 				v -> updateConfig(c -> c.specialEspHighlight = v)));
+		s.add(new ToggleSetting("Target Highlight", "Glowing outline on the block the macro is mining",
+				() -> MacroConfig.get().targetBlockHighlight,
+				v -> updateConfig(c -> c.targetBlockHighlight = v)));
 		s.add(new InfoSetting("Route Display", "Configured on the Route Walker page",
 				() -> miningController.getSettings().isShowRoute() ? "ON" : "OFF"));
+		s.add(header("HUD"));
+		s.add(new ToggleSetting("Mining Bot HUD", "Status card while the Mining Bot runs: state, time, mined count, ability",
+				() -> MacroConfig.get().miningBotHud,
+				v -> updateConfig(c -> c.miningBotHud = v)));
+		s.add(new ToggleSetting("On-screen Toasts", "Show macro status messages and alerts at the bottom right",
+				() -> MacroConfig.get().toastNotifications,
+				v -> updateConfig(c -> c.toastNotifications = v)));
+		s.add(new ToggleSetting("Chat Messages", "Also print macro status messages in chat (command replies always do)",
+				() -> MacroConfig.get().chatNotifications,
+				v -> updateConfig(c -> c.chatNotifications = v)));
 	}
 
 	private void buildMisc(List<Setting> s) {
@@ -340,6 +479,48 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Fullbright", "Brighten dark areas for this client",
 				() -> MacroConfig.get().fullbrightEnabled,
 				v -> updateConfig(c -> c.fullbrightEnabled = v)));
+		s.add(header("DESKTOP ALERTS"));
+		s.add(new ToggleSetting("Nearby Player", "While a macro runs: notify when a player comes close",
+				() -> MacroConfig.get().alertNearbyPlayer,
+				v -> { updateConfig(c -> c.alertNearbyPlayer = v); rebuildPages(); }));
+		if (MacroConfig.get().alertNearbyPlayer) s.add(new SliderSetting("Alert Radius", "Distance that counts as nearby",
+				5, 64, 1, () -> MacroConfig.get().alertRadius,
+				v -> updateConfig(c -> c.alertRadius = v),
+				v -> String.format(Locale.ROOT, "%.0f blocks", v)));
+		s.add(new ToggleSetting("Name Mention", "While a macro runs: notify when your name is said in chat, or on a direct message",
+				() -> MacroConfig.get().alertMention,
+				v -> updateConfig(c -> c.alertMention = v)));
+		s.add(new ToggleSetting("Rotation Check", "While a macro runs: notify when the server turns your view (e.g. staff /tp or /rotate)",
+				() -> MacroConfig.get().alertRotation,
+				v -> { updateConfig(c -> c.alertRotation = v); rebuildPages(); }));
+		if (MacroConfig.get().alertRotation) s.add(new SliderSetting("Rotation Threshold", "Smallest server-forced view change that alerts",
+				1, 90, 1, () -> MacroConfig.get().alertRotationThreshold,
+				v -> updateConfig(c -> c.alertRotationThreshold = v),
+				v -> String.format(Locale.ROOT, "%.0f°", v)));
+		s.add(new ToggleSetting("TP Check", "While a macro runs: notify when the server teleports you (e.g. staff /tp)",
+				() -> MacroConfig.get().alertTeleport,
+				v -> { updateConfig(c -> c.alertTeleport = v); rebuildPages(); }));
+		if (MacroConfig.get().alertTeleport) s.add(new SliderSetting("TP Distance", "Smallest server teleport that alerts",
+				0.5, 20, 0.5, () -> MacroConfig.get().alertTeleportThreshold,
+				v -> updateConfig(c -> c.alertTeleportThreshold = v),
+				v -> String.format(Locale.ROOT, "%.1f blocks", v)));
+		s.add(new ToggleSetting("Slot Check", "While a macro runs: notify when the server switches your hotbar slot",
+				() -> MacroConfig.get().alertHeldSlot,
+				v -> updateConfig(c -> c.alertHeldSlot = v)));
+		s.add(new ToggleSetting("Held Item Check", "While a macro runs: notify when the server replaces or removes the item in your hand",
+				() -> MacroConfig.get().alertHeldItem,
+				v -> updateConfig(c -> c.alertHeldItem = v)));
+		s.add(new ToggleSetting("Knockback Check", "While a macro runs: notify when the server pushes you without damage",
+				() -> MacroConfig.get().alertKnockback,
+				v -> updateConfig(c -> c.alertKnockback = v)));
+		s.add(new ToggleSetting("Staff Check", "Notify on a staff check message (\"QUICK CHECK!\") or a server GUI opening mid-macro",
+				() -> MacroConfig.get().alertStaffCheck,
+				v -> updateConfig(c -> c.alertStaffCheck = v)));
+		s.add(new ToggleSetting("Screen Flash", "Pulse the screen edge red when an alert fires",
+				() -> MacroConfig.get().alertScreenFlash,
+				v -> updateConfig(c -> c.alertScreenFlash = v)));
+		s.add(new ButtonSetting("Test Alert", "Send a test alert (desktop notification, flash and toast)", "Test",
+				() -> { AlertMonitor alerts = AlertMonitor.get(); if (alerts != null) alerts.test(); }));
 	}
 
 	private void buildAdvanced(List<Setting> s) {
@@ -460,76 +641,54 @@ public class DragsimMacroScreen extends Screen {
 	}
 
 	private Setting header(String title) {
-		Component label = UiFont.text(title);
-		return new Setting() {
-			@Override public int height() { return GuiTheme.SECTION_HEADER_HEIGHT; }
-			@Override public void render(GuiGraphicsExtractor g, Font f, int x, int y, int w, boolean hovered) {
-				g.text(f, label, x + 10, y + 8, GuiTheme.ACCENT_BRIGHT, false);
-				g.fill(x, y + height() - 2, x + w, y + height(), GuiTheme.BORDER);
-			}
-			@Override public boolean mouseClicked(double a,double b,int c,int d,int e,int f){return false;}
-			@Override public boolean mouseReleased(double a,double b){return false;}
-			@Override public boolean mouseDragged(double a,double b,int c,int d,int e){return false;}
-			@Override public boolean mouseScrolled(double a,double b,double c,int d,int e,int f){return false;}
-		};
+		return new SectionHeader(title);
 	}
 
-	private void confirmClearRoute() {
-		int count = miningController.nodeCount();
-		minecraft.setScreen(new ConfirmScreen(confirmed -> {
-			minecraft.setScreen(this);
-			if (!confirmed) return;
-			String error = miningController.clearRouteChecked();
-			if (error != null) notify("Route clear failed — " + error);
-			else notify("Route cleared");
-		}, Component.literal("Clear Route?"),
-				Component.literal("Permanently remove all " + count + " route nodes?"),
-				Component.literal("Clear Route"), Component.literal("Cancel")));
+	private GuiContent.Layout contentLayout() {
+		return GuiContent.layout(currentSettings(), layout.contentW());
+	}
+
+	private int contentTop() {
+		return layout.contentY() - scrollPerPage.getOrDefault(selectedPage, 0);
 	}
 
 	@Override public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
 		if (event.button() != 0) return super.mouseClicked(event, doubled);
 		double mx = event.x(), my = event.y();
-		int wx = layout.windowX(), wy = layout.windowY(), ww = layout.windowW();
-		int controlsW = ww < 430 ? 42 : 106;
-		if (inside(mx, my, wx + ww - controlsW - 35, wy + 4, controlsW, 22)) {
+		int cx = layout.contentX(), cy = layout.contentY(), cw = layout.contentW(), ch = layout.contentH();
+		GuiContent.Layout content = contentLayout();
+		int top = contentTop();
+		for (GuiContent.Placed p : content.rows()) {
+			if (p.setting() instanceof DropdownSetting d && d.isOpen())
+				return d.popupClicked(mx, my, event.button(), cx + p.x(), top + p.y(), p.w(), cy, cy + ch);
+		}
+		if (inside(mx, my, controlsX(), headerButtonY(), controlsW(), HEADER_BUTTON)) {
 			releaseCaptures();
 			minecraft.setScreen(new KeyBindsScreen(this, minecraft.options));
 			return true;
 		}
-		if (inside(mx, my, wx + ww - 28, wy + 4, 22, 22)) { onClose(); return true; }
-		if (mx >= wx && mx <= wx + layout.sidebarW() && my >= wy + 33) {
-			int index = (int) ((my - (wy + 33)) / layout.navRowH());
-			if (index >= 0 && index < PAGES.length) { selectPage(index); return true; }
-		}
-		int cx = layout.contentX(), cy = layout.contentY(), cw = layout.contentW(), ch = layout.contentH();
-		int y = cy + 5 - scrollPerPage.getOrDefault(selectedPage, 0);
-		for (Setting setting : currentSettings()) {
-			if (setting instanceof DropdownSetting d && d.isOpen())
-				return d.popupClicked(mx, my, event.button(), cx, y, cw, cy, cy + ch);
-			y += setting.height();
-		}
-		if (maxScroll > 0 && mx >= scrollbarX1 - 3 && mx <= scrollbarX2 + 3
+		if (inside(mx, my, closeX(), headerButtonY(), HEADER_BUTTON, HEADER_BUTTON)) { onClose(); return true; }
+		int nav = GuiLayout.navIndexAt(layout, mx, my, PAGES.length);
+		if (nav >= 0) { selectPage(nav); return true; }
+		if (maxScroll > 0 && mx >= scrollbarX - 3 && mx <= scrollbarX + 6
 				&& my >= trackTop && my <= trackBottom) {
 			scrollbarDragging = true; dragScrollbarTo(my); return true;
 		}
 		if (!inside(mx, my, cx, cy, cw, ch)) return super.mouseClicked(event, doubled);
-		y = cy + 5 - scrollPerPage.getOrDefault(selectedPage, 0);
 		int clickedAction = 0;
-		for (Setting setting : currentSettings()) {
-			if (setting instanceof RouteEditorSetting route
-					&& GuiLayout.hitClipped(mx, my, cx, y, cw, setting.height(), cy, cy + ch)
-					&& route.mouseClickedEvent(event, doubled)) {
+		for (GuiContent.Placed p : content.rows()) {
+			Setting setting = p.setting();
+			int x = cx + p.x(), y = top + p.y();
+			boolean hit = GuiLayout.hitClipped(mx, my, x, y, p.w(), p.h(), cy, cy + ch);
+			if (setting instanceof RouteEditorSetting route && hit && route.mouseClickedEvent(event, doubled)) {
 				keyboardActionIndex = -1;
 				return true;
 			}
-			if (GuiLayout.hitClipped(mx, my, cx, y, cw, setting.height(), cy, cy + ch)
-					&& setting.mouseClicked(mx, my, event.button(), cx, y, cw)) {
+			if (hit && setting.mouseClicked(mx, my, event.button(), x, y, p.w())) {
 				if (setting instanceof KeyboardAction) keyboardActionIndex = clickedAction;
 				return true;
 			}
 			if (setting instanceof KeyboardAction) clickedAction++;
-			y += setting.height();
 		}
 		return super.mouseClicked(event, doubled);
 	}
@@ -542,10 +701,10 @@ public class DragsimMacroScreen extends Screen {
 
 	@Override public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
 		if (scrollbarDragging) { dragScrollbarTo(event.y()); return true; }
-		int y = layout.contentY() + 5 - scrollPerPage.getOrDefault(selectedPage, 0);
-		for (Setting setting : currentSettings()) {
-			if (setting.mouseDragged(event.x(), event.y(), layout.contentX(), y, layout.contentW())) return true;
-			y += setting.height();
+		int top = contentTop();
+		for (GuiContent.Placed p : contentLayout().rows()) {
+			if (p.setting().mouseDragged(event.x(), event.y(), layout.contentX() + p.x(), top + p.y(), p.w()))
+				return true;
 		}
 		return super.mouseDragged(event, dragX, dragY);
 	}
@@ -554,16 +713,16 @@ public class DragsimMacroScreen extends Screen {
 		closeDropdowns();
 		for (Setting setting : currentSettings())
 			if (setting instanceof RouteEditorSetting route) route.releaseFocus();
-		int y = layout.contentY() + 5 - scrollPerPage.getOrDefault(selectedPage, 0);
-		for (Setting setting : currentSettings()) {
-			if (GuiLayout.hitClipped(mouseX, mouseY, layout.contentX(), y, layout.contentW(),
-					setting.height(), layout.contentY(), layout.contentY() + layout.contentH())
-					&& setting.mouseScrolled(mouseX, mouseY, sy, layout.contentX(), y, layout.contentW())) return true;
-			y += setting.height();
+		int cy = layout.contentY(), ch = layout.contentH();
+		int top = contentTop();
+		GuiContent.Layout content = contentLayout();
+		for (GuiContent.Placed p : content.rows()) {
+			int x = layout.contentX() + p.x(), y = top + p.y();
+			if (GuiLayout.hitClipped(mouseX, mouseY, x, y, p.w(), p.h(), cy, cy + ch)
+					&& p.setting().mouseScrolled(mouseX, mouseY, sy, x, y, p.w())) return true;
 		}
-		int current = scrollPerPage.getOrDefault(selectedPage, 0) - (int) (sy * 20);
-		scrollPerPage.put(selectedPage, GuiLayout.clampScroll(current,
-				contentHeight(currentSettings()), layout.contentH()));
+		int current = scrollPerPage.getOrDefault(selectedPage, 0) - (int) (sy * SCROLL_STEP);
+		scrollPerPage.put(selectedPage, GuiLayout.clampScroll(current, content.height(), ch));
 		return true;
 	}
 
@@ -587,7 +746,6 @@ public class DragsimMacroScreen extends Screen {
 			return true;
 		}
 		if (event.input() == GLFW.GLFW_KEY_ESCAPE) {
-			for (DropdownSetting d : dropdowns) if (d.isOpen()) { d.closeDropdown(); return true; }
 			onClose(); return true;
 		}
 		return super.keyPressed(event);
@@ -600,22 +758,17 @@ public class DragsimMacroScreen extends Screen {
 	}
 
 	private void scrollKeyboardActionIntoView(int wanted) {
-		int y = 5;
+		GuiContent.Layout content = contentLayout();
 		int action = 0;
-		for (Setting setting : currentSettings()) {
-			if (setting instanceof KeyboardAction) {
-				if (action == wanted) {
-					int scroll = scrollPerPage.getOrDefault(selectedPage, 0);
-					if (y < scroll) scroll = y;
-					else if (y + setting.height() > scroll + layout.contentH())
-						scroll = y + setting.height() - layout.contentH();
-					scrollPerPage.put(selectedPage, GuiLayout.clampScroll(scroll,
-							contentHeight(currentSettings()), layout.contentH()));
-					return;
-				}
-				action++;
-			}
-			y += setting.height();
+		for (GuiContent.Placed p : content.rows()) {
+			if (!(p.setting() instanceof KeyboardAction)) continue;
+			if (action++ != wanted) continue;
+			int scroll = scrollPerPage.getOrDefault(selectedPage, 0);
+			if (p.y() < scroll) scroll = p.y() - GuiContent.TOP_PAD;
+			else if (p.y() + p.h() > scroll + layout.contentH())
+				scroll = p.y() + p.h() - layout.contentH() + GuiContent.TOP_PAD;
+			scrollPerPage.put(selectedPage, GuiLayout.clampScroll(scroll, content.height(), layout.contentH()));
+			return;
 		}
 	}
 
@@ -628,7 +781,7 @@ public class DragsimMacroScreen extends Screen {
 	private void selectPage(int page) {
 		for (Setting setting : currentSettings()) {
 			setting.mouseReleased(0, 0);
-			if (setting instanceof RouteEditorSetting route) route.releaseFocus();
+			if (setting instanceof RouteEditorSetting route) route.setFieldsVisible(false);
 		}
 		scrollbarDragging = false;
 		closeDropdowns();
@@ -657,14 +810,8 @@ public class DragsimMacroScreen extends Screen {
 	}
 	private void clampCurrentScroll() {
 		if (layout == null) return;
-		List<Setting> settings = currentSettings();
 		scrollPerPage.put(selectedPage, GuiLayout.clampScroll(
-				scrollPerPage.getOrDefault(selectedPage, 0), contentHeight(settings), layout.contentH()));
-	}
-	private static int contentHeight(List<Setting> settings) {
-		int h = 10;
-		for (Setting s : settings) h += s.height();
-		return h;
+				scrollPerPage.getOrDefault(selectedPage, 0), contentLayout().height(), layout.contentH()));
 	}
 	private void dragScrollbarTo(double my) {
 		if (maxScroll <= 0 || barHeight <= 0 || trackBottom <= trackTop + barHeight) return;
@@ -674,6 +821,22 @@ public class DragsimMacroScreen extends Screen {
 	}
 	private static boolean inside(double x, double y, int rx, int ry, int rw, int rh) {
 		return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
+	}
+
+	private void confirmClearRoute() {
+		int count = miningController.nodeCount();
+		minecraft.setScreen(new ConfirmScreen(confirmed -> {
+			minecraft.setScreen(this);
+			if (!confirmed) return;
+			String error = miningController.clearRouteChecked();
+			if (error != null) notify("Route clear failed — " + error);
+			else notify("Route cleared");
+		}, Component.literal("Clear Route?"),
+				Component.literal("Permanently remove all " + count + " route nodes?"),
+				Component.literal("Clear Route"), Component.literal("Cancel")));
+	}
+	private static String stopped(String reason) {
+		return reason == null || reason.isBlank() || "-".equals(reason) ? "STOPPED" : "STOPPED · " + reason;
 	}
 
 	private String keyName(String id) {

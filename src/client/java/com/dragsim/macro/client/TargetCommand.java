@@ -4,7 +4,6 @@ import com.mojang.brigadier.Command;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.network.chat.Component;
 
 /**
  * Phase 6.2: TargetSelector V2コマンド(LEGACY/DISTANCE_BAND A/B比較用)。
@@ -76,6 +75,6 @@ public final class TargetCommand {
 	}
 
 	private static void feedback(FabricClientCommandSource source, String message) {
-		source.sendFeedback(Component.literal(message));
+		source.sendFeedback(ChatFormat.format(message));
 	}
 }

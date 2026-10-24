@@ -56,7 +56,7 @@ class MiningAimDriftTest {
 		assertEquals(6.0, ObsidianController.driftTurnSpeed(6.0, true), 1e-12);
 		var rotation = new ObsidianRotation();
 		rotation.sync(0.0, 89.0);
-		var next = rotation.update(170.0, 89.5,
+		var next = rotation.track(170.0, 89.5,
 				ObsidianController.driftTurnSpeed(120.0, true));
 		assertTrue(Math.hypot(MiningRotationController.angleError(next.yaw(), 0.0),
 				next.pitch() - 89.0) <= 0.5 + 1e-12,

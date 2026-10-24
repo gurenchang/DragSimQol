@@ -5,18 +5,21 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Random;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.phys.AABB;
@@ -36,6 +39,9 @@ public final class ObsidianController {
 	}
 
 	private static final int SCAN_INTERVAL_TICKS = 5;
+	/** Human-like pause (ticks) before picking a new block after the current one vanished. */
+	static final int MIN_REACTION_TICKS = 2;
+	static final int MAX_REACTION_TICKS = 4;
 	private static final double AIM_EPSILON_DEG = 0.75;
 	private static final double MAX_POSITION_CHANGE_SQR = 1.0;
 	static final double MAX_DRIFT_TURN_SPEED_DPS = 10.0;
@@ -49,6 +55,34 @@ public final class ObsidianController {
 	private final MiningAdaptiveAim adaptiveAim = new MiningAdaptiveAim();
 	private final MiningTimeoutPolicy<BlockPos> timeoutPolicy = new MiningTimeoutPolicy<>(64);
 	private final MiningAttemptLedger attempts = new MiningAttemptLedger(32);
+	private final Random reactionRandom = new Random();
+	private final DrillActions drillActions = new DrillActions();
+	private final MiningBotStats stats = new MiningBotStats();
+	private final BreakTickMeter<BlockPos> breakMeter = new BreakTickMeter<>();
+	/** Client ticks while the bot runs; the break meter's tick clock. */
+	private long clientTicks;
+	/** Crack packets near the player that matched no measured block (diagnostics only). */
+	private int unmatchedCracks;
+	/** Clean samples needed before the measured tick count is compared with the setting. */
+	static final int TICK_CHECK_SAMPLES = 5;
+	private boolean tickMismatchWarned;
+	/** Stray crack packets logged per session; later ones are only counted. */
+	private static final int MAX_UNMATCHED_LOGS = 20;
+	private DrillUseSequence drillSequence;
+	private final DrillUseSequence.Io drillIo = new DrillUseSequence.Io() {
+		@Override public boolean destroying() {
+			Minecraft mc = Minecraft.getInstance();
+			return mc != null && mc.gameMode != null && mc.gameMode.isDestroying();
+		}
+		@Override public void use(boolean down) {
+			Minecraft mc = Minecraft.getInstance();
+			if (mc != null && mc.options != null) mc.options.keyUse.setDown(down);
+		}
+		@Override public void sneak(boolean down) {
+			Minecraft mc = Minecraft.getInstance();
+			if (mc != null && mc.options != null) setKeyDown(mc.options.keyShift, down);
+		}
+	};
 	private final ObsidianInputSession.Input keyInput = new ObsidianInputSession.Input() {
 		@Override public boolean physicalAttackDown() {
 			return isPhysicalDown(Minecraft.getInstance());
@@ -87,10 +121,20 @@ public final class ObsidianController {
 	public BlockPos getTargetPos() { return target == null ? null : target.pos(); }
 	public MiningBotTarget getSelectedTarget() { return settings.getTarget(); }
 	public MiningAdaptiveAim getAdaptiveAim() { return adaptiveAim; }
+	public MiningBotStats getStats() { return stats; }
+	public BreakTickMeter<BlockPos> getBreakMeter() { return breakMeter; }
+	public int getUnmatchedCracks() { return unmatchedCracks; }
+	/** Stop reason in words for the HUD; "-" before the first stop. */
+	public String getStopReasonDisplay() { return "-".equals(stopReason) ? "-" : displayReason(stopReason); }
+	/** Milliseconds until the next drill ability use; -1 when not scheduled. */
+	public long msUntilAbility() { return drillActions.msUntilAbility(MiningClock.nowMs()); }
+	public DrillActions.Kind runningDrillAction() { return drillActions.running(); }
+	public boolean isRefuelPending() { return drillActions.isRefuelWanted(); }
 	public String adaptiveStatus() {
 		return switch (settings.getAimLeadMode()) {
 			case OFF -> "OFF";
 			case FIXED -> "FIXED";
+			case TICK -> "TICK";
 			case ADAPTIVE -> adaptiveAim.ready() ? "READY" : "LEARNING";
 		};
 	}
@@ -99,12 +143,34 @@ public final class ObsidianController {
 			case OFF -> 0;
 			case FIXED -> MiningFixedAim.effectiveLeadMs(settings.getFixedBreakMs(), settings.getFixedLeadMs());
 			case ADAPTIVE -> adaptiveAim.effectiveLeadMs(settings.getMaxLeadMs());
+			// Tick mode holds for a tick count instead of leading by a time.
+			case TICK -> 0;
 		};
+	}
+
+	/** TPS used for Tick mode timing. */
+	public static double tickTimingTps() {
+		ServerTickClock clock = ServerTickClock.get();
+		return MiningTickAim.timingTps(clock.tps(), clock.lastIntervalTps());
+	}
+
+	/** Server ticks since the attempt's vanilla start, for Tick mode. */
+	private double tickElapsed(MiningAttemptLedger.Attempt attempt, long now) {
+		return MiningTickAim.elapsedTicks(attempt.startedAt(), now, breakMeter.startServerTick(attempt.pos()),
+				ServerTickClock.get().serverTickAt(now), tickTimingTps());
 	}
 
 	/** Both modes use the actual uninterrupted vanilla start, never aim selection time. */
 	static boolean shouldLeadAttempt(ObsidianSettings settings, MiningAdaptiveAim adaptive,
 			MiningAttemptLedger.Attempt attempt, long now) {
+		double elapsedAt20Tps = attempt == null ? 0 : MiningTickAim.elapsedTicks(attempt.startedAt(), now,
+				Double.NaN, Double.NaN, 20.0);
+		return shouldLeadAttempt(settings, adaptive, attempt, now, elapsedAt20Tps, false);
+	}
+
+	/** {@code tickElapsed} / {@code serverStalled}: Tick mode inputs (server ticks since the start). */
+	static boolean shouldLeadAttempt(ObsidianSettings settings, MiningAdaptiveAim adaptive,
+			MiningAttemptLedger.Attempt attempt, long now, double tickElapsed, boolean serverStalled) {
 		if (attempt == null || attempt.kind() != MiningAttemptLedger.Kind.NORMAL
 				|| !attempt.learningEligible()
 				|| (settings.isMiningTimeoutEnabled() && now >= attempt.deadline())) return false;
@@ -113,6 +179,8 @@ public final class ObsidianController {
 			case ADAPTIVE -> adaptive.shouldLead(attempt.startedAt(), now, settings.getMaxLeadMs());
 			case FIXED -> MiningFixedAim.shouldLead(attempt.startedAt(), now,
 					settings.getFixedBreakMs(), settings.getFixedLeadMs());
+			case TICK -> MiningTickAim.shouldSwitch(tickElapsed, settings.getBreakTicks(),
+					settings.getTickMargin(), serverStalled);
 		};
 	}
 	public boolean isAttemptPending() { return attempts.size() > 0; }
@@ -206,10 +274,19 @@ public final class ObsidianController {
 					candidateCount = initialCandidates.size();
 					scanTicks = 0;
 					stopReason = "-";
+					stats.start(MiningClock.nowMs());
+					breakMeter.clear();
+					unmatchedCracks = 0;
+					tickMismatchWarned = false;
 					state = State.AIMING;
 					MiningCameraSmoothing.publishObsidian(rotation.yaw(), rotation.yaw(),
 							rotation.pitch(), rotation.pitch());
-					input.update(keyInput, true, mc.isWindowActive());
+					drillActions.start(MiningClock.nowMs(), settings.isAutoAbilityEnabled());
+					drillSequence = null;
+					// Ability is used first on start: do not press Attack before that right-click.
+					boolean actionDue = drillActions.due(MiningClock.nowMs(), settings.isAutoAbilityEnabled(),
+							settings.isAutoRefuelEnabled()) != DrillActions.Kind.NONE;
+					input.update(keyInput, attackWanted() && !actionDue, mc.isWindowActive());
 				});
 		if (!started && initialCandidates.isEmpty()) {
 			notify(mc, "[DragSim] Mining Bot cannot start — no reachable "
@@ -228,6 +305,7 @@ public final class ObsidianController {
 		if (!isActive()) return;
 		state = State.OFF;
 		stopReason = reason == null ? "STOPPED" : reason;
+		stats.stop(MiningClock.nowMs());
 		target = null;
 		candidateCount = 0;
 		waiting.clear();
@@ -242,6 +320,9 @@ public final class ObsidianController {
 		startSlot = -1;
 		startToolIdentity = null;
 		startTarget = null;
+		if (drillSequence != null) drillSequence.release(drillIo);
+		drillSequence = null;
+		drillActions.reset();
 		input.update(keyInput, false, mc != null && mc.isWindowActive());
 		if (mc != null && mc.gameMode != null) {
 			mc.gameMode.stopDestroyBlock();
@@ -256,12 +337,27 @@ public final class ObsidianController {
 
 	/** END_CLIENT_TICK: advances selection and rotation, never invokes a destroy API. */
 	public void tickEnd(Minecraft mc) {
+		clientTicks++;
 		if (!validateOrStop(mc)) return;
+		runDrill(mc);
+		if (!isActive()) return;
+		if (!advance(mc) && isActive() && mc.player != null) {
+			// No target this tick. Ease the view out and publish a fresh camera snapshot;
+			// a stale snapshot would replay the last tick's turn every tick (view stutter).
+			applyRotation(mc, rotation.coast());
+		}
+	}
+
+	/** Returns true when the rotation was advanced and published this tick. */
+	private boolean advance(Minecraft mc) {
 		long now = MiningClock.nowMs();
 		processExpired(mc, now);
 		if (target != null && settings.isAimLeadEnabled()) {
 			MiningAttemptLedger.Attempt current = attempts.get(target.pos());
-			if (shouldLeadAttempt(settings, adaptiveAim, current, now)
+			boolean tickMode = settings.getAimLeadMode() == ObsidianSettings.AimLeadMode.TICK;
+			double elapsed = tickMode && current != null ? tickElapsed(current, now) : 0;
+			if (shouldLeadAttempt(settings, adaptiveAim, current, now, elapsed,
+					tickMode && ServerTickClock.get().stalled(now))
 					&& settings.getTarget().matches(mc.level.getBlockState(current.pos()))) {
 				List<Candidate> alternatives = scan(mc).stream()
 						.filter(candidate -> !candidate.pos().equals(current.pos())).toList();
@@ -269,9 +365,12 @@ public final class ObsidianController {
 					long earlyTimeout = Math.max(1000, current.deadline() - now);
 					if (attempts.markEarly(current.pos(), now, earlyTimeout)) {
 						if (settings.isAdaptiveAimLeadEnabled()) adaptiveAim.markLeadIssued();
-						MacroLogger.get().log("MINING_BOT_EARLY_ISSUED pos="
+						stats.recordLeadSwitch();
+						MacroLogger.get().detail("MINING_BOT_EARLY_ISSUED pos="
 							+ current.pos().toShortString() + " mode=" + settings.getAimLeadMode()
-							+ " lead=" + effectiveLeadMs());
+							+ " lead=" + effectiveLeadMs() + " afterMs=" + (now - current.startedAt())
+							+ (tickMode ? String.format(Locale.ROOT, " afterTicks=%.2f hold=%d+%d tps=%.1f",
+									elapsed, settings.getBreakTicks(), settings.getTickMargin(), tickTimingTps()) : ""));
 						target = alternatives.getFirst(); aimDrift.reset(); driftEngaged = false; state = State.AIMING;
 					}
 				}
@@ -283,11 +382,8 @@ public final class ObsidianController {
 			// Track every observed replacement (bedrock, air, or another block) and only
 			// consider it regenerated after the world reports the selected target again.
 			waiting.add(target.pos().immutable());
-			target = null;
-			aimDrift.reset();
-			driftEngaged = false;
-			state = State.SEARCHING;
-			input.update(keyInput, true, mc.isWindowActive());
+			loseTarget();
+			input.update(keyInput, attackWanted(), mc.isWindowActive());
 		}
 
 		if (target == null && ++scanTicks >= SCAN_INTERVAL_TICKS) {
@@ -299,8 +395,8 @@ public final class ObsidianController {
 					&& selected.matches(mc.level.getBlockState(pos)));
 			if (candidates.isEmpty()) {
 				state = scannedState;
-				input.update(keyInput, true, mc.isWindowActive());
-				return;
+				input.update(keyInput, attackWanted(), mc.isWindowActive());
+				return false;
 			}
 			target = candidates.getFirst();
 			aimDrift.reset();
@@ -308,7 +404,7 @@ public final class ObsidianController {
 			state = scannedState;
 		}
 
-		if (target == null) return;
+		if (target == null) return false;
 		boolean driftGeometrySafe = horizontalDistanceSqr(mc.player.getEyePosition(), target.anchor()) >= 0.0225;
 		MiningAimDrift.Offset offset = aimDrift.update(driftEngaged && driftGeometrySafe,
 				settings.isAimDriftEnabled(), settings.getDriftAmount());
@@ -320,17 +416,18 @@ public final class ObsidianController {
 			refreshed = refreshTarget(mc, target, target.aim());
 			if (refreshed == null) refreshed = refreshTarget(mc, target, target.anchor());
 			if (refreshed == null) {
-				target = null;
-				aimDrift.reset();
-				driftEngaged = false;
-				state = State.SEARCHING;
-				input.update(keyInput, true, mc.isWindowActive());
-				return;
+				loseTarget();
+				input.update(keyInput, attackWanted(), mc.isWindowActive());
+				return false;
 			}
 		}
 		target = refreshed;
-		double turnSpeed = driftTurnSpeed(settings.getTurnSpeedDps(), driftEngaged);
-		ObsidianRotation.Angles angles = rotation.update(target.yaw(), target.pitch(), turnSpeed);
+		// First acquisition: planned human-like movement. While drifting inside the
+		// block: smooth capped follow so the view never jumps.
+		ObsidianRotation.Angles angles = driftEngaged
+				? rotation.track(target.yaw(), target.pitch(),
+						driftTurnSpeed(settings.getTurnSpeedDps(), true))
+				: rotation.update(target.yaw(), target.pitch(), settings.getTurnSpeedDps());
 		applyRotation(mc, angles);
 		boolean aligned = Math.hypot(
 				MiningRotationController.angleError(target.yaw(), angles.yaw()),
@@ -343,13 +440,99 @@ public final class ObsidianController {
 				: aligned;
 		state = miningReady ? State.MINING : State.AIMING;
 		// KeyMapping remains held; the Mixin gate independently controls vanilla destruction.
-		input.update(keyInput, true, mc.isWindowActive());
+		input.update(keyInput, attackWanted(), mc.isWindowActive());
+		return true;
+	}
+
+	/** Attack stays released while a drill right-click is in progress. */
+	private boolean attackWanted() {
+		return drillSequence == null;
+	}
+
+	/** Server chat/system text; drives the drill ability cooldown and refuel. */
+	public void onServerMessage(String text) {
+		if (!isActive()) return;
+		long now = MiningClock.nowMs();
+		DrillActions.Message message = drillActions.onMessage(text, now, refuelReactionMs(reactionRandom));
+		if (message == DrillActions.Message.COOLDOWN) {
+			MacroLogger.get().log("MINING_BOT_ABILITY_COOLDOWN nextInMs=" + drillActions.msUntilAbility(now));
+		} else if (message == DrillActions.Message.OUT_OF_FUEL) {
+			MacroLogger.get().log("MINING_BOT_OUT_OF_FUEL refuelWanted=" + drillActions.isRefuelWanted());
+		}
+	}
+
+	/** Time to notice the chat message before reaching for the canister: 0.6–1.5s. */
+	private static long refuelReactionMs(Random random) {
+		return 600 + random.nextInt(901);
+	}
+
+	public void onAutoAbilityChanged(boolean enabled) {
+		if (!isActive()) return;
+		if (enabled) drillActions.armAbilityNow(MiningClock.nowMs());
+		else drillActions.disarmAbility();
+	}
+
+	/** Starts and advances drill right-click actions (ability / refuel). */
+	private void runDrill(Minecraft mc) {
+		long now = MiningClock.nowMs();
+		if (drillSequence == null) {
+			DrillActions.Kind kind = drillActions.due(now,
+					settings.isAutoAbilityEnabled(), settings.isAutoRefuelEnabled());
+			if (kind == DrillActions.Kind.NONE) return;
+			if (kind == DrillActions.Kind.REFUEL) {
+				if (drillActions.refuelGaveUp()) {
+					stop(mc, "REFUEL_FAILED");
+					return;
+				}
+				if (!mc.player.getOffhandItem().is(Items.GLASS_BOTTLE)) {
+					stop(mc, "OUT_OF_FUEL");
+					return;
+				}
+			}
+			drillActions.begin(kind);
+			drillSequence = new DrillUseSequence(kind, reactionRandom);
+			MacroLogger.get().log("MINING_BOT_DRILL_ACTION_START kind=" + kind);
+			// Vanilla ignores Use while destroying, so let go of Attack first.
+			input.update(keyInput, false, mc.isWindowActive());
+		}
+		if (!drillSequence.tick(drillIo)) return;
+		DrillUseSequence finished = drillSequence;
+		drillSequence = null;
+		if (finished.clicked()) {
+			drillActions.finish(finished.kind(), now);
+		} else {
+			drillActions.abort(finished.kind(), now);
+		}
+		MacroLogger.get().log("MINING_BOT_DRILL_ACTION_END kind=" + finished.kind()
+				+ " clicked=" + finished.clicked() + " timedOut=" + finished.timedOut());
+		input.update(keyInput, attackWanted(), mc.isWindowActive());
+	}
+
+	/** Works for both hold and toggle key mappings (toggle sneak flips on setDown(true)). */
+	private static void setKeyDown(KeyMapping key, boolean down) {
+		if (key.isDown() == down) return;
+		key.setDown(down);
+		if (key.isDown() != down) key.setDown(!down);
+	}
+
+	/** Current target vanished or became unreachable: rescan after a short reaction delay. */
+
+	private void loseTarget() {
+		target = null;
+		aimDrift.reset();
+		driftEngaged = false;
+		state = State.SEARCHING;
+		scanTicks = SCAN_INTERVAL_TICKS - reactionDelayTicks(reactionRandom);
+	}
+
+	static int reactionDelayTicks(Random random) {
+		return MIN_REACTION_TICKS + random.nextInt(MAX_REACTION_TICKS - MIN_REACTION_TICKS + 1);
 	}
 
 	/** Called immediately before vanilla consumes Attack. Does not advance timers or rotation. */
 	public void refreshBeforeAttack(Minecraft mc) {
 		if (!validateOrStop(mc)) return;
-		input.update(keyInput, true, mc.isWindowActive());
+		input.update(keyInput, attackWanted(), mc.isWindowActive());
 	}
 
 	/** Mixin gate for vanilla continueAttack; false still executes vanilla progress cleanup. */
@@ -477,13 +660,18 @@ public final class ObsidianController {
 		if (!isActive() || !validateOrStop(mc) || pos == null) return;
 		if (wasDestroying && previousPos != null && !previousPos.equals(pos)) {
 			attempts.markInterrupted(previousPos);
+			noteLeftBlock(previousPos, "next_block");
 		}
 		// Other blocks may be mined while Attack is held. They are allowed by the
 		// input gate, but are not timing samples for the selected target.
 		if (preState == null || !settings.getTarget().matches(preState)) return;
 		if (target == null || !target.pos().equals(pos)) return;
 		long now = MiningClock.nowMs();
-		attempts.begin(pos, now, settings.getTimeoutDurationMs());
+		MiningAttemptLedger.Attempt attempt = attempts.begin(pos, now, settings.getTimeoutDurationMs());
+		// Vanilla re-issues start for a block still being mined; like the ledger, time from the first one.
+		if (attempt.startedAt() == now) {
+			breakMeter.begin(pos.immutable(), clientTicks, now, ServerTickClock.get().serverTickAt(now));
+		}
 		for (MiningAttemptLedger.Attempt evicted : attempts.drainEvicted()) {
 			if (evicted.kind() == MiningAttemptLedger.Kind.EARLY) adaptiveAim.recordEarlyFailure();
 		}
@@ -493,6 +681,30 @@ public final class ObsidianController {
 	public void onVanillaDestroyStopped(BlockPos pos) {
 		if (pos == null) return;
 		attempts.markInterrupted(pos);
+		if (isActive()) noteLeftBlock(pos, "stopped");
+	}
+
+	/** Tick mode: say once per session when the measured tick count differs from the setting. */
+	private void warnTickMismatch(Minecraft mc) {
+		if (tickMismatchWarned || settings.getAimLeadMode() != ObsidianSettings.AimLeadMode.TICK) return;
+		if (breakMeter.cleanSamples() < TICK_CHECK_SAMPLES) return;
+		int measured = breakMeter.measuredBreakTicks();
+		if (measured <= 0 || measured == settings.getBreakTicks()) return;
+		tickMismatchWarned = true;
+		MacroLogger.get().log("MINING_BOT_TICK_MISMATCH measured=" + measured + " setting=" + settings.getBreakTicks());
+		notify(mc, "[DragSim] Tick timing mismatch — measured " + measured + " ticks, setting is "
+				+ settings.getBreakTicks());
+	}
+
+	/** The crosshair left a block vanilla was mining: logged to compare with crack restarts. */
+	private void noteLeftBlock(BlockPos pos, String via) {
+		long now = MiningClock.nowMs();
+		MiningAttemptLedger.Attempt attempt = attempts.get(pos);
+		breakMeter.left(pos, now);
+		if (attempt == null) return;
+		MacroLogger.get().detail(String.format(Locale.ROOT,
+				"MINING_BOT_LEFT_BLOCK pos=%s kind=%s via=%s afterMs=%d afterTicks=%.2f",
+				pos.toShortString(), attempt.kind(), via, now - attempt.startedAt(), tickElapsed(attempt, now)));
 	}
 
 	/** Server-verified ClientLevel update; local prediction is intentionally ignored. */
@@ -510,6 +722,22 @@ public final class ObsidianController {
 		if (confirmation == null) {
 			return;
 		}
+		stats.recordMined();
+		// An early lead leaves the block while the server keeps mining it: still a full break time.
+		// An interrupted normal attempt is not.
+		BreakTickMeter.Sample tickSample = breakMeter.confirm(pos, clientTicks, now,
+				ServerTickClock.get().serverTickAt(now), confirmation.attempt().kind() == MiningAttemptLedger.Kind.EARLY
+						|| confirmation.attempt().learningEligible());
+		if (tickSample != null) {
+			warnTickMismatch(mc);
+			MacroLogger.get().detail(String.format(Locale.ROOT,
+					"MINING_BOT_BREAK_TICKS pos=%s kind=%s ticks=%d ms=%d cracks=%d stages=%d trace=%s restarts=%d leftAfterMs=%.0f crackPhaseMs=%.0f crackPhaseTicks=%.1f firstCrackDelayMs=%.0f serverClockTicks=%.1f tps=%.1f ping=%d median=%d",
+					pos.toShortString(), confirmation.attempt().kind(), tickSample.ticks(), tickSample.ms(),
+					tickSample.crackPackets(), tickSample.phaseStages(), tickSample.stageTrace(), tickSample.restarts(), tickSample.leftAfterMs(),
+					tickSample.crackPhaseMs(),
+					tickSample.crackPhaseServerTicks(), tickSample.firstCrackDelayMs(), tickSample.serverClockTicks(),
+					ServerTickClock.get().tps(), pingMs(mc), breakMeter.medianTicks()));
+		}
 		boolean onTime = now < confirmation.attempt().deadline();
 		if (settings.isAdaptiveAimLeadEnabled() && onTime
 				&& confirmation.attempt().kind() == MiningAttemptLedger.Kind.NORMAL
@@ -518,10 +746,33 @@ public final class ObsidianController {
 		else if (settings.isAdaptiveAimLeadEnabled()
 				&& confirmation.attempt().kind() == MiningAttemptLedger.Kind.EARLY)
 			adaptiveAim.recordEarlySuccess();
-		MacroLogger.get().log("MINING_BOT_OBSERVED_BREAK pos=" + pos.toShortString()
+		MacroLogger.get().detail("MINING_BOT_OBSERVED_BREAK pos=" + pos.toShortString()
 				+ " durationMs=" + confirmation.observedMs() + " kind=" + confirmation.attempt().kind()
 				+ " samples=" + adaptiveAim.sampleCount() + " median=" + adaptiveAim.observedMedianMs()
 				+ " lead=" + effectiveLeadMs());
+	}
+
+	/**
+	 * Server block destruction progress (crack stage 0-9; other values clear it). The server may send
+	 * these for our own mining or not at all; only the timing is used, never to issue input.
+	 */
+	public void onServerBlockCrack(Minecraft mc, int breakerId, BlockPos pos, int stage) {
+		if (!isActive() || mc == null || mc.player == null || mc.level != startLevel || pos == null) return;
+		if (mc.player.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos)) > 36.0) return;
+		long now = MiningClock.nowMs();
+		boolean measured = breakMeter.crack(pos, stage, now, ServerTickClock.get().serverTickAt(now));
+		// Summarised once per block in MINING_BOT_BREAK_TICKS (stages=...); only strays are logged here.
+		if (!measured && stage >= 0 && stage <= BreakTickMeter.MAX_STAGE && unmatchedCracks++ < MAX_UNMATCHED_LOGS) {
+			MacroLogger.get().detail("MINING_BOT_CRACK_UNMATCHED pos=" + pos.toShortString() + " stage=" + stage
+					+ " breaker=" + breakerId + (breakerId == mc.player.getId() ? "(self)" : ""));
+		}
+	}
+
+	/** Round-trip latency the server reports in the tab list; 0 when unknown. */
+	public static int pingMs(Minecraft mc) {
+		if (mc == null || mc.player == null || mc.getConnection() == null) return 0;
+		var info = mc.getConnection().getPlayerInfo(mc.player.getUUID());
+		return info == null ? 0 : Math.max(0, info.getLatency());
 	}
 
 	/** Shared deadline path for tick and server-update callbacks. */
@@ -537,18 +788,20 @@ public final class ObsidianController {
 		for (MiningAttemptLedger.Attempt attempt : expired) {
 			if (attempt.kind() == MiningAttemptLedger.Kind.EARLY) {
 				adaptiveAim.recordEarlyFailure();
-				MacroLogger.get().log("MINING_BOT_EARLY_FAILED pos=" + attempt.pos().toShortString());
+				stats.recordLeadMissed();
+				MacroLogger.get().detail("MINING_BOT_EARLY_FAILED pos=" + attempt.pos().toShortString());
 			}
 			if (!settings.isMiningTimeoutEnabled()) continue;
 			timeoutPolicy.cooldown(attempt.pos(), now, 5000);
 			if (attempt.kind() == MiningAttemptLedger.Kind.EARLY) continue;
+			stats.recordTimeout();
 			if (target != null && target.pos().equals(attempt.pos())) {
 				if (mc != null && mc.gameMode != null) mc.gameMode.stopDestroyBlock();
 				target = null;
 				state = State.SEARCHING;
 				scanTicks = SCAN_INTERVAL_TICKS - 1;
 			}
-			MacroLogger.get().log("MINING_BOT_TIMEOUT pos=" + attempt.pos().toShortString());
+			MacroLogger.get().detail("MINING_BOT_TIMEOUT pos=" + attempt.pos().toShortString());
 		}
 		for (MiningAttemptLedger.Attempt evicted : attempts.drainEvicted()) {
 			if (evicted.kind() == MiningAttemptLedger.Kind.EARLY) adaptiveAim.recordEarlyFailure();
@@ -700,6 +953,8 @@ public final class ObsidianController {
 			case "PLAYER_DIED" -> "player died";
 			case "CLIENT_STOPPING" -> "client stopping";
 			case "OWNERSHIP_LOST" -> "automation ownership lost";
+			case "OUT_OF_FUEL" -> "drill out of fuel (no Void Canister in off-hand)";
+			case "REFUEL_FAILED" -> "drill refuel failed";
 			default -> reason.toLowerCase(Locale.ROOT).replace('_', ' ');
 		};
 	}

@@ -10,7 +10,6 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 
 /** /routewalker command group with /mining as a compatibility alias. */
 public final class MiningCommand {
@@ -148,7 +147,7 @@ public final class MiningCommand {
 	}
 
 	private static void feedback(FabricClientCommandSource source, String message) {
-		source.sendFeedback(Component.literal(message));
+		source.sendFeedback(ChatFormat.format(message));
 		MacroLogger.get().log(message);
 	}
 

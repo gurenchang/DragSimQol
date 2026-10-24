@@ -58,6 +58,7 @@ public final class MiningRouteOverlay implements HudElement {
 
 	// route変更時のみ作り直すsnapshot(フレーム毎のコピー・文字列生成・ファイルI/Oを避ける)。
 	private long cachedVersion = -1;
+	private int cachedScale;
 	private List<MiningRouteNode> cachedNodes = List.of();
 	private List<Component> cachedLabels = List.of();
 
@@ -135,10 +136,12 @@ public final class MiningRouteOverlay implements HudElement {
 	}
 
 	private void refreshCache(MiningController.RouteView view) {
-		if (view.version() == cachedVersion) {
+		int scale = com.dragsim.macro.client.gui.GuiPaint.scale();
+		if (view.version() == cachedVersion && scale == cachedScale) {
 			return;
 		}
 		cachedVersion = view.version();
+		cachedScale = scale;
 		cachedNodes = view.nodes();
 		List<Component> labels = new ArrayList<>(cachedNodes.size());
 		for (int i = 0; i < cachedNodes.size(); i++) {

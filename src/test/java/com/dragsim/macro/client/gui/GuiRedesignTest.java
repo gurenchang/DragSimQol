@@ -44,6 +44,42 @@ class GuiRedesignTest {
 		assertTrue(GuiLayout.hitClipped(20, 55, 10, 40, 100, 30, 50, 200));
 	}
 
+	private static GuiWidgets.Setting row(int height) {
+		return new GuiWidgets.BasicSetting() {
+			@Override public int height() { return height; }
+			@Override public void render(net.minecraft.client.gui.GuiGraphicsExtractor g,
+					net.minecraft.client.gui.Font font, int x, int y, int w, boolean hovered) { }
+			@Override public boolean mouseClicked(double mx, double my, int b, int x, int y, int w) { return false; }
+		};
+	}
+
+	@Test
+	void sectionHeadersGroupRowsIntoPaddedCards() {
+		var header = new GuiWidgets.SectionHeader("Drill");
+		var a = row(28);
+		var b = row(36);
+		var segmented = new GuiWidgets.SegmentedSetting(new String[]{"A", "B"}, () -> 0, i -> { });
+		var c = row(28);
+		GuiContent.Layout layout = GuiContent.layout(List.of(header, a, b, segmented, c), 300);
+
+		assertEquals(2, layout.cards().size(), "header card + untitled card; self-framed rows get no card");
+		GuiContent.Card first = layout.cards().get(0);
+		var placedA = layout.rows().get(1);
+		var placedB = layout.rows().get(2);
+		assertEquals(GuiContent.CARD_PAD_X, placedA.x());
+		assertEquals(300 - 2 * GuiContent.CARD_PAD_X, placedA.w());
+		assertFalse(placedA.divider(), "no divider directly under a section header");
+		assertTrue(placedB.divider());
+		assertEquals(placedB.y() + placedB.h() + GuiContent.CARD_PAD_BOTTOM, first.y() + first.h());
+		var placedSegmented = layout.rows().get(3);
+		assertEquals(0, placedSegmented.x());
+		assertEquals(300, placedSegmented.w());
+		assertEquals(first.y() + first.h() + GuiTheme.CARD_GAP, placedSegmented.y());
+		GuiContent.Card last = layout.cards().get(1);
+		assertEquals(placedSegmented.y() + placedSegmented.h() + GuiTheme.CARD_GAP, last.y());
+		assertEquals(last.y() + last.h() + GuiContent.TOP_PAD, layout.height());
+	}
+
 	@Test
 	void coordinateInputRejectsNonFiniteAndAcceptsSignedDecimals() {
 		assertFalse(RouteCoordinateInput.parse("NaN", "64", "0").valid());

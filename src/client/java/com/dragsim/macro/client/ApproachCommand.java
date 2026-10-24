@@ -4,7 +4,6 @@ import com.mojang.brigadier.Command;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.network.chat.Component;
 
 /**
  * Phase 6.0: approach/warpコマンド。デフォルトOFF(OFFならAOTE自動使用なし)。
@@ -61,6 +60,6 @@ public final class ApproachCommand {
 	}
 
 	private static void feedback(FabricClientCommandSource source, String message) {
-		source.sendFeedback(Component.literal(message));
+		source.sendFeedback(ChatFormat.format(message));
 	}
 }

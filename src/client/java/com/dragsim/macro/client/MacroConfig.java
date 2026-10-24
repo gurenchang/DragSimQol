@@ -119,6 +119,38 @@ public final class MacroConfig {
 	/** Client-only lightmap boost; default OFF and independent from macro state. */
 	public boolean fullbrightEnabled = false;
 
+	/** Glowing outline on the block the running macro is targeting. */
+	public boolean targetBlockHighlight = true;
+	/** Status card (state, time, mined count, drill) while the Mining Bot runs. */
+	public boolean miningBotHud = true;
+	/** Macro status messages as on-screen toasts (bottom right). */
+	public boolean toastNotifications = true;
+	/** Macro status messages in chat. Command replies always go to chat. */
+	public boolean chatNotifications = true;
+	/** Red pulse around the screen edge when an alert fires. */
+	public boolean alertScreenFlash = true;
+
+	// ==== Desktop alerts ====
+	/** While a macro runs: desktop notification when another player comes within alertRadius blocks. */
+	public boolean alertNearbyPlayer = true;
+	public double alertRadius = 20.0;
+	/** While a macro runs: desktop notification when your name is said in chat, or on a direct message. */
+	public boolean alertMention = true;
+	/** While a macro runs: desktop notification when the server turns your view by more than alertRotationThreshold degrees. */
+	public boolean alertRotation = true;
+	public double alertRotationThreshold = 10.0;
+	/** While a macro runs: desktop notification when the server teleports you alertTeleportThreshold+ blocks (own AOTE excluded). */
+	public boolean alertTeleport = true;
+	public double alertTeleportThreshold = 2.0;
+	/** While a macro runs: desktop notification when the server switches your selected hotbar slot. */
+	public boolean alertHeldSlot = true;
+	/** While a macro runs: desktop notification when the server replaces or removes the item in your hand. */
+	public boolean alertHeldItem = true;
+	/** While a macro runs: desktop notification when the server pushes you without damage (knockback check). */
+	public boolean alertKnockback = true;
+	/** Desktop notification on a staff check message ("QUICK CHECK! ...") and on a server GUI opening mid-macro. */
+	public boolean alertStaffCheck = true;
+
 	// ==== Target filters(Phase 7.0) ====
 	public boolean targetNormalZealot = true;
 	public boolean targetBruiser = false;

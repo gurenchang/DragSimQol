@@ -1,0 +1,175 @@
+package com.dragsim.macro.client;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+import org.junit.jupiter.api.Test;
+
+class DrillActionsTest {
+	private static final DrillActions.Kind NONE = DrillActions.Kind.NONE;
+	private static final DrillActions.Kind ABILITY = DrillActions.Kind.ABILITY;
+	private static final DrillActions.Kind REFUEL = DrillActions.Kind.REFUEL;
+
+	@Test
+	void abilityRunsOnStartThenEvery240sPlusMargin() {
+		DrillActions a = new DrillActions();
+		a.start(1_000, true);
+		assertEquals(ABILITY, a.due(1_000, true, true));
+		a.begin(ABILITY);
+		assertEquals(NONE, a.due(1_050, true, true), "nothing new while running");
+		a.finish(ABILITY, 1_200);
+		assertEquals(NONE, a.due(1_200 + 240_000, true, true));
+		assertEquals(ABILITY, a.due(1_200 + 243_000, true, true));
+	}
+
+	@Test
+	void cooldownMessageReschedulesToTimePlusThreeSeconds() {
+		DrillActions a = new DrillActions();
+		a.start(0, true);
+		a.begin(ABILITY);
+		a.finish(ABILITY, 100);
+		assertEquals(DrillActions.Message.COOLDOWN,
+				a.onMessage("§cThis ability is on cooldown for 86.6s.", 500));
+		assertEquals(NONE, a.due(500 + 89_599, true, true));
+		assertEquals(ABILITY, a.due(500 + 89_600, true, true));
+		assertEquals(89_600, a.msUntilAbility(500));
+	}
+
+	@Test
+	void abilityOffNeverRuns() {
+		DrillActions a = new DrillActions();
+		a.start(0, false);
+		assertEquals(NONE, a.due(10_000_000, true, true));
+		a.armAbilityNow(5);
+		assertEquals(ABILITY, a.due(5, true, true));
+		assertEquals(NONE, a.due(5, false, true), "setting off blocks it");
+	}
+
+	@Test
+	void outOfFuelRequestsRefuelFirst() {
+		DrillActions a = new DrillActions();
+		a.start(0, true);
+		assertEquals(DrillActions.Message.OUT_OF_FUEL, a.onMessage("Your drill is out of fuel!", 0));
+		assertEquals(REFUEL, a.due(0, true, true));
+		assertEquals(ABILITY, a.due(0, true, false), "refuel off falls back to ability");
+		a.begin(REFUEL);
+		a.onMessage("Your drill is out of fuel!", 50);
+		a.finish(REFUEL, 100);
+		assertFalse(a.isRefuelWanted(), "messages during the sequence are ignored");
+		a.onMessage("Your drill is out of fuel!", 600);
+		assertFalse(a.isRefuelWanted(), "in-flight message right after refuel is ignored");
+	}
+
+	@Test
+	void repeatedOutOfFuelAfterRefuelGivesUp() {
+		DrillActions a = new DrillActions();
+		a.start(0, false);
+		long t = 0;
+		a.onMessage("Your drill is out of fuel!", t);
+		for (int i = 0; i < DrillActions.MAX_REFUEL_FAILURES; i++) {
+			assertFalse(a.refuelGaveUp());
+			assertEquals(REFUEL, a.due(t, false, true));
+			a.begin(REFUEL);
+			a.finish(REFUEL, t);
+			t += 2_000;
+			a.onMessage("Your drill is out of fuel!", t);
+		}
+		assertTrue(a.refuelGaveUp());
+	}
+
+	@Test
+	void laterOutOfFuelResetsFailureCount() {
+		DrillActions a = new DrillActions();
+		a.start(0, false);
+		a.onMessage("Your drill is out of fuel!", 0);
+		a.begin(REFUEL);
+		a.finish(REFUEL, 0);
+		a.onMessage("Your drill is out of fuel!", 2_000);
+		a.begin(REFUEL);
+		a.finish(REFUEL, 2_000);
+		a.onMessage("Your drill is out of fuel!", 600_000);
+		assertFalse(a.refuelGaveUp());
+		assertEquals(REFUEL, a.due(600_000, false, true));
+	}
+
+	@Test
+	void refuelWaitsForReactionDelay() {
+		DrillActions a = new DrillActions();
+		a.start(0, false);
+		a.onMessage("Your drill is out of fuel!", 1_000, 800);
+		assertEquals(NONE, a.due(1_799, false, true));
+		a.onMessage("Your drill is out of fuel!", 1_500, 800);
+		assertEquals(REFUEL, a.due(1_800, false, true), "repeats do not push the refuel back");
+		a.begin(REFUEL);
+		a.finish(REFUEL, 1_900);
+		assertFalse(a.refuelGaveUp());
+	}
+
+	@Test
+	void unrelatedMessagesAreIgnored() {
+		DrillActions a = new DrillActions();
+		a.start(0, false);
+		assertEquals(DrillActions.Message.NONE, a.onMessage("You used your Mining Speed Boost ability!", 0));
+		assertEquals(NONE, a.due(0, true, true));
+	}
+
+	private static final class FakeIo implements DrillUseSequence.Io {
+		boolean destroying;
+		boolean use;
+		boolean sneak;
+		final List<String> events = new ArrayList<>();
+		@Override public boolean destroying() { return destroying; }
+		@Override public void use(boolean down) { if (use != down) events.add(down ? "use+" : "use-"); use = down; }
+		@Override public void sneak(boolean down) { if (sneak != down) events.add(down ? "sneak+" : "sneak-"); sneak = down; }
+	}
+
+	@Test
+	void abilitySequenceWaitsForDestroyingToStop() {
+		FakeIo io = new FakeIo();
+		io.destroying = true;
+		DrillUseSequence seq = new DrillUseSequence(ABILITY, new Random(1));
+		for (int i = 0; i < 5; i++) assertFalse(seq.tick(io));
+		assertFalse(io.use, "no right-click while still destroying");
+		io.destroying = false;
+		int guard = 0;
+		while (!seq.tick(io) && guard++ < 10) { }
+		assertTrue(seq.clicked());
+		assertEquals(List.of("use+", "use-"), io.events);
+		assertFalse(io.sneak);
+	}
+
+	@Test
+	void refuelSequenceSneaksAroundTheClick() {
+		for (long seed = 0; seed < 20; seed++) {
+			FakeIo io = new FakeIo();
+			DrillUseSequence seq = new DrillUseSequence(REFUEL, new Random(seed));
+			int ticks = 0;
+			while (!seq.tick(io)) {
+				ticks++;
+				if (io.use) assertTrue(io.sneak, "sneak is held while clicking");
+			}
+			assertTrue(ticks < 16);
+			assertEquals(List.of("sneak+", "use+", "use-", "sneak-"), io.events);
+			assertTrue(seq.clicked());
+		}
+	}
+
+	@Test
+	void sequenceTimesOutAndReleasesKeys() {
+		FakeIo io = new FakeIo();
+		io.destroying = true;
+		DrillUseSequence seq = new DrillUseSequence(REFUEL, new Random(1));
+		boolean done = false;
+		for (int i = 0; i <= DrillUseSequence.TIMEOUT_TICKS && !done; i++) done = seq.tick(io);
+		assertTrue(done);
+		assertTrue(seq.timedOut());
+		assertFalse(seq.clicked());
+		assertFalse(io.sneak);
+		assertFalse(io.use);
+	}
+}

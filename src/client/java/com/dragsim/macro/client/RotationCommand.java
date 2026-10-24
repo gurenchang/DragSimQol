@@ -7,7 +7,6 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 
 /**
  * Phase 4.1: visible rotationのON/OFFコマンド。
@@ -92,6 +91,6 @@ public final class RotationCommand {
 	}
 
 	private static void feedback(FabricClientCommandSource source, String message) {
-		source.sendFeedback(Component.literal(message));
+		source.sendFeedback(ChatFormat.format(message));
 	}
 }

@@ -9,7 +9,6 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 
 public final class ObsidianCommand {
 	private ObsidianCommand() {
@@ -38,6 +37,30 @@ public final class ObsidianCommand {
 						bot.getSettings().getDriftAmount(), bot.adaptiveStatus(), bot.getAdaptiveAim().sampleCount(),
 						bot.getAdaptiveAim().observedMedianMs(), bot.effectiveLeadMs(), bot.isAttemptPending() ? "YES" : "NO",
 						bot.getSettings().isMiningTimeoutEnabled() ? "ON" : "OFF", bot.getSettings().getTimeoutDurationMs() / 1000, bot.getStopReason()));
+				BreakTickMeter<?> meter = bot.getBreakMeter();
+				int ping = ObsidianController.pingMs(Minecraft.getInstance());
+				ServerTickClock clock = ServerTickClock.get();
+				long now = MiningClock.nowMs();
+				double serverTicks = meter.serverTicks(ping, clock.tps());
+				feedback(ctx.getSource(), String.format(Locale.ROOT,
+						"[DragSim] Break timing — samples=%d ticks=%d min=%d max=%d observed=%dms crackSamples=%d restarted=%d crackPhase=%sms serverClockTicks=%s serverTicks=%s source=%s ping=%dms latency=%sms unmatchedCracks=%d",
+						meter.sampleCount(), meter.medianTicks(), meter.minTicks(), meter.maxTicks(), meter.medianMs(),
+						meter.crackSamples(), meter.restartedSamples(), fmt(meter.medianCrackPhaseMs()),
+						fmt(meter.medianServerClockTicks()), fmt(serverTicks), meter.source(ping), ping,
+						fmt(meter.latencyMs(ping)), bot.getUnmatchedCracks()));
+				feedback(ctx.getSource(), String.format(Locale.ROOT,
+						"[DragSim] Server ticks — tps=%s now=%s sinceSync=%dms stalled=%s pings=%.1f/s pingMode=%s totalPings=%d",
+						fmt(clock.tps()), fmt(clock.lastIntervalTps()), clock.msSinceSync(now),
+						clock.stalled(now) ? "YES" : "NO", clock.pingsPerSecond(now), clock.pingMode(), clock.totalPings()));
+				if (bot.getSettings().getAimLeadMode() == ObsidianSettings.AimLeadMode.TICK) {
+					MiningBotStats stats = bot.getStats();
+					feedback(ctx.getSource(), String.format(Locale.ROOT,
+							"[DragSim] Tick timing — hold=%d+%d switchAfter=%dms measured=%d cleanSamples=%d switches=%d missed=%d",
+							bot.getSettings().getBreakTicks(), bot.getSettings().getTickMargin(),
+							MiningTickAim.switchAfterMs(bot.getSettings().getBreakTicks(), bot.getSettings().getTickMargin(),
+									ObsidianController.tickTimingTps()),
+							meter.measuredBreakTicks(), meter.cleanSamples(), stats.leadSwitches(), stats.leadMissed()));
+				}
 				if (bot.getSettings().getAimLeadMode() == ObsidianSettings.AimLeadMode.FIXED) {
 					feedback(ctx.getSource(), "[DragSim] Fixed timing — expected="
 							+ bot.getSettings().getFixedBreakMs() + "ms requestedLead="
@@ -47,6 +70,45 @@ public final class ObsidianCommand {
 				}
 				return Command.SINGLE_SUCCESS;
 			}));
+			// /miningbot tick on|off|ticks <n>|margin <n>|measured
+			var tick = ClientCommands.literal("tick");
+			tick.then(ClientCommands.literal("on").executes(ctx -> {
+				feedback(ctx.getSource(), bot.getSettings().setAimLeadMode(ObsidianSettings.AimLeadMode.TICK)
+						? "[DragSim] Mining Bot tick timing ON" : "[DragSim] Mining Bot setting save failed");
+				return Command.SINGLE_SUCCESS;
+			}));
+			tick.then(ClientCommands.literal("off").executes(ctx -> {
+				feedback(ctx.getSource(), bot.getSettings().setAimLeadMode(ObsidianSettings.AimLeadMode.OFF)
+						? "[DragSim] Mining Bot tick timing OFF" : "[DragSim] Mining Bot setting save failed");
+				return Command.SINGLE_SUCCESS;
+			}));
+			tick.then(ClientCommands.literal("ticks").then(ClientCommands.argument("value",
+					IntegerArgumentType.integer(ObsidianSettings.MIN_BREAK_TICKS, ObsidianSettings.MAX_BREAK_TICKS)).executes(ctx -> {
+				int value = IntegerArgumentType.getInteger(ctx, "value");
+				feedback(ctx.getSource(), bot.getSettings().setBreakTicks(value)
+						? "[DragSim] Mining Bot break ticks " + value : "[DragSim] Mining Bot setting save failed");
+				return Command.SINGLE_SUCCESS;
+			})));
+			tick.then(ClientCommands.literal("margin").then(ClientCommands.argument("value",
+					IntegerArgumentType.integer(ObsidianSettings.MIN_TICK_MARGIN, ObsidianSettings.MAX_TICK_MARGIN)).executes(ctx -> {
+				int value = IntegerArgumentType.getInteger(ctx, "value");
+				feedback(ctx.getSource(), bot.getSettings().setTickMargin(value)
+						? "[DragSim] Mining Bot tick margin +" + value : "[DragSim] Mining Bot setting save failed");
+				return Command.SINGLE_SUCCESS;
+			})));
+			tick.then(ClientCommands.literal("measured").executes(ctx -> {
+				int measured = bot.getBreakMeter().measuredBreakTicks();
+				if (measured <= 0) {
+					feedback(ctx.getSource(), "[DragSim] Mining Bot cannot set break ticks — no tick measurement yet");
+				} else {
+					feedback(ctx.getSource(), bot.getSettings().setBreakTicks(measured)
+							? "[DragSim] Mining Bot break ticks " + measured + " — measured from "
+									+ bot.getBreakMeter().cleanSamples() + " blocks"
+							: "[DragSim] Mining Bot setting save failed");
+				}
+				return Command.SINGLE_SUCCESS;
+			}));
+			root.then(tick);
 			var target = ClientCommands.literal("target");
 			target.then(ClientCommands.literal("crying_obsidian").executes(ctx -> {
 				changeTarget(ctx.getSource(), bot, MiningBotTarget.CRYING_OBSIDIAN);
@@ -139,8 +201,12 @@ public final class ObsidianCommand {
 				: "[DragSim] Mining Bot target save failed — selection unchanged");
 	}
 
+	private static String fmt(double value) {
+		return Double.isNaN(value) ? "-" : String.format(Locale.ROOT, "%.1f", value);
+	}
+
 	private static void feedback(FabricClientCommandSource source, String text) {
-		source.sendFeedback(Component.literal(text));
+		source.sendFeedback(ChatFormat.format(text));
 		MacroLogger.get().log(text);
 	}
 }

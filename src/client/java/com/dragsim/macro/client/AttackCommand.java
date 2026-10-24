@@ -4,7 +4,6 @@ import com.mojang.brigadier.Command;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.minecraft.network.chat.Component;
 
 /**
  * Phase 5.2: attack/combatコマンド(実attackはPhase 5.1から継続)。
@@ -50,6 +49,6 @@ public final class AttackCommand {
 	}
 
 	private static void feedback(FabricClientCommandSource source, String message) {
-		source.sendFeedback(Component.literal(message));
+		source.sendFeedback(ChatFormat.format(message));
 	}
 }

@@ -837,6 +837,8 @@ public class ApproachPlanner {
 			return;
 		}
 		// commit point通過済み(commitWarp)。RIGHT CLICKこのtickはmovement維持。
+		// 自分のwarpによる位置パケットはTP Checkの対象外
+		AlertMonitor.expectTeleport();
 		InteractionResult result = mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
 		if (result instanceof InteractionResult.Success success
 				&& success.swingSource() == InteractionResult.SwingSource.CLIENT) {

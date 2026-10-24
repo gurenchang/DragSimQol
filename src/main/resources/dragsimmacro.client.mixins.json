@@ -8,7 +8,11 @@
     "MiningBotMouseHandlerMixin",
     "FullbrightLightmapMixin",
     "MiningBotBreakObservationMixin",
-    "MiningBotServerBlockUpdateMixin"
+    "MiningBotServerBlockUpdateMixin",
+    "MiningBotBlockCrackMixin",
+    "ServerTickTimeSyncMixin",
+    "ServerTickPingMixin",
+    "ServerCheckAlertMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -1,0 +1,18 @@
+{
+	"providers": [
+		{
+			"type": "ttf",
+			"file": "dragsimmacro:oxanium-semibold.ttf",
+			"shift": [
+				0,
+				4
+			],
+			"size": 14.0,
+			"oversample": 1.0
+		},
+		{
+			"type": "reference",
+			"id": "minecraft:default"
+		}
+	]
+}

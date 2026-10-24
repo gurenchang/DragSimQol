@@ -75,9 +75,6 @@ public class CornerEspOverlay implements HudElement {
 	private static final long TARGET_LOG_INTERVAL_MS = 2000;
 
 	// 固定ラベル(起動時に一度だけ生成。毎フレーム生成しない)
-	private static final Component LABEL_TARGET = UiFont.text("TARGET");
-	private static final Component LABEL_GATE_READY = UiFont.text("READY");
-	private static final Component LABEL_GATE_WAIT = UiFont.text("WAIT");
 
 	private final MacroController controller;
 	private final AimSolver aimSolver;
@@ -351,7 +348,7 @@ public class CornerEspOverlay implements HudElement {
 					int y = (int) Math.round(minY) - font.lineHeight * 3 - 4;
 					drawCentered(graphics, font, UiFont.text("AIM:" + aim.pointType().tag()), cx, y, targetColor);
 					y += font.lineHeight + 1;
-					drawCentered(graphics, font, LABEL_TARGET, cx, y, targetColor);
+					drawCentered(graphics, font, UiFont.text("TARGET"), cx, y, targetColor);
 					drawCentered(graphics, font, cache.distText(), cx, y + font.lineHeight + 1, targetColor);
 
 					// Phase 5.0: Attack Gate indicator(Target 1体のみ、極小)
@@ -359,12 +356,12 @@ public class CornerEspOverlay implements HudElement {
 					AttackReadiness gate = attackGate.getReadiness();
 					if (gate.entityId() == candidate.entityId()) {
 						int gateColor = gate.ready() ? withAlpha(RGB_GATE_READY, 230) : withAlpha(RGB_GATE_WAIT, 180);
-						Component gateText = gate.ready() ? LABEL_GATE_READY : LABEL_GATE_WAIT;
+						Component gateText = UiFont.text(gate.ready() ? "READY" : "WAIT");
 						drawCentered(graphics, font, gateText, cx, y + font.lineHeight * 2 + 2, gateColor);
 					}
 				} else {
 					int y = (int) Math.round(minY) - font.lineHeight * 2 - 3;
-					drawCentered(graphics, font, LABEL_TARGET, cx, y, targetColor);
+					drawCentered(graphics, font, UiFont.text("TARGET"), cx, y, targetColor);
 					drawCentered(graphics, font, cache.distText(), cx, y + font.lineHeight + 1, targetColor);
 				}
 			}

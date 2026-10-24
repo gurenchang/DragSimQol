@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -44,6 +45,25 @@ public class DragsimMacroClient implements ClientModInitializer {
 		MiningCommand.register(mining);
 		ObsidianController obsidian = new ObsidianController();
 		ObsidianCommand.register(obsidian);
+		// Server system messages (not player chat): drill ability cooldown / out of fuel.
+		ClientReceiveMessageEvents.GAME.register((message, overlay) ->
+				obsidian.onServerMessage(message.getString()));
+		// Desktop alerts: nearby players and name mentions / direct messages in chat.
+		// Alerts only while a macro is running (Mining Bot, Route Walker or combat).
+		AlertMonitor alertMonitor = new AlertMonitor(() -> obsidian.isActive() || mining.isActive()
+				|| controller.getState() != MacroController.State.IDLE);
+		ClientTickEvents.END_CLIENT_TICK.register(alertMonitor::tick);
+		// Server tick clock: log ping-mode / lag transitions (the packets themselves are observed by mixins).
+		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+			String change = ServerTickClock.get().stateChange(MiningClock.nowMs());
+			if (change != null) for (String line : change.split("\n")) MacroLogger.get().log(line);
+		});
+		ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+			if (!overlay) alertMonitor.onMessage(Minecraft.getInstance(), message.getString());
+			alertMonitor.onStaffCheckText(Minecraft.getInstance(), overlay ? "action bar" : "chat", message.getString());
+		});
+		ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, timestamp) ->
+				alertMonitor.onMessage(Minecraft.getInstance(), message.getString()));
 		ScreenEvents.BEFORE_INIT.register((mc, screen, width, height) -> {
 			scytheHoldUse.release("GUI_OPEN");
 			mining.stop(mc, "GUI_OPENED");
@@ -154,6 +174,24 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// 採掘ルート描画(戦闘ESP・マクロ状態に非依存。OFF中・1ノード・再起動直後も表示)。
 		// チャットより下に描くため先頭へ登録する(チャット入力・補完を遮らない)。
 		HudElementRegistry.addFirst(DragsimMacroMod.id("mining_route"), new MiningRouteOverlay(mining));
+		HudElementRegistry.addLast(DragsimMacroMod.id("mining_bot_hud"), new MiningBotHud(obsidian));
+		HudElementRegistry.addLast(DragsimMacroMod.id("toasts"), new ToastOverlay());
+		// Alert edge flash on top of everything else.
+		HudElementRegistry.addLast(DragsimMacroMod.id("alert_flash"), new AlertFlash());
+		// Mining Bot: the block it is aiming at. Route Walker: the End Stone being mined.
+		// Drawn in the world (depth-tested) just before vanilla debug gizmos.
+		TargetBlockHighlight targetHighlight = new TargetBlockHighlight(() -> {
+			Minecraft mc = Minecraft.getInstance();
+			if (obsidian.isActive()) return obsidian.getTargetPos();
+			if (mining.isActive() && mc.level != null
+					&& mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit
+					&& hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+					&& mc.level.getBlockState(hit.getBlockPos()).is(net.minecraft.world.level.block.Blocks.END_STONE)) {
+				return hit.getBlockPos();
+			}
+			return null;
+		});
+		LevelRenderEvents.BEFORE_GIZMOS.register(targetHighlight::render);
 
 		// 採掘中は戦闘側が採掘入力・回転を上書きしないよう調停する。
 		// 戦闘の保存設定は書き換えず、採掘停止後に戦闘は自動開始しない。

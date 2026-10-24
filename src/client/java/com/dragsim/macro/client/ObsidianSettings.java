@@ -12,7 +12,7 @@ import com.google.gson.JsonParser;
 import net.fabricmc.loader.api.FabricLoader;
 
 public final class ObsidianSettings {
-	public enum AimLeadMode { OFF, ADAPTIVE, FIXED }
+	public enum AimLeadMode { OFF, ADAPTIVE, FIXED, TICK }
 
 	public static final double MIN_TURN_SPEED_DPS = 30.0;
 	public static final double MAX_TURN_SPEED_DPS = 240.0;
@@ -26,6 +26,9 @@ public final class ObsidianSettings {
 			DEFAULT_FIXED_BREAK_MS = 1000;
 	public static final long MIN_FIXED_LEAD_MS = 0, MAX_FIXED_LEAD_MS = 500,
 			DEFAULT_FIXED_LEAD_MS = 150;
+	/** Tick mode: server ticks one block needs, and extra ticks held before switching. */
+	public static final int MIN_BREAK_TICKS = 1, MAX_BREAK_TICKS = 100, DEFAULT_BREAK_TICKS = 4;
+	public static final int MIN_TICK_MARGIN = 0, MAX_TICK_MARGIN = 10, DEFAULT_TICK_MARGIN = 1;
 	public static final long MIN_TIMEOUT_MS = 1000, MAX_TIMEOUT_MS = 60000, DEFAULT_TIMEOUT_MS = 15000;
 	private double turnSpeedDps = DEFAULT_TURN_SPEED_DPS;
 	private boolean aimDrift = DEFAULT_AIM_DRIFT;
@@ -35,8 +38,12 @@ public final class ObsidianSettings {
 	private long maxLeadMs = DEFAULT_MAX_LEAD_MS;
 	private long fixedBreakMs = DEFAULT_FIXED_BREAK_MS;
 	private long fixedLeadMs = DEFAULT_FIXED_LEAD_MS;
+	private int breakTicks = DEFAULT_BREAK_TICKS;
+	private int tickMargin = DEFAULT_TICK_MARGIN;
 	private boolean miningTimeout = true;
 	private long timeoutDurationMs = DEFAULT_TIMEOUT_MS;
+	private boolean autoAbility = true;
+	private boolean autoRefuel = true;
 	private final Path fileOverride;
 	private final Path legacyFileOverride;
 
@@ -63,8 +70,14 @@ public final class ObsidianSettings {
 	public long getMaxLeadMs() { return maxLeadMs; }
 	public long getFixedBreakMs() { return fixedBreakMs; }
 	public long getFixedLeadMs() { return fixedLeadMs; }
+	public int getBreakTicks() { return breakTicks; }
+	public int getTickMargin() { return tickMargin; }
 	public boolean isMiningTimeoutEnabled() { return miningTimeout; }
 	public long getTimeoutDurationMs() { return timeoutDurationMs; }
+	public boolean isAutoAbilityEnabled() { return autoAbility; }
+	public boolean isAutoRefuelEnabled() { return autoRefuel; }
+	public boolean setAutoAbilityEnabled(boolean value) { boolean p=autoAbility; autoAbility=value; if(save()) return true; autoAbility=p; return false; }
+	public boolean setAutoRefuelEnabled(boolean value) { boolean p=autoRefuel; autoRefuel=value; if(save()) return true; autoRefuel=p; return false; }
 	public boolean setAimLeadMode(AimLeadMode value) {
 		if (value == null) return false;
 		AimLeadMode previous = aimLeadMode;
@@ -79,6 +92,8 @@ public final class ObsidianSettings {
 	}
 	public boolean setMaxLeadMs(long value) { long p=maxLeadMs; maxLeadMs=clampLead(value); if(save()) return true; maxLeadMs=p; return false; }
 	public boolean setFixedBreakMs(long value) { long p=fixedBreakMs; fixedBreakMs=clampFixedBreak(value); if(save()) return true; fixedBreakMs=p; return false; }
+	public boolean setBreakTicks(int value) { int p=breakTicks; breakTicks=clampBreakTicks(value); if(save()) return true; breakTicks=p; return false; }
+	public boolean setTickMargin(int value) { int p=tickMargin; tickMargin=clampTickMargin(value); if(save()) return true; tickMargin=p; return false; }
 	public boolean setFixedLeadMs(long value) { long p=fixedLeadMs; fixedLeadMs=clampFixedLead(value); if(save()) return true; fixedLeadMs=p; return false; }
 	public boolean setMiningTimeoutEnabled(boolean value) { boolean p=miningTimeout; miningTimeout=value; if(save()) return true; miningTimeout=p; return false; }
 	public boolean setTimeoutDurationMs(long value) { long p=timeoutDurationMs; timeoutDurationMs=clampTimeout(value); if(save()) return true; timeoutDurationMs=p; return false; }
@@ -142,6 +157,8 @@ public final class ObsidianSettings {
 	static long clampFixedLead(long value) {
 		return Math.max(MIN_FIXED_LEAD_MS, Math.min(MAX_FIXED_LEAD_MS, value));
 	}
+	static int clampBreakTicks(int value) { return Math.max(MIN_BREAK_TICKS, Math.min(MAX_BREAK_TICKS, value)); }
+	static int clampTickMargin(int value) { return Math.max(MIN_TICK_MARGIN, Math.min(MAX_TICK_MARGIN, value)); }
 	static long clampTimeout(long value) { return Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, value)); }
 
 	public static Path path() {
@@ -192,8 +209,12 @@ public final class ObsidianSettings {
 					? json.get("fixedBreakMs").getAsLong() : DEFAULT_FIXED_BREAK_MS);
 			long parsedFixedLead = clampFixedLead(json.has("fixedLeadMs")
 					? json.get("fixedLeadMs").getAsLong() : DEFAULT_FIXED_LEAD_MS);
+			int parsedBreakTicks = clampBreakTicks(json.has("breakTicks") ? json.get("breakTicks").getAsInt() : DEFAULT_BREAK_TICKS);
+			int parsedTickMargin = clampTickMargin(json.has("tickMargin") ? json.get("tickMargin").getAsInt() : DEFAULT_TICK_MARGIN);
 			boolean parsedTimeout = !json.has("miningTimeout") || json.get("miningTimeout").getAsBoolean();
 			long parsedTimeoutDuration = clampTimeout(json.has("timeoutDurationMs") ? json.get("timeoutDurationMs").getAsLong() : DEFAULT_TIMEOUT_MS);
+			boolean parsedAutoAbility = !json.has("autoAbility") || json.get("autoAbility").getAsBoolean();
+			boolean parsedAutoRefuel = !json.has("autoRefuel") || json.get("autoRefuel").getAsBoolean();
 			if (json.has("targetBlock")) {
 				parsedTarget = MiningBotTarget.fromConfig(json.get("targetBlock").getAsString());
 				if (parsedTarget == null) {
@@ -205,8 +226,12 @@ public final class ObsidianSettings {
 			maxLeadMs = parsedMaxLead;
 			fixedBreakMs = parsedFixedBreak;
 			fixedLeadMs = parsedFixedLead;
+			breakTicks = parsedBreakTicks;
+			tickMargin = parsedTickMargin;
 			miningTimeout = parsedTimeout;
 			timeoutDurationMs = parsedTimeoutDuration;
+			autoAbility = parsedAutoAbility;
+			autoRefuel = parsedAutoRefuel;
 			turnSpeedDps = parsedSpeed;
 			aimDrift = parsedDrift;
 			driftAmount = parsedDriftAmount;
@@ -234,8 +259,12 @@ public final class ObsidianSettings {
 			json.addProperty("maxLeadMs", maxLeadMs);
 			json.addProperty("fixedBreakMs", fixedBreakMs);
 			json.addProperty("fixedLeadMs", fixedLeadMs);
+			json.addProperty("breakTicks", breakTicks);
+			json.addProperty("tickMargin", tickMargin);
 			json.addProperty("miningTimeout", miningTimeout);
 			json.addProperty("timeoutDurationMs", timeoutDurationMs);
+			json.addProperty("autoAbility", autoAbility);
+			json.addProperty("autoRefuel", autoRefuel);
 			Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
 			Files.writeString(tmp, new GsonBuilder().setPrettyPrinting().create().toJson(json), StandardCharsets.UTF_8);
 			try {
