@@ -34,8 +34,8 @@ public class DragsimMacroScreen extends Screen {
 	private final RotationController rotationController;
 	private final CombatController combatController;
 	private final ApproachPlanner approachPlanner;
-	private final MiningController miningController;
-	private final ObsidianController obsidianController;
+	private final RouteWalkerController routeWalkerController;
+	private final MiningBotController miningBotController;
 	private int selectedPage;
 	private int advancedSection;
 	private int keyboardActionIndex = -1;
@@ -48,14 +48,14 @@ public class DragsimMacroScreen extends Screen {
 
 	public DragsimMacroScreen(MacroController controller, RotationController rotationController,
 			CombatController combatController, ApproachPlanner approachPlanner,
-			MiningController miningController, ObsidianController obsidianController) {
+			RouteWalkerController routeWalkerController, MiningBotController miningBotController) {
 		super(Component.literal("DragSim Controls"));
 		this.controller = controller;
 		this.rotationController = rotationController;
 		this.combatController = combatController;
 		this.approachPlanner = approachPlanner;
-		this.miningController = miningController;
-		this.obsidianController = obsidianController;
+		this.routeWalkerController = routeWalkerController;
+		this.miningBotController = miningBotController;
 	}
 
 	@Override protected void init() {
@@ -263,20 +263,20 @@ public class DragsimMacroScreen extends Screen {
 	}
 
 	private void buildMiningBot(Minecraft mc, List<Setting> s) {
-		ObsidianSettings settings = obsidianController.getSettings();
+		MiningBotSettings settings = miningBotController.getSettings();
 		s.add(new PageActionSetting("Mining Bot", "Mine nearby blocks from one position",
-				GuiPaint.Icon.PICKAXE, obsidianController::isActive,
-				() -> obsidianController.isActive() ? obsidianController.getState().name()
-						: stopped(obsidianController.getStopReason()),
+				GuiPaint.Icon.PICKAXE, miningBotController::isActive,
+				() -> miningBotController.isActive() ? miningBotController.getState().name()
+						: stopped(miningBotController.getStopReason()),
 				() -> keyName("key.dragsimmacro.obsidian_toggle"),
-				() -> { releaseCaptures(); mc.setScreen(null); obsidianController.start(mc); },
-				() -> obsidianController.stop(mc, "GUI_STOP")));
+				() -> { releaseCaptures(); mc.setScreen(null); miningBotController.start(mc); },
+				() -> miningBotController.stop(mc, "GUI_STOP")));
 		s.add(header("TARGET & AIM"));
 		s.add(dropdown("Target Block",
 				"Automatic aim target; held Attack may mine crossed blocks. Large Bud: down-facing and dry only.",
 				new String[]{"Obsidian", "Crying Obsidian", "Large Amethyst Bud", "Amethyst Block"},
 				() -> settings.getTarget().displayName(), value -> {
-					if (!obsidianController.changeTarget(mc, MiningBotTarget.fromDisplay(value)))
+					if (!miningBotController.changeTarget(mc, MiningBotTarget.fromDisplay(value)))
 						notify("Mining Bot target save failed");
 				}));
 		s.add(new SliderSetting("Turn Speed", "Speed of a 30° turn; smaller turns are slower, larger ones faster",
@@ -298,7 +298,7 @@ public class DragsimMacroScreen extends Screen {
 				v -> {
 					boolean ok = settings.setAutoAbilityEnabled(v);
 					saveResult(ok, "Auto Ability");
-					if (ok) obsidianController.onAutoAbilityChanged(v);
+					if (ok) miningBotController.onAutoAbilityChanged(v);
 				}));
 		s.add(new ToggleSetting("Auto Refuel", "On \"out of fuel\": sneak + right-click with a Void Canister in the off-hand",
 				settings::isAutoRefuelEnabled,
@@ -313,21 +313,21 @@ public class DragsimMacroScreen extends Screen {
 					case FIXED -> "Fixed";
 					case TICK -> "Tick";
 				}, value -> {
-					ObsidianSettings.AimLeadMode mode = switch (value) {
-						case "Adaptive" -> ObsidianSettings.AimLeadMode.ADAPTIVE;
-						case "Fixed" -> ObsidianSettings.AimLeadMode.FIXED;
-						case "Tick" -> ObsidianSettings.AimLeadMode.TICK;
-						default -> ObsidianSettings.AimLeadMode.OFF;
+					MiningBotSettings.AimLeadMode mode = switch (value) {
+						case "Adaptive" -> MiningBotSettings.AimLeadMode.ADAPTIVE;
+						case "Fixed" -> MiningBotSettings.AimLeadMode.FIXED;
+						case "Tick" -> MiningBotSettings.AimLeadMode.TICK;
+						default -> MiningBotSettings.AimLeadMode.OFF;
 					};
 					saveResult(settings.setAimLeadMode(mode), "Aim Lead Mode");
 					rebuildPages();
 				}));
-		if (settings.getAimLeadMode() == ObsidianSettings.AimLeadMode.ADAPTIVE)
+		if (settings.getAimLeadMode() == MiningBotSettings.AimLeadMode.ADAPTIVE)
 			s.add(new SliderSetting("Adaptive Max Lead", "Upper bound for observed break timing lead",
 				0, 500, 25, () -> (double) settings.getMaxLeadMs(),
 				v -> saveResult(settings.setMaxLeadMs(Math.round(v)), "Adaptive Max Lead"),
 				v -> String.format(Locale.ROOT, "%.0fms", v)));
-		if (settings.getAimLeadMode() == ObsidianSettings.AimLeadMode.FIXED) {
+		if (settings.getAimLeadMode() == MiningBotSettings.AimLeadMode.FIXED) {
 			s.add(new SliderSetting("Expected Break Time", "Expected vanilla break duration; lead is capped so at least 50ms remains before switch",
 					50, 60000, 50, () -> (double) settings.getFixedBreakMs(),
 					v -> saveResult(settings.setFixedBreakMs(Math.round(v)), "Expected Break Time"),
@@ -337,18 +337,18 @@ public class DragsimMacroScreen extends Screen {
 					v -> saveResult(settings.setFixedLeadMs(Math.round(v)), "Fixed Lead"),
 					v -> String.format(Locale.ROOT, "%.0fms", v)).withScrollAdjustment());
 		}
-		if (settings.getAimLeadMode() == ObsidianSettings.AimLeadMode.TICK) {
+		if (settings.getAimLeadMode() == MiningBotSettings.AimLeadMode.TICK) {
 			s.add(new SliderSetting("Break Ticks", "Server ticks one block needs (count of crack stages); the bot moves on after this many",
-					ObsidianSettings.MIN_BREAK_TICKS, 40, 1, () -> (double) settings.getBreakTicks(),
+					MiningBotSettings.MIN_BREAK_TICKS, 40, 1, () -> (double) settings.getBreakTicks(),
 					v -> saveResult(settings.setBreakTicks((int) Math.round(v)), "Break Ticks"),
 					v -> String.format(Locale.ROOT, "%.0f ticks", v)).withScrollAdjustment());
 			s.add(new SliderSetting("Tick Margin", "Extra ticks held before moving on; lower is faster, too low restarts blocks",
-					ObsidianSettings.MIN_TICK_MARGIN, ObsidianSettings.MAX_TICK_MARGIN, 1, () -> (double) settings.getTickMargin(),
+					MiningBotSettings.MIN_TICK_MARGIN, MiningBotSettings.MAX_TICK_MARGIN, 1, () -> (double) settings.getTickMargin(),
 					v -> saveResult(settings.setTickMargin((int) Math.round(v)), "Tick Margin"),
 					v -> String.format(Locale.ROOT, "+%.0f", v)).withScrollAdjustment());
 			s.add(new ButtonSetting("Use Measured", "Set Break Ticks to the count measured from crack stages this session", "Apply",
 					() -> {
-						int measured = obsidianController.getBreakMeter().measuredBreakTicks();
+						int measured = miningBotController.getBreakMeter().measuredBreakTicks();
 						if (measured <= 0) { notify("No tick measurement yet — mine a few blocks first"); return; }
 						if (settings.setBreakTicks(measured)) notify("Break Ticks set to " + measured);
 						else notify("Could not save Break Ticks — check the log");
@@ -365,36 +365,36 @@ public class DragsimMacroScreen extends Screen {
 				"Timer starts when mining begins; switching starts a turn, not arrival at the next block.",
 				() -> switch (settings.getAimLeadMode()) {
 					case OFF -> "OFF";
-					case ADAPTIVE -> obsidianController.adaptiveStatus() + " · samples="
-							+ obsidianController.getAdaptiveAim().sampleCount() + " · lead="
-							+ obsidianController.effectiveLeadMs() + "ms · pending="
-							+ (obsidianController.isAttemptPending() ? "YES" : "NO");
-					case FIXED -> MiningFixedAim.effectiveLeadMs(settings.getFixedBreakMs(), settings.getFixedLeadMs()) == 0
+					case ADAPTIVE -> miningBotController.adaptiveStatus() + " · samples="
+							+ miningBotController.getAdaptiveAim().sampleCount() + " · lead="
+							+ miningBotController.effectiveLeadMs() + "ms · pending="
+							+ (miningBotController.isAttemptPending() ? "YES" : "NO");
+					case FIXED -> MiningBotFixedAim.effectiveLeadMs(settings.getFixedBreakMs(), settings.getFixedLeadMs()) == 0
 							? "FIXED · early switching disabled"
 							: String.format(Locale.ROOT, "FIXED · switch=%dms · lead=%dms",
-									MiningFixedAim.switchAfterMs(settings.getFixedBreakMs(), settings.getFixedLeadMs()),
-									MiningFixedAim.effectiveLeadMs(settings.getFixedBreakMs(), settings.getFixedLeadMs()));
+									MiningBotFixedAim.switchAfterMs(settings.getFixedBreakMs(), settings.getFixedLeadMs()),
+									MiningBotFixedAim.effectiveLeadMs(settings.getFixedBreakMs(), settings.getFixedLeadMs()));
 					case TICK -> {
-						BreakTickMeter<?> meter = obsidianController.getBreakMeter();
+						BreakTickMeter<?> meter = miningBotController.getBreakMeter();
 						int measured = meter.measuredBreakTicks();
 						yield String.format(Locale.ROOT, "TICK · hold %d+%d = %dms · measured %s",
 								settings.getBreakTicks(), settings.getTickMargin(),
-								MiningTickAim.switchAfterMs(settings.getBreakTicks(), settings.getTickMargin(),
-										ObsidianController.tickTimingTps()),
+								MiningBotTickAim.switchAfterMs(settings.getBreakTicks(), settings.getTickMargin(),
+										MiningBotController.tickTimingTps()),
 								measured > 0 ? measured + " (" + meter.cleanSamples() + ")" : "-");
 					}
 				}));
 	}
 
 	private void buildRouteWalker(Minecraft mc, List<Setting> s) {
-		MiningSettings settings = miningController.getSettings();
+		RouteWalkerSettings settings = routeWalkerController.getSettings();
 		s.add(new PageActionSetting("Route Walker", "Walk and mine a saved loop",
-				GuiPaint.Icon.ROUTE, miningController::isActive,
-				() -> miningController.isActive() ? "ON · node " + miningController.currentTarget1Based()
-						: stopped(miningController.getStopReason()),
+				GuiPaint.Icon.ROUTE, routeWalkerController::isActive,
+				() -> routeWalkerController.isActive() ? "ON · node " + routeWalkerController.currentTarget1Based()
+						: stopped(routeWalkerController.getStopReason()),
 				() -> keyName("key.dragsimmacro.mining_toggle"),
-				() -> { releaseCaptures(); mc.setScreen(null); miningController.start(mc); },
-				() -> miningController.stop(mc, "GUI_STOP")));
+				() -> { releaseCaptures(); mc.setScreen(null); routeWalkerController.start(mc); },
+				() -> routeWalkerController.stop(mc, "GUI_STOP")));
 		s.add(header("BASIC SETTINGS"));
 		s.add(new SliderSetting("Turn Speed", "Linear yaw speed in Auto Turn mode", 30, 240, 5,
 				settings::getTurnSpeedDps, v -> saveResult(settings.setTurnSpeedDps(v), "route turn speed"),
@@ -412,7 +412,7 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ButtonSetting("Turn Speed Default", "Reset only Route Walker turn speed",
 				"Reset Speed", () -> saveResult(settings.resetTurnSpeed(), "route turn speed reset")));
 		s.add(header("ROUTE EDITOR"));
-		s.add(new RouteEditorSetting(miningController, this::confirmClearRoute));
+		s.add(new RouteEditorSetting(routeWalkerController, this::confirmClearRoute));
 	}
 
 	private void buildCombat(Minecraft mc, List<Setting> s) {
@@ -461,7 +461,7 @@ public class DragsimMacroScreen extends Screen {
 				() -> MacroConfig.get().targetBlockHighlight,
 				v -> updateConfig(c -> c.targetBlockHighlight = v)));
 		s.add(new InfoSetting("Route Display", "Configured on the Route Walker page",
-				() -> miningController.getSettings().isShowRoute() ? "ON" : "OFF"));
+				() -> routeWalkerController.getSettings().isShowRoute() ? "ON" : "OFF"));
 		s.add(header("HUD"));
 		s.add(new ToggleSetting("Mining Bot HUD", "Status card while the Mining Bot runs: state, time, mined count, ability",
 				() -> MacroConfig.get().miningBotHud,
@@ -824,11 +824,11 @@ public class DragsimMacroScreen extends Screen {
 	}
 
 	private void confirmClearRoute() {
-		int count = miningController.nodeCount();
+		int count = routeWalkerController.nodeCount();
 		minecraft.setScreen(new ConfirmScreen(confirmed -> {
 			minecraft.setScreen(this);
 			if (!confirmed) return;
-			String error = miningController.clearRouteChecked();
+			String error = routeWalkerController.clearRouteChecked();
 			if (error != null) notify("Route clear failed — " + error);
 			else notify("Route cleared");
 		}, Component.literal("Clear Route?"),

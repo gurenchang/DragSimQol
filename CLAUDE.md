@@ -28,30 +28,32 @@ export JAVA_HOME="/c/Users/guren/.gradle/jdks/jdk-25.0.4.1+1"
 
 ## Layout
 
-Naming trap: the **Mining Bot** (stationary) lives in `Obsidian*` classes (it was renamed from "Obsidian Bot";
-user-facing text says Mining Bot), while `Mining*` classes without `Bot` are mostly the **Route Walker**.
+Class prefixes: `MiningBot*` = stationary Mining Bot, `RouteWalker*` / `Route*` = Route Walker,
+plain `Mining*` = shared by both (`MiningRotationController`, `MiningCameraSmoothing`, `MiningToolCheck`).
+Older docs and commits use the former names (`Obsidian*` for the Mining Bot, `Mining*` for the Route Walker);
+on-disk names (config files, commands, keybind IDs, log event names) were kept for compatibility.
 
 - `src/main/java/.../DragsimMacroMod.java` — common entrypoint only. Everything else is client code.
 - `src/client/java/com/dragsim/macro/client/`
   - `DragsimMacroClient` — wiring: keybinds, commands, tick/render event registration, HUD elements.
-  - Mining Bot (`/miningbot`, alias `/obsidian`): `ObsidianController` (state machine), `ObsidianRotation`
-    (human-like aim), `ObsidianSettings`, `ObsidianInputSession`, `MiningBotTarget`,
-    `MiningAdaptiveAim` / `MiningFixedAim` / `MiningTickAim` (break-timing lead),
+  - Mining Bot (`/miningbot`, alias `/obsidian`): `MiningBotController` (state machine), `MiningBotRotation`
+    (human-like aim), `MiningBotSettings`, `MiningBotInputSession`, `MiningBotTarget`,
+    `MiningBotAdaptiveAim` / `MiningBotFixedAim` / `MiningBotTickAim` (break-timing lead),
     `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps),
     `MiningBotHud` + `MiningBotStats` (HUD panel), `BreakTickMeter` (per-block break time).
-  - Route Walker (`/mining`): `MiningController`, `MiningRouteStore` / `MiningRouteFile`, `MiningRotationController`,
-    `MiningRouteOverlay`, `MiningSettings`.
+  - Route Walker (`/mining`): `RouteWalkerController`, `RouteStore` / `RouteFile` / `RouteNode`, `RouteFollower`,
+    `RouteOverlay`, `RouteWalkerSettings`.
   - Combat (Zealot, `/zealot*`): `MacroController`, `TargetSelector`, `RotationController`, `CombatController`,
     `ApproachPlanner` (+ `LocalPathPlanner`/`Path*` A*), `AttackGate`, Frozen Scythe hold-use (`ScytheHold*`).
   - Shared: `AutomationCoordinator` (only one automation owns input at a time — `tryAcquire`/`release`),
     `LifecycleSafety` (resets on disconnect/join), `ServerTickClock` (server TPS / tick clock from packets),
-    `MiningClock` (monotonic ms clock for client-side timers).
+    `MacroClock` (monotonic ms clock for client-side timers).
   - Visuals: `TargetBlockHighlight` (in-world, `LevelRenderEvents.BEFORE_GIZMOS`), `CornerEspOverlay`, `EspOverlay`,
     `DebugHud`, fullbright (`FullbrightLightmapPolicy` + mixin).
   - Alerts/feedback: `AlertMonitor`, `PlayerAlertPolicy`, `DesktopNotifier`, `AlertFlash` (red screen-edge pulse),
     `MacroToasts` → `ToastOverlay`, `ChatFormat` (chat colours), `MacroNotifications`.
-  - Config (JSON in `config/`): `MacroConfig` → `dragsimmacro.json`; `ObsidianSettings` → `dragsimmacro-miningbot.json`
-    (migrates old `dragsimmacro-obsidian.json`); `MiningSettings` → `dragsimmacro-mining-settings.json`;
+  - Config (JSON in `config/`): `MacroConfig` → `dragsimmacro.json`; `MiningBotSettings` → `dragsimmacro-miningbot.json`
+    (migrates old `dragsimmacro-obsidian.json`); `RouteWalkerSettings` → `dragsimmacro-mining-settings.json`;
     routes → `dragsimmacro-mining.json`. Debug log: `MacroLogger` → `logs/zealotmacro.log`.
   - `mixin/` — listed in `src/main/resources/dragsimmacro.client.mixins.json`.
   - `gui/` — settings screen (see below).

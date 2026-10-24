@@ -7,8 +7,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import com.dragsim.macro.client.CombatMode;
 import com.dragsim.macro.client.FrozenScytheUseMode;
-import com.dragsim.macro.client.MiningRouteNode;
-import com.dragsim.macro.client.MiningRouteStore;
+import com.dragsim.macro.client.RouteNode;
+import com.dragsim.macro.client.RouteStore;
 
 class GuiRedesignTest {
 	@Test
@@ -92,10 +92,10 @@ class GuiRedesignTest {
 
 	@Test
 	void routeSaveFailureLeavesLiveNodesAndSelectionStable() {
-		List<MiningRouteNode> live = new ArrayList<>(List.of(new MiningRouteNode(1, 2, 3)));
-		List<MiningRouteNode> edited = List.of(new MiningRouteNode(4, 5, 6));
-		assertFalse(MiningRouteStore.replaceAfterSave(live, edited, () -> false));
-		assertEquals(List.of(new MiningRouteNode(1, 2, 3)), live);
+		List<RouteNode> live = new ArrayList<>(List.of(new RouteNode(1, 2, 3)));
+		List<RouteNode> edited = List.of(new RouteNode(4, 5, 6));
+		assertFalse(RouteStore.replaceAfterSave(live, edited, () -> false));
+		assertEquals(List.of(new RouteNode(1, 2, 3)), live);
 		assertEquals(0, RouteEditorSetting.clampSelection(3, live.size()));
 		assertEquals(-1, RouteEditorSetting.clampSelection(0, 0));
 	}

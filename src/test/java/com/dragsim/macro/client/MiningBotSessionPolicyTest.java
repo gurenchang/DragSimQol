@@ -9,15 +9,15 @@ import org.junit.jupiter.api.Test;
 class MiningBotSessionPolicyTest {
 	@Test
 	void everyActiveStateLocksPhysicalMouseOnlyForAValidOwnedSession() {
-		for (ObsidianController.State state : ObsidianController.State.values()) {
-			assertEquals(state != ObsidianController.State.OFF,
-					ObsidianController.activeSessionLocksMouseLook(state, true, true),
+		for (MiningBotController.State state : MiningBotController.State.values()) {
+			assertEquals(state != MiningBotController.State.OFF,
+					MiningBotController.activeSessionLocksMouseLook(state, true, true),
 					"state=" + state);
 		}
-		assertFalse(ObsidianController.activeSessionLocksMouseLook(
-				ObsidianController.State.MINING, false, true));
-		assertFalse(ObsidianController.activeSessionLocksMouseLook(
-				ObsidianController.State.MINING, true, false));
+		assertFalse(MiningBotController.activeSessionLocksMouseLook(
+				MiningBotController.State.MINING, false, true));
+		assertFalse(MiningBotController.activeSessionLocksMouseLook(
+				MiningBotController.State.MINING, true, false));
 	}
 
 	@Test
@@ -38,7 +38,7 @@ class MiningBotSessionPolicyTest {
 	void noCandidateDoesNotAcquireOwnerOrPublishAnyStartEffects() {
 		AtomicInteger ownerAcquires = new AtomicInteger();
 		AtomicInteger effects = new AtomicInteger();
-		boolean started = ObsidianController.activateWithCandidate(List.of(), () -> {
+		boolean started = MiningBotController.activateWithCandidate(List.of(), () -> {
 			ownerAcquires.incrementAndGet();
 			return true;
 		}, candidate -> effects.incrementAndGet());
@@ -52,7 +52,7 @@ class MiningBotSessionPolicyTest {
 		AtomicInteger ownerAcquires = new AtomicInteger();
 		AtomicInteger effects = new AtomicInteger();
 		String[] selected = {null};
-		boolean started = ObsidianController.activateWithCandidate(List.of("nearest", "farther"), () -> {
+		boolean started = MiningBotController.activateWithCandidate(List.of("nearest", "farther"), () -> {
 			ownerAcquires.incrementAndGet();
 			return true;
 		}, candidate -> {
@@ -67,11 +67,11 @@ class MiningBotSessionPolicyTest {
 
 	@Test
 	void losingAllCandidatesAfterStartWaitsAndKeepsContinuousAttack() {
-		assertEquals(ObsidianController.State.WAITING_REGEN,
-				ObsidianController.activeStateForCandidates(List.of()));
-		assertEquals(ObsidianController.State.AIMING,
-				ObsidianController.activeStateForCandidates(List.of("regenerated")));
-		assertTrue(ObsidianController.activeSessionAllowsAttack(
-				ObsidianController.State.WAITING_REGEN, false, false));
+		assertEquals(MiningBotController.State.WAITING_REGEN,
+				MiningBotController.activeStateForCandidates(List.of()));
+		assertEquals(MiningBotController.State.AIMING,
+				MiningBotController.activeStateForCandidates(List.of("regenerated")));
+		assertTrue(MiningBotController.activeSessionAllowsAttack(
+				MiningBotController.State.WAITING_REGEN, false, false));
 	}
 }

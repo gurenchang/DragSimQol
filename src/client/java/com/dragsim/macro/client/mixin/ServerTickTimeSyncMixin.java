@@ -1,6 +1,6 @@
 package com.dragsim.macro.client.mixin;
 
-import com.dragsim.macro.client.MiningClock;
+import com.dragsim.macro.client.MacroClock;
 import com.dragsim.macro.client.ServerTickClock;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -20,6 +20,6 @@ abstract class ServerTickTimeSyncMixin {
 	@Inject(method = "handleSetTime", at = @At("HEAD"))
 	private void dragsim$observeTimeSync(ClientboundSetTimePacket packet, CallbackInfo ci) {
 		if (Minecraft.getInstance().isSameThread()) return;
-		ServerTickClock.get().onTimeSync(packet.gameTime(), MiningClock.nowMs());
+		ServerTickClock.get().onTimeSync(packet.gameTime(), MacroClock.nowMs());
 	}
 }

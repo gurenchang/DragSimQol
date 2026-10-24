@@ -1,6 +1,6 @@
 package com.dragsim.macro.client.mixin;
 
-import com.dragsim.macro.client.ObsidianController;
+import com.dragsim.macro.client.MiningBotController;
 import com.dragsim.macro.client.MiningBotMouseLookGuard;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.MouseHandler;
@@ -27,7 +27,7 @@ abstract class MiningBotMouseHandlerMixin {
 	@Redirect(method = "turnPlayer", at = @At(value = "INVOKE",
 			target = "Lnet/minecraft/client/player/LocalPlayer;turn(DD)V"))
 	private void dragsim$lockMiningBotMouseLook(LocalPlayer player, double yaw, double pitch) {
-		MiningBotMouseLookGuard.route(ObsidianController.shouldLockMouseLook(minecraft), () -> {
+		MiningBotMouseLookGuard.route(MiningBotController.shouldLockMouseLook(minecraft), () -> {
 			smoothTurnX.reset();
 			smoothTurnY.reset();
 		}, () -> player.turn(yaw, pitch));

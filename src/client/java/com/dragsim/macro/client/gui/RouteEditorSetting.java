@@ -3,8 +3,8 @@ package com.dragsim.macro.client.gui;
 import java.util.List;
 import java.util.Locale;
 
-import com.dragsim.macro.client.MiningController;
-import com.dragsim.macro.client.MiningRouteNode;
+import com.dragsim.macro.client.RouteWalkerController;
+import com.dragsim.macro.client.RouteNode;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -36,10 +36,10 @@ public final class RouteEditorSetting implements GuiWidgets.Setting {
 	private static final int MESSAGE_Y = ADD_COORDS_Y + BUTTON_H + 8;
 	private static final int HEIGHT = MESSAGE_Y + 16;
 
-	private final MiningController controller;
+	private final RouteWalkerController controller;
 	private final Runnable clearAction;
 	private long routeVersion = Long.MIN_VALUE;
-	private List<MiningRouteNode> nodes = List.of();
+	private List<RouteNode> nodes = List.of();
 	private int selected = -1;
 	private int listScroll;
 	private int focusedField = -1;
@@ -49,7 +49,7 @@ public final class RouteEditorSetting implements GuiWidgets.Setting {
 	private double mouseX, mouseY;
 	private String message = "Select a node to remove it";
 
-	public RouteEditorSetting(MiningController controller, Runnable clearAction) {
+	public RouteEditorSetting(RouteWalkerController controller, Runnable clearAction) {
 		this.controller = controller;
 		this.clearAction = clearAction;
 	}
@@ -58,7 +58,7 @@ public final class RouteEditorSetting implements GuiWidgets.Setting {
 	@Override public void hover(double mx, double my) { mouseX = mx; mouseY = my; }
 
 	private void refresh() {
-		MiningController.RouteView view = controller.routeView();
+		RouteWalkerController.RouteView view = controller.routeView();
 		if (view.version() == routeVersion) return;
 		routeVersion = view.version();
 		nodes = view.nodes();
@@ -104,7 +104,7 @@ public final class RouteEditorSetting implements GuiWidgets.Setting {
 			if (sel) GuiPaint.roundedRect(g, x + 2, ry, w - 4, LIST_ROW_H, 4, GuiTheme.SIDEBAR_SELECTED);
 			else if (hot) GuiPaint.roundedRect(g, x + 2, ry, w - 4, LIST_ROW_H, 4, GuiTheme.SURFACE_HOVER);
 			if (sel) GuiPaint.roundedRect(g, x + 4, ry + 5, 2, LIST_ROW_H - 10, 1, GuiTheme.ACCENT);
-			MiningRouteNode n = nodes.get(index);
+			RouteNode n = nodes.get(index);
 			int ty = ry + (LIST_ROW_H - UiFont.BODY_H) / 2;
 			g.text(font, UiFont.text("#" + (index + 1)), x + 10, ty,
 					sel ? GuiTheme.ACCENT_BRIGHT : GuiTheme.TEXT_DISABLED, false);
@@ -193,7 +193,7 @@ public final class RouteEditorSetting implements GuiWidgets.Setting {
 		if (inside(mx, my, x, listTop + 2, w, LIST_ROWS * LIST_ROW_H)) {
 			int index = listScroll + (int) ((my - listTop - 2) / LIST_ROW_H);
 			if (index >= 0 && index < nodes.size()) {
-				MiningRouteNode n = nodes.get(index);
+				RouteNode n = nodes.get(index);
 				return UiFont.text(String.format(Locale.ROOT, "Node #%d: X %.6f, Y %.6f, Z %.6f",
 						index + 1, n.x(), n.y(), n.z()));
 			}

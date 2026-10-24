@@ -2,7 +2,7 @@ package com.dragsim.macro.client;
 
 import java.util.Locale;
 
-/** Per-session Mining Bot counters for the HUD. Times are {@link MiningClock} milliseconds. */
+/** Per-session Mining Bot counters for the HUD. Times are {@link MacroClock} milliseconds. */
 public final class MiningBotStats {
 	/** Rate is shown only after this much run time; earlier values swing too much. */
 	static final long MIN_RATE_MS = 10_000;

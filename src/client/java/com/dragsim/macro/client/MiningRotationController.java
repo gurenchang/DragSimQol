@@ -52,7 +52,7 @@ public final class MiningRotationController {
 	 * 目標を越えない。角加速度やランダムな速度変化は入れない。
 	 */
 	public double update(double targetYaw, double turnSpeedDps) {
-		double speed = MiningSettings.clampSpeed(turnSpeedDps);
+		double speed = RouteWalkerSettings.clampSpeed(turnSpeedDps);
 		double err = wrapDegrees(targetYaw - current);
 		double maxStep = speed * TICK_DT_SECONDS;
 		double step = Math.max(-maxStep, Math.min(maxStep, err));

@@ -1,6 +1,6 @@
 package com.dragsim.macro.client.mixin;
 
-import com.dragsim.macro.client.ObsidianController;
+import com.dragsim.macro.client.MiningBotController;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -16,7 +16,7 @@ abstract class MiningBotServerBlockUpdateMixin {
 	@Inject(method = "setServerVerifiedBlockState", at = @At("HEAD"))
 	private void dragsim$observeServerBlock(BlockPos pos, BlockState state, int flags,
 			CallbackInfo ci) {
-		ObsidianController bot = ObsidianController.get();
+		MiningBotController bot = MiningBotController.get();
 		if (bot != null) bot.onServerVerifiedBlockUpdate(Minecraft.getInstance(), (ClientLevel) (Object) this, pos, state);
 	}
 }

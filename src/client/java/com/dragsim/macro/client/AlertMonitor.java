@@ -50,7 +50,7 @@ public final class AlertMonitor {
 
 	/** Call when the macro itself triggers a teleport (e.g. AOTE), so the TP check ignores the result. */
 	public static void expectTeleport() {
-		expectTeleportUntil = MiningClock.nowMs() + EXPECTED_TELEPORT_MS;
+		expectTeleportUntil = MacroClock.nowMs() + EXPECTED_TELEPORT_MS;
 	}
 
 	/** END_CLIENT_TICK. Only watches while a macro is running. */
@@ -74,7 +74,7 @@ public final class AlertMonitor {
 			seen.add(new PlayerAlertPolicy.Seen(other.getUUID(), other.getName().getString(),
 					other.distanceTo(mc.player)));
 		}
-		List<PlayerAlertPolicy.Seen> alerts = policy.update(seen, config.alertRadius, MiningClock.nowMs());
+		List<PlayerAlertPolicy.Seen> alerts = policy.update(seen, config.alertRadius, MacroClock.nowMs());
 		if (alerts.isEmpty()) return;
 		StringBuilder body = new StringBuilder();
 		for (PlayerAlertPolicy.Seen p : alerts) {
@@ -92,7 +92,7 @@ public final class AlertMonitor {
 		if (!config.alertMention || mc == null || mc.getUser() == null || !macroRunning.getAsBoolean()) return;
 		PlayerAlertPolicy.Chat kind = PlayerAlertPolicy.classifyChat(text, mc.getUser().getName());
 		if (kind == PlayerAlertPolicy.Chat.NONE) return;
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		if (lastChatAlert != Long.MIN_VALUE && now - lastChatAlert < CHAT_COOLDOWN_MS) return;
 		lastChatAlert = now;
 		String title = kind == PlayerAlertPolicy.Chat.DIRECT_MESSAGE ? "Direct message" : "You were mentioned";
@@ -109,7 +109,7 @@ public final class AlertMonitor {
 		MacroConfig config = MacroConfig.get();
 		if (mc == null || mc.player == null || !macroRunning.getAsBoolean()) return;
 		if (!config.alertTeleport && !config.alertRotation) return;
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		double distance = fromPos.distanceTo(toPos);
 		double change = PlayerAlertPolicy.rotationChange(fromYaw, fromPitch, toYaw, toPitch);
 		boolean expected = now < expectTeleportUntil;
@@ -150,7 +150,7 @@ public final class AlertMonitor {
 			MacroLogger.get().log("ALERT_HELD_SLOT_SKIPPED spawn " + detail);
 			return;
 		}
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		if (lastSlotAlert != Long.MIN_VALUE && now - lastSlotAlert < SERVER_MOVE_COOLDOWN_MS) return;
 		lastSlotAlert = now;
 		MacroLogger.get().log("ALERT_HELD_SLOT " + detail);
@@ -171,7 +171,7 @@ public final class AlertMonitor {
 			MacroLogger.get().log("ALERT_HELD_ITEM_SKIPPED spawn " + detail);
 			return;
 		}
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		if (lastHeldItemAlert != Long.MIN_VALUE && now - lastHeldItemAlert < SERVER_MOVE_COOLDOWN_MS) return;
 		lastHeldItemAlert = now;
 		MacroLogger.get().log("ALERT_HELD_ITEM " + detail);
@@ -205,7 +205,7 @@ public final class AlertMonitor {
 			MacroLogger.get().log("ALERT_KNOCKBACK_SKIPPED hurt " + detail);
 			return;
 		}
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		if (lastKnockbackAlert != Long.MIN_VALUE && now - lastKnockbackAlert < SERVER_MOVE_COOLDOWN_MS) return;
 		lastKnockbackAlert = now;
 		MacroLogger.get().log("ALERT_KNOCKBACK " + detail);
@@ -220,7 +220,7 @@ public final class AlertMonitor {
 	public void onStaffCheckText(Minecraft mc, String source, String text) {
 		if (!MacroConfig.get().alertStaffCheck || mc == null || mc.player == null) return;
 		if (!PlayerAlertPolicy.isStaffCheck(text)) return;
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		boolean repeat = lastStaffCheckAlert != Long.MIN_VALUE && now - lastStaffCheckAlert < STAFF_CHECK_COOLDOWN_MS;
 		MacroLogger.get().log("ALERT_STAFF_CHECK source=" + source + (repeat ? " (repeat)" : "") + " text=" + text);
 		if (repeat) return;
@@ -236,7 +236,7 @@ public final class AlertMonitor {
 			return;
 		}
 		if (!MacroConfig.get().alertStaffCheck || !macroRunning.getAsBoolean()) return;
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		// The staff check message usually comes first; its terminal then opens with its own title.
 		if (lastStaffCheckAlert != Long.MIN_VALUE && now - lastStaffCheckAlert < STAFF_CHECK_COOLDOWN_MS) {
 			MacroLogger.get().log("ALERT_SERVER_GUI_SKIPPED after staff check title=" + title);

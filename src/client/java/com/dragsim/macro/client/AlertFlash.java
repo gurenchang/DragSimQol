@@ -25,7 +25,7 @@ public final class AlertFlash implements HudElement {
 	public static void trigger(boolean urgent) {
 		if (!MacroConfig.get().alertScreenFlash) return;
 		duration = urgent ? LONG_DURATION_MS : DURATION_MS;
-		startedAt = MiningClock.nowMs();
+		startedAt = MacroClock.nowMs();
 	}
 
 	/** 0..1; pulses at PULSE_MS and fades out over the duration. */
@@ -40,7 +40,7 @@ public final class AlertFlash implements HudElement {
 	public void extractRenderState(GuiGraphicsExtractor g, DeltaTracker delta) {
 		long start = startedAt;
 		if (start == Long.MIN_VALUE) return;
-		float k = intensity(MiningClock.nowMs() - start, duration);
+		float k = intensity(MacroClock.nowMs() - start, duration);
 		if (k <= 0f) return;
 		Minecraft mc = Minecraft.getInstance();
 		int w = mc.getWindow().getGuiScaledWidth();

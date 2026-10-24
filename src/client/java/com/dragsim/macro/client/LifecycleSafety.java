@@ -18,24 +18,24 @@ public final class LifecycleSafety {
 
 	public static void register(MacroController controller, RotationController rotationController,
 			AttackGate attackGate, CombatController combatController, ApproachPlanner approachPlanner,
-			AimSolver aimSolver, ScytheHoldUse scytheHoldUse, MiningController mining,
-			ObsidianController obsidian) {
+			AimSolver aimSolver, ScytheHoldUse scytheHoldUse, RouteWalkerController routeWalker,
+			MiningBotController miningBot) {
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
 			scytheHoldUse.release("WORLD_LOST");
-			if (mining != null) {
-				mining.stop(mc, "WORLD_LOST");
+			if (routeWalker != null) {
+				routeWalker.stop(mc, "WORLD_LOST");
 			}
-			if (obsidian != null) obsidian.stop(mc, "WORLD_LOST");
+			if (miningBot != null) miningBot.stop(mc, "WORLD_LOST");
 			resetRuntime(controller, rotationController, attackGate, combatController,
 					approachPlanner, aimSolver, mc, "DISCONNECT");
 		});
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, mc) -> {
 			scytheHoldUse.release("WORLD_LOST");
-			if (mining != null) {
-				mining.stop(mc, "WORLD_LOST");
+			if (routeWalker != null) {
+				routeWalker.stop(mc, "WORLD_LOST");
 			}
-			if (obsidian != null) obsidian.stop(mc, "WORLD_LOST");
+			if (miningBot != null) miningBot.stop(mc, "WORLD_LOST");
 			resetRuntime(controller, rotationController, attackGate, combatController,
 					approachPlanner, aimSolver, mc, "JOIN");
 		});
@@ -49,9 +49,9 @@ public final class LifecycleSafety {
 		// input cleanup(ownership付きのみ)
 		combatController.stopAndReleaseAll(mc);
 		approachPlanner.stopAndReleaseAll(mc);
-		MiningController mining = MiningController.get();
-		if (mining != null && mining.isActive()) {
-			mining.stop(mc, "WORLD_LOST");
+		RouteWalkerController routeWalker = RouteWalkerController.get();
+		if (routeWalker != null && routeWalker.isActive()) {
+			routeWalker.stop(mc, "WORLD_LOST");
 		}
 
 		// world依存stateのreset

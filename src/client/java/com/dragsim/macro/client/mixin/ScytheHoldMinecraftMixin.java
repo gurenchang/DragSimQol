@@ -1,7 +1,7 @@
 package com.dragsim.macro.client.mixin;
 
-import com.dragsim.macro.client.MiningController;
-import com.dragsim.macro.client.ObsidianController;
+import com.dragsim.macro.client.RouteWalkerController;
+import com.dragsim.macro.client.MiningBotController;
 import com.dragsim.macro.client.MiningBotAttackPolicy;
 import com.dragsim.macro.client.ScytheHoldUse;
 import net.minecraft.client.Minecraft;
@@ -19,8 +19,8 @@ abstract class ScytheHoldMinecraftMixin {
 	private void dragsim$keepBackgroundHoldRunning(CallbackInfo ci) {
 		Minecraft mc = (Minecraft) (Object) this;
 		if (ScytheHoldUse.shouldSuppressInactivePause(mc)
-				|| MiningController.shouldSuppressInactivePause(mc)
-				|| ObsidianController.shouldSuppressInactivePause(mc)) {
+				|| RouteWalkerController.shouldSuppressInactivePause(mc)
+				|| MiningBotController.shouldSuppressInactivePause(mc)) {
 			ci.cancel();
 		}
 	}
@@ -32,18 +32,18 @@ abstract class ScytheHoldMinecraftMixin {
 	private void dragsim$refreshHoldAfterHotbarInput(CallbackInfo ci) {
 		Minecraft mc = (Minecraft) (Object) this;
 		ScytheHoldUse.refreshBeforeUse(mc);
-		MiningController holder = MiningController.get();
+		RouteWalkerController holder = RouteWalkerController.get();
 		if (holder != null) {
 			holder.refreshAfterHotbar(mc);
 		}
-		ObsidianController obsidian = ObsidianController.get();
-		if (obsidian != null) obsidian.refreshBeforeAttack(mc);
+		MiningBotController miningBot = MiningBotController.get();
+		if (miningBot != null) miningBot.refreshBeforeAttack(mc);
 	}
 
 	/** Mining Bot uses the single continuous vanilla continueAttack path, not click queue attacks. */
 	@Inject(method = "startAttack", at = @At("HEAD"), cancellable = true)
 	private void dragsim$miningBotSuppressClickAttack(CallbackInfoReturnable<Boolean> cir) {
-		ObsidianController bot = ObsidianController.get();
+		MiningBotController bot = MiningBotController.get();
 		if (bot != null && bot.isActive()) {
 			cir.setReturnValue(false);
 		}
@@ -53,7 +53,7 @@ abstract class ScytheHoldMinecraftMixin {
 	@ModifyArg(method = "handleKeybinds", at = @At(value = "INVOKE",
 			target = "Lnet/minecraft/client/Minecraft;continueAttack(Z)V"), index = 0)
 	private boolean dragsim$miningBotGateContinuousAttack(boolean vanillaContinue) {
-		ObsidianController bot = ObsidianController.get();
+		MiningBotController bot = MiningBotController.get();
 		if (bot == null || !bot.isActive()) return vanillaContinue;
 		return MiningBotAttackPolicy.gate(true, vanillaContinue,
 				bot.allowVanillaAttack((Minecraft) (Object) this));

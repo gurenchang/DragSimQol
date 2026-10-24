@@ -1,6 +1,6 @@
 package com.dragsim.macro.client.mixin;
 
-import com.dragsim.macro.client.ObsidianController;
+import com.dragsim.macro.client.MiningBotController;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockDestructionPacket;
@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class MiningBotBlockCrackMixin {
 	@Inject(method = "handleBlockDestruction", at = @At("TAIL"))
 	private void dragsim$observeCrack(ClientboundBlockDestructionPacket packet, CallbackInfo ci) {
-		ObsidianController bot = ObsidianController.get();
+		MiningBotController bot = MiningBotController.get();
 		if (bot != null) bot.onServerBlockCrack(Minecraft.getInstance(), packet.getId(), packet.getPos(), packet.getProgress());
 	}
 }

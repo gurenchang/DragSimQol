@@ -147,9 +147,9 @@ class MiningRotationTest {
 	@Test
 	void tickFixtureStatePathAdvancesOnceWhileHookAndRenderAdvanceZero() {
 		// 状態更新経路: followerと旋回を1tick分だけ進める。
-		var follower = new MiningRouteFollower();
+		var follower = new RouteFollower();
 		follower.setRoute(java.util.List.of(
-				new MiningRouteNode(0, 64, 0), new MiningRouteNode(10, 64, 0)));
+				new RouteNode(0, 64, 0), new RouteNode(10, 64, 0)));
 		follower.join(1, 0, 64, 0);
 		var rotation = new MiningRotationController();
 		rotation.syncTo(0);
@@ -158,9 +158,9 @@ class MiningRotationTest {
 		double yawAfterState = rotation.update(follower.desiredYaw(0.5, 0), SPEED_120);
 		int targetAfterState = follower.getTargetIndex();
 		// 同一tickのhotbarフック経路: 純粋な再適用のみ(follower.tick・rotation.updateを呼ばない)。
-		var session = new MiningInputSession();
+		var session = new RouteWalkerInputSession();
 		var input = new FakeMiningInput();
-		var want = new MiningInputSession.Want(false, true, true);
+		var want = new RouteWalkerInputSession.Want(false, true, true);
 		session.update(input, want, null, false);
 		session.update(input, want, null, false);
 		// render経路の読取を複数回。
@@ -178,11 +178,11 @@ class MiningRotationTest {
 
 	@Test
 	void settingsKeepSavedSpeedAndDefaultTo120() {
-		var fresh = new MiningSettings();
+		var fresh = new RouteWalkerSettings();
 		assertTrue(fresh.parse("{\"schemaVersion\":1}"));
 		assertEquals(120.0, fresh.getTurnSpeedDps(), 1e-9);
 		// 保存済み90は維持する(黙って上書きしない)。
-		var old = new MiningSettings();
+		var old = new RouteWalkerSettings();
 		assertTrue(old.parse(
 				"{\"schemaVersion\":1,\"turnSpeedDps\":90,\"turnAccelerationDps2\":240,\"showRoute\":false}"));
 		assertEquals(90.0, old.getTurnSpeedDps(), 1e-9);
@@ -196,7 +196,7 @@ class MiningRotationTest {
 		assertTrue(old.parse("{\"schemaVersion\":1,\"turnSpeedDps\":120}"));
 		assertEquals(120.0, old.getTurnSpeedDps(), 1e-9);
 		// 壊れたデータは既定値へ。
-		var broken = new MiningSettings();
+		var broken = new RouteWalkerSettings();
 		assertFalse(broken.parse("{\"schemaVersion\":999}"));
 		assertEquals(120.0, broken.getTurnSpeedDps(), 1e-9);
 		assertFalse(broken.parse("not json"));
@@ -205,15 +205,15 @@ class MiningRotationTest {
 	@Test
 	void accelRetiredMessageIsUnchanged() {
 		assertEquals("[DragSim] Route Walker rotation is linear; acceleration is no longer used.",
-				MiningCommand.ACCEL_RETIRED_MESSAGE);
+				RouteWalkerCommand.ACCEL_RETIRED_MESSAGE);
 	}
 
 	@Test
-	void cameraPitchIsOwnedOnlyByObsidianSnapshot() {
+	void cameraPitchIsOwnedOnlyByMiningBotSnapshot() {
 		MiningCameraSmoothing.publishRoute(10, 16);
 		assertEquals(42f, MiningCameraSmoothing.resolvePitch(
 				true, false, true, true, 0.5f, 42f), 1e-6);
-		MiningCameraSmoothing.publishObsidian(10, 16, 20, 30);
+		MiningCameraSmoothing.publishMiningBot(10, 16, 20, 30);
 		assertEquals(25f, MiningCameraSmoothing.resolvePitch(
 				true, false, true, true, 0.5f, 42f), 1e-6);
 		MiningCameraSmoothing.invalidate(MiningCameraSmoothing.Owner.ROUTE_WALKER);
@@ -224,43 +224,43 @@ class MiningRotationTest {
 
 	@Test
 	void screenConditionAllowsNullAndChatOnly() {
-		assertTrue(MiningRouteOverlay.screenAllowsDraw(false, false));
-		assertTrue(MiningRouteOverlay.screenAllowsDraw(true, true));
-		assertFalse(MiningRouteOverlay.screenAllowsDraw(true, false));
+		assertTrue(RouteOverlay.screenAllowsDraw(false, false));
+		assertTrue(RouteOverlay.screenAllowsDraw(true, true));
+		assertFalse(RouteOverlay.screenAllowsDraw(true, false));
 	}
 
 	@Test
 	void clipLineToRectHandlesCases() {
 		// 完全に内側。
 		assertArrayEquals(new double[] {10, 10, 50, 50},
-				MiningRouteOverlay.clipLineToRect(10, 10, 50, 50, 0, 0, 100, 100), 1e-9);
+				RouteOverlay.clipLineToRect(10, 10, 50, 50, 0, 0, 100, 100), 1e-9);
 		// 横切る線分はclipされる。
 		assertArrayEquals(new double[] {0, 50, 100, 50},
-				MiningRouteOverlay.clipLineToRect(-40, 50, 140, 50, 0, 0, 100, 100), 1e-9);
+				RouteOverlay.clipLineToRect(-40, 50, 140, 50, 0, 0, 100, 100), 1e-9);
 		// 完全に外側はnull。
-		assertNull(MiningRouteOverlay.clipLineToRect(-40, -40, -10, -10, 0, 0, 100, 100));
+		assertNull(RouteOverlay.clipLineToRect(-40, -40, -10, -10, 0, 0, 100, 100));
 		// ゼロ長: 内側は点、外側はnull。
 		assertArrayEquals(new double[] {5, 5, 5, 5},
-				MiningRouteOverlay.clipLineToRect(5, 5, 5, 5, 0, 0, 100, 100), 1e-9);
-		assertNull(MiningRouteOverlay.clipLineToRect(150, 150, 150, 150, 0, 0, 100, 100));
+				RouteOverlay.clipLineToRect(5, 5, 5, 5, 0, 0, 100, 100), 1e-9);
+		assertNull(RouteOverlay.clipLineToRect(150, 150, 150, 150, 0, 0, 100, 100));
 	}
 
 	@Test
 	void overlayEdgeListCoversLoopOnce() {
-		assertTrue(MiningRouteOverlay.edgeList(0).isEmpty());
-		assertTrue(MiningRouteOverlay.edgeList(1).isEmpty());
-		List<int[]> two = MiningRouteOverlay.edgeList(2);
+		assertTrue(RouteOverlay.edgeList(0).isEmpty());
+		assertTrue(RouteOverlay.edgeList(1).isEmpty());
+		List<int[]> two = RouteOverlay.edgeList(2);
 		assertEquals(1, two.size());
 		assertArrayEquals(new int[] {0, 1}, two.get(0));
-		List<int[]> four = MiningRouteOverlay.edgeList(4);
+		List<int[]> four = RouteOverlay.edgeList(4);
 		assertEquals(4, four.size());
 		assertArrayEquals(new int[] {3, 0}, four.get(3));
 	}
 
 	@Test
 	void overlaySelectionKeepsNumbers() {
-		MiningRouteOverlay.MiningRouteFollowerPositions pos =
-				new MiningRouteOverlay.MiningRouteFollowerPositions() {
+		RouteOverlay.RouteFollowerPositions pos =
+				new RouteOverlay.RouteFollowerPositions() {
 					@Override
 					public int size() {
 						return 3;
@@ -277,13 +277,13 @@ class MiningRotationTest {
 					}
 				};
 		assertArrayEquals(new boolean[] {true, false, true},
-				MiningRouteOverlay.selectDrawn(pos, -1, false));
+				RouteOverlay.selectDrawn(pos, -1, false));
 		// 上限超過時は目標を最優先し、番号は振り直さない。
-		MiningRouteOverlay.MiningRouteFollowerPositions many =
-				new MiningRouteOverlay.MiningRouteFollowerPositions() {
+		RouteOverlay.RouteFollowerPositions many =
+				new RouteOverlay.RouteFollowerPositions() {
 					@Override
 					public int size() {
-						return MiningRouteOverlay.MAX_MARKERS + 10;
+						return RouteOverlay.MAX_MARKERS + 10;
 					}
 
 					@Override
@@ -293,30 +293,30 @@ class MiningRotationTest {
 
 					@Override
 					public double distanceSq(int i) {
-						return (MiningRouteOverlay.MAX_MARKERS + 10 - i);
+						return (RouteOverlay.MAX_MARKERS + 10 - i);
 					}
 				};
-		boolean[] culled = MiningRouteOverlay.selectDrawn(many, 5, true);
+		boolean[] culled = RouteOverlay.selectDrawn(many, 5, true);
 		int count = 0;
 		for (boolean b : culled) {
 			if (b) {
 				count++;
 			}
 		}
-		assertEquals(MiningRouteOverlay.MAX_MARKERS, count);
+		assertEquals(RouteOverlay.MAX_MARKERS, count);
 		assertTrue(culled[5]);
 	}
 
 	@Test
 	void activeEdgeStartIdentifiesIncomingSegment() {
-		assertEquals(3, MiningRouteOverlay.activeEdgeStart(4, 0));
-		assertEquals(0, MiningRouteOverlay.activeEdgeStart(4, 1));
-		assertEquals(0, MiningRouteOverlay.activeEdgeStart(2, 1));
-		assertEquals(-1, MiningRouteOverlay.activeEdgeStart(1, 0));
-		assertEquals(-1, MiningRouteOverlay.activeEdgeStart(4, -1));
+		assertEquals(3, RouteOverlay.activeEdgeStart(4, 0));
+		assertEquals(0, RouteOverlay.activeEdgeStart(4, 1));
+		assertEquals(0, RouteOverlay.activeEdgeStart(2, 1));
+		assertEquals(-1, RouteOverlay.activeEdgeStart(1, 0));
+		assertEquals(-1, RouteOverlay.activeEdgeStart(4, -1));
 	}
 
-	private static final class FakeMiningInput implements MiningInputSession.Input {
+	private static final class FakeMiningInput implements RouteWalkerInputSession.Input {
 		boolean attack;
 		boolean forward;
 		boolean sprint;

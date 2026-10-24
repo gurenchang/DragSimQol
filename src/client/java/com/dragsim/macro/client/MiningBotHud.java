@@ -32,9 +32,9 @@ public final class MiningBotHud implements HudElement {
 	private record Row(String label, String value, int color) {
 	}
 
-	private final ObsidianController bot;
+	private final MiningBotController bot;
 
-	public MiningBotHud(ObsidianController bot) {
+	public MiningBotHud(MiningBotController bot) {
 		this.bot = bot;
 	}
 
@@ -45,7 +45,7 @@ public final class MiningBotHud implements HudElement {
 		if (mc.player == null || mc.options.hideGui) return;
 		if (mc.screen != null && !(mc.screen instanceof ChatScreen)) return;
 		MiningBotStats stats = bot.getStats();
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		float alpha = 1f;
 		if (!bot.isActive()) {
 			long since = stats.stoppedAt() < 0 ? Long.MAX_VALUE : now - stats.stoppedAt();
@@ -57,7 +57,7 @@ public final class MiningBotHud implements HudElement {
 
 	private List<Row> rows(MiningBotStats stats, long now) {
 		List<Row> rows = new ArrayList<>();
-		ObsidianSettings settings = bot.getSettings();
+		MiningBotSettings settings = bot.getSettings();
 		rows.add(new Row("Target", settings.getTarget().displayName(), GuiTheme.TEXT_PRIMARY));
 		rows.add(new Row("Time", MiningBotStats.duration(stats.elapsedMs(now)), GuiTheme.TEXT_PRIMARY));
 		double rate = stats.perMinute(now);
@@ -70,7 +70,7 @@ public final class MiningBotHud implements HudElement {
 			return rows;
 		}
 		addTpsRow(rows);
-		if (settings.getAimLeadMode() == ObsidianSettings.AimLeadMode.TICK) addTickRows(rows, settings, stats);
+		if (settings.getAimLeadMode() == MiningBotSettings.AimLeadMode.TICK) addTickRows(rows, settings, stats);
 		rows.add(new Row("Nearby", bot.getCandidateCount() + " ready  ·  " + bot.getWaitingCount() + " regen",
 				GuiTheme.TEXT_PRIMARY));
 		if (settings.isAutoAbilityEnabled()) {
@@ -99,7 +99,7 @@ public final class MiningBotHud implements HudElement {
 		int min = meter.minTicks(), max = meter.maxTicks();
 		rows.add(new Row("Break", meter.medianTicks() + " t" + (min == max ? "" : "  (" + min + "–" + max + ")"),
 				GuiTheme.TEXT_PRIMARY));
-		int ping = ObsidianController.pingMs(Minecraft.getInstance());
+		int ping = MiningBotController.pingMs(Minecraft.getInstance());
 		ServerTickClock clock = ServerTickClock.get();
 		double server = meter.serverTicks(ping, clock.tps());
 		BreakTickMeter.Source source = meter.source(ping);
@@ -124,7 +124,7 @@ public final class MiningBotHud implements HudElement {
 	}
 
 	/** Tick mode: hold setting against the measured tick count, and how many early moves did not break. */
-	private void addTickRows(List<Row> rows, ObsidianSettings settings, MiningBotStats stats) {
+	private void addTickRows(List<Row> rows, MiningBotSettings settings, MiningBotStats stats) {
 		int measured = bot.getBreakMeter().measuredBreakTicks();
 		String hold = settings.getBreakTicks() + "+" + settings.getTickMargin() + " t";
 		int color = measured <= 0 ? GuiTheme.TEXT_PRIMARY
@@ -139,7 +139,7 @@ public final class MiningBotHud implements HudElement {
 	/** Server TPS from time syncs; red while the server is frozen. */
 	private static void addTpsRow(List<Row> rows) {
 		ServerTickClock clock = ServerTickClock.get();
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		if (clock.stalled(now)) {
 			rows.add(new Row("TPS", String.format(Locale.ROOT, "stalled  %.1fs", clock.msSinceSync(now) / 1000.0),
 					GuiTheme.DANGER));
@@ -184,7 +184,7 @@ public final class MiningBotHud implements HudElement {
 	/** State pill at the right of the header. */
 	private void drawChip(GuiGraphicsExtractor g, Font font, float alpha) {
 		// 内部状態 (SEARCHING/AIMING/MINING...) は頻繁に切り替わるので、動作中は RUNNING にまとめる
-		boolean running = bot.getState() != ObsidianController.State.OFF;
+		boolean running = bot.getState() != MiningBotController.State.OFF;
 		String label = running ? "RUNNING" : "OFF";
 		int color = running ? GuiTheme.SUCCESS : GuiTheme.TEXT_DISABLED;
 		Component text = UiFont.small(label);

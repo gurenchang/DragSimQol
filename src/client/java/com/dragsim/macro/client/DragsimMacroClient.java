@@ -41,21 +41,21 @@ public class DragsimMacroClient implements ClientModInitializer {
 		ScytheHoldUse scytheHoldUse = new ScytheHoldUse(controller);
 		controller.setMacroOffListener(() -> scytheHoldUse.release("MACRO_OFF"));
 		// 採掘マクロ(独立Controller。戦闘とは排他)
-		MiningController mining = new MiningController(controller);
-		MiningCommand.register(mining);
-		ObsidianController obsidian = new ObsidianController();
-		ObsidianCommand.register(obsidian);
+		RouteWalkerController routeWalker = new RouteWalkerController(controller);
+		RouteWalkerCommand.register(routeWalker);
+		MiningBotController miningBot = new MiningBotController();
+		MiningBotCommand.register(miningBot);
 		// Server system messages (not player chat): drill ability cooldown / out of fuel.
 		ClientReceiveMessageEvents.GAME.register((message, overlay) ->
-				obsidian.onServerMessage(message.getString()));
+				miningBot.onServerMessage(message.getString()));
 		// Desktop alerts: nearby players and name mentions / direct messages in chat.
 		// Alerts only while a macro is running (Mining Bot, Route Walker or combat).
-		AlertMonitor alertMonitor = new AlertMonitor(() -> obsidian.isActive() || mining.isActive()
+		AlertMonitor alertMonitor = new AlertMonitor(() -> miningBot.isActive() || routeWalker.isActive()
 				|| controller.getState() != MacroController.State.IDLE);
 		ClientTickEvents.END_CLIENT_TICK.register(alertMonitor::tick);
 		// Server tick clock: log ping-mode / lag transitions (the packets themselves are observed by mixins).
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			String change = ServerTickClock.get().stateChange(MiningClock.nowMs());
+			String change = ServerTickClock.get().stateChange(MacroClock.nowMs());
 			if (change != null) for (String line : change.split("\n")) MacroLogger.get().log(line);
 		});
 		ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
@@ -66,13 +66,13 @@ public class DragsimMacroClient implements ClientModInitializer {
 				alertMonitor.onMessage(Minecraft.getInstance(), message.getString()));
 		ScreenEvents.BEFORE_INIT.register((mc, screen, width, height) -> {
 			scytheHoldUse.release("GUI_OPEN");
-			mining.stop(mc, "GUI_OPENED");
-			obsidian.stop(mc, "GUI_OPENED");
+			routeWalker.stop(mc, "GUI_OPENED");
+			miningBot.stop(mc, "GUI_OPENED");
 		});
 		ClientLifecycleEvents.CLIENT_STOPPING.register(mc -> {
 			scytheHoldUse.release("CLIENT_STOPPING");
-			mining.stop(mc, "CLIENT_STOPPING");
-			obsidian.stop(mc, "CLIENT_STOPPING");
+			routeWalker.stop(mc, "CLIENT_STOPPING");
+			miningBot.stop(mc, "CLIENT_STOPPING");
 		});
 		AttackCommand.register(attackGate, combatController);
 		ApproachCommand.register(attackGate, approachPlanner);
@@ -87,7 +87,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 			dispatcher.register(ClientCommands
 					.literal("zealotgui").executes(ctx -> {
 						openGui(Minecraft.getInstance(), controller, rotationController,
-								attackGate, combatController, approachPlanner, mining, obsidian);
+								attackGate, combatController, approachPlanner, routeWalker, miningBot);
 						return com.mojang.brigadier.Command.SINGLE_SUCCESS;
 					}));
 		});
@@ -130,7 +130,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 				InputConstants.Type.KEYSYM,
 				GLFW.GLFW_KEY_H,
 				DRAGSIM_CATEGORY));
-		KeyMapping obsidianToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+		KeyMapping miningBotToggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.dragsimmacro.obsidian_toggle",
 				InputConstants.Type.KEYSYM,
 				GLFW.GLFW_KEY_J,
@@ -144,7 +144,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 				toggleRequested = true;
 			}
 			if (toggleRequested && mc.screen == null && mc.isWindowActive()) {
-				if (mining.isActive()) {
+				if (routeWalker.isActive()) {
 					MacroNotifications.send(mc,
 							"[DragSim] Cannot start Combat Macro — Route Walker is active");
 					MacroLogger.get().log("MACRO_ON_REJECTED reason=MINING_ACTIVE");
@@ -157,12 +157,12 @@ public class DragsimMacroClient implements ClientModInitializer {
 				miningToggleRequested = true;
 			}
 			if (miningToggleRequested && mc.screen == null && mc.isWindowActive()) {
-				mining.toggle(mc);
+				routeWalker.toggle(mc);
 			}
-			boolean obsidianToggleRequested = false;
-			while (obsidianToggleKey.consumeClick()) obsidianToggleRequested = true;
-			if (obsidianToggleRequested && mc.screen == null && mc.isWindowActive()) {
-				obsidian.toggle(mc);
+			boolean miningBotToggleRequested = false;
+			while (miningBotToggleKey.consumeClick()) miningBotToggleRequested = true;
+			if (miningBotToggleRequested && mc.screen == null && mc.isWindowActive()) {
+				miningBot.toggle(mc);
 			}
 			scytheHoldUse.tickStart(mc);
 		});
@@ -173,8 +173,8 @@ public class DragsimMacroClient implements ClientModInitializer {
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_path"), new PathDebugOverlay(controller, approachPlanner));
 		// 採掘ルート描画(戦闘ESP・マクロ状態に非依存。OFF中・1ノード・再起動直後も表示)。
 		// チャットより下に描くため先頭へ登録する(チャット入力・補完を遮らない)。
-		HudElementRegistry.addFirst(DragsimMacroMod.id("mining_route"), new MiningRouteOverlay(mining));
-		HudElementRegistry.addLast(DragsimMacroMod.id("mining_bot_hud"), new MiningBotHud(obsidian));
+		HudElementRegistry.addFirst(DragsimMacroMod.id("mining_route"), new RouteOverlay(routeWalker));
+		HudElementRegistry.addLast(DragsimMacroMod.id("mining_bot_hud"), new MiningBotHud(miningBot));
 		HudElementRegistry.addLast(DragsimMacroMod.id("toasts"), new ToastOverlay());
 		// Alert edge flash on top of everything else.
 		HudElementRegistry.addLast(DragsimMacroMod.id("alert_flash"), new AlertFlash());
@@ -182,8 +182,8 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// Drawn in the world (depth-tested) just before vanilla debug gizmos.
 		TargetBlockHighlight targetHighlight = new TargetBlockHighlight(() -> {
 			Minecraft mc = Minecraft.getInstance();
-			if (obsidian.isActive()) return obsidian.getTargetPos();
-			if (mining.isActive() && mc.level != null
+			if (miningBot.isActive()) return miningBot.getTargetPos();
+			if (routeWalker.isActive() && mc.level != null
 					&& mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit
 					&& hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
 					&& mc.level.getBlockState(hit.getBlockPos()).is(net.minecraft.world.level.block.Blocks.END_STONE)) {
@@ -196,12 +196,12 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// 採掘中は戦闘側が採掘入力・回転を上書きしないよう調停する。
 		// 戦闘の保存設定は書き換えず、採掘停止後に戦闘は自動開始しない。
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			if (obsidian.isActive()) {
-				obsidian.tickEnd(mc);
+			if (miningBot.isActive()) {
+				miningBot.tickEnd(mc);
 				return;
 			}
-			if (mining.isActive()) {
-				mining.tickEnd(mc);
+			if (routeWalker.isActive()) {
+				routeWalker.tickEnd(mc);
 				return;
 			}
 			if (!(mc.screen instanceof DragsimMacroScreen)) {
@@ -209,7 +209,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 			}
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			if (mining.isActive() || obsidian.isActive()) {
+			if (routeWalker.isActive() || miningBot.isActive()) {
 				return;
 			}
 			if (!(mc.screen instanceof DragsimMacroScreen)) {
@@ -219,12 +219,12 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// combat/approachをrotation tickより先に実行する:
 		// CombatControllerが算出した迎撃点を同tickのrotationで使用する(1tick遅れの排除)。
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			if (!mining.isActive() && !obsidian.isActive()) {
+			if (!routeWalker.isActive() && !miningBot.isActive()) {
 				combatController.tick(mc);
 			}
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
-			if (!mining.isActive() && !obsidian.isActive()) {
+			if (!routeWalker.isActive() && !miningBot.isActive()) {
 				approachPlanner.tick(mc);
 			}
 		});
@@ -237,9 +237,9 @@ public class DragsimMacroClient implements ClientModInitializer {
 			}
 			while (guiKey.consumeClick()) {
 				openGui(mc, controller, rotationController, attackGate, combatController, approachPlanner,
-						mining, obsidian);
+						routeWalker, miningBot);
 			}
-			if (mining.isActive() || obsidian.isActive()) {
+			if (routeWalker.isActive() || miningBot.isActive()) {
 				return;
 			}
 			// Target探索ではなくAimSolutionのみ入力
@@ -256,7 +256,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 				return;
 			}
 			// 採掘中はtick側が回転を所有する。render側の戦闘追従で上書きしない。
-			if (mining.isActive() || obsidian.isActive()) {
+			if (routeWalker.isActive() || miningBot.isActive()) {
 				return;
 			}
 			rotationController.renderFrame(ctx, aimSolver.getSolution());
@@ -266,7 +266,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 
 		// Phase 7.0: disconnect/join lifecycle safety
 		LifecycleSafety.register(controller, rotationController, attackGate, combatController,
-				approachPlanner, aimSolver, scytheHoldUse, mining, obsidian);
+				approachPlanner, aimSolver, scytheHoldUse, routeWalker, miningBot);
 
 		DragsimMacroMod.LOGGER.info("ZealotDebug (Phase 1 entity scanner) initialized");
 	}
@@ -274,13 +274,13 @@ public class DragsimMacroClient implements ClientModInitializer {
 	private static void openGui(Minecraft mc, MacroController controller,
 			RotationController rotationController, AttackGate attackGate,
 			CombatController combatController, ApproachPlanner approachPlanner,
-			MiningController mining, ObsidianController obsidian) {
-		mining.stop(mc, "GUI_OPENED");
-		obsidian.stop(mc, "GUI_OPENED");
+			RouteWalkerController routeWalker, MiningBotController miningBot) {
+		routeWalker.stop(mc, "GUI_OPENED");
+		miningBot.stop(mc, "GUI_OPENED");
 		combatController.stopAndReleaseAll(mc);
 		approachPlanner.stopAndReleaseAll(mc);
 		attackGate.resetSessionState();
 		mc.setScreen(new DragsimMacroScreen(controller, rotationController,
-				combatController, approachPlanner, mining, obsidian));
+				combatController, approachPlanner, routeWalker, miningBot));
 	}
 }

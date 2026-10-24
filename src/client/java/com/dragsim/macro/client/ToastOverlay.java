@@ -37,7 +37,7 @@ public final class ToastOverlay implements HudElement {
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor g, DeltaTracker delta) {
 		Minecraft mc = Minecraft.getInstance();
-		long now = MiningClock.nowMs();
+		long now = MacroClock.nowMs();
 		float dt = lastFrameMs < 0 ? 0f : Math.min(100f, now - lastFrameMs);
 		lastFrameMs = now;
 		List<MacroToasts.Toast> toasts = MacroToasts.visible(now);

@@ -1,6 +1,6 @@
 package com.dragsim.macro.client.mixin;
 
-import com.dragsim.macro.client.MiningClock;
+import com.dragsim.macro.client.MacroClock;
 import com.dragsim.macro.client.ServerTickClock;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl;
@@ -16,6 +16,6 @@ abstract class ServerTickPingMixin {
 	@Inject(method = "handlePing", at = @At("HEAD"))
 	private void dragsim$observePing(ClientboundPingPacket packet, CallbackInfo ci) {
 		if (Minecraft.getInstance().isSameThread()) return;
-		ServerTickClock.get().onPing(MiningClock.nowMs());
+		ServerTickClock.get().onPing(MacroClock.nowMs());
 	}
 }

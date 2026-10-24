@@ -35,7 +35,7 @@ public final class MiningCameraSmoothing {
 		owner = Owner.ROUTE_WALKER;
 	}
 
-	public static void publishObsidian(double prevYaw, double yaw, double prevPitch, double pitch) {
+	public static void publishMiningBot(double prevYaw, double yaw, double prevPitch, double pitch) {
 		previousYaw = prevYaw;
 		currentYaw = yaw;
 		previousPitch = prevPitch;

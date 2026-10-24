@@ -46,15 +46,15 @@ class MiningBotTargetTest {
 	@Test
 	void cryingObsidianSettingSurvivesSaveReloadWithFixedTiming() {
 		Path file = tempDir.resolve("crying-obsidian.json");
-		var saved = new ObsidianSettings(file);
-		assertTrue(saved.setAimLeadMode(ObsidianSettings.AimLeadMode.FIXED));
+		var saved = new MiningBotSettings(file);
+		assertTrue(saved.setAimLeadMode(MiningBotSettings.AimLeadMode.FIXED));
 		assertTrue(saved.setFixedBreakMs(1500));
 		assertTrue(saved.setFixedLeadMs(150));
 		assertTrue(saved.setTarget(MiningBotTarget.CRYING_OBSIDIAN));
-		var loaded = new ObsidianSettings(file);
+		var loaded = new MiningBotSettings(file);
 		assertTrue(loaded.load());
 		assertEquals(MiningBotTarget.CRYING_OBSIDIAN, loaded.getTarget());
-		assertEquals(ObsidianSettings.AimLeadMode.FIXED, loaded.getAimLeadMode());
+		assertEquals(MiningBotSettings.AimLeadMode.FIXED, loaded.getAimLeadMode());
 		assertEquals(1500, loaded.getFixedBreakMs());
 		assertEquals(150, loaded.getFixedLeadMs());
 	}
@@ -68,51 +68,51 @@ class MiningBotTargetTest {
 				MiningBotTarget.fromConfig("amethyst_block"));
 		assertNull(MiningBotTarget.fromConfig("amethyst_cluster"));
 
-		ObsidianSettings old = new ObsidianSettings();
+		MiningBotSettings old = new MiningBotSettings();
 		assertTrue(old.parse("{\"schemaVersion\":1,\"turnSpeedDps\":90}"));
 		assertEquals(90.0, old.getTurnSpeedDps(), 1e-9);
 		assertEquals(MiningBotTarget.OBSIDIAN, old.getTarget());
 		assertTrue(old.isAimDriftEnabled());
-		assertEquals(ObsidianSettings.DEFAULT_DRIFT_AMOUNT, old.getDriftAmount(), 1e-9);
+		assertEquals(MiningBotSettings.DEFAULT_DRIFT_AMOUNT, old.getDriftAmount(), 1e-9);
 
-		ObsidianSettings unknown = new ObsidianSettings();
+		MiningBotSettings unknown = new MiningBotSettings();
 		assertTrue(unknown.parse("{\"schemaVersion\":1,\"targetBlock\":\"small_amethyst_bud\"}"));
 		assertEquals(MiningBotTarget.OBSIDIAN, unknown.getTarget());
 	}
 
 	@Test
 	void adaptiveAndTimeoutSettingsAreBackwardCompatibleAndBounded() {
-		ObsidianSettings old = new ObsidianSettings();
+		MiningBotSettings old = new MiningBotSettings();
 		assertTrue(old.parse("{\"schemaVersion\":1,\"targetBlock\":\"obsidian\"}"));
 		assertFalse(old.isAdaptiveAimLeadEnabled());
-		assertEquals(ObsidianSettings.DEFAULT_MAX_LEAD_MS, old.getMaxLeadMs());
+		assertEquals(MiningBotSettings.DEFAULT_MAX_LEAD_MS, old.getMaxLeadMs());
 		assertTrue(old.isMiningTimeoutEnabled());
-		assertEquals(ObsidianSettings.DEFAULT_TIMEOUT_MS, old.getTimeoutDurationMs());
-		ObsidianSettings current = new ObsidianSettings();
+		assertEquals(MiningBotSettings.DEFAULT_TIMEOUT_MS, old.getTimeoutDurationMs());
+		MiningBotSettings current = new MiningBotSettings();
 		assertTrue(current.parse("{\"schemaVersion\":1,\"adaptiveAimLead\":true,\"maxLeadMs\":9999,"
 				+ "\"miningTimeout\":false,\"timeoutDurationMs\":1}"));
 		assertTrue(current.isAdaptiveAimLeadEnabled());
-		assertEquals(ObsidianSettings.MAX_LEAD_MS, current.getMaxLeadMs());
+		assertEquals(MiningBotSettings.MAX_LEAD_MS, current.getMaxLeadMs());
 		assertFalse(current.isMiningTimeoutEnabled());
-		assertEquals(ObsidianSettings.MIN_TIMEOUT_MS, current.getTimeoutDurationMs());
+		assertEquals(MiningBotSettings.MIN_TIMEOUT_MS, current.getTimeoutDurationMs());
 	}
 
 	@Test
 	void saveReloadAndActualRotationResetPreserveTarget() {
 		Path file = tempDir.resolve("obsidian.json");
-		ObsidianSettings settings = new ObsidianSettings(file);
+		MiningBotSettings settings = new MiningBotSettings(file);
 		assertTrue(settings.setTarget(MiningBotTarget.AMETHYST_BLOCK));
 		assertTrue(settings.setTurnSpeedDps(77.0));
 		assertTrue(settings.setAimDriftEnabled(false));
 		assertTrue(settings.setDriftAmount(0.025));
-		ObsidianSettings loaded = new ObsidianSettings(file);
+		MiningBotSettings loaded = new MiningBotSettings(file);
 		assertTrue(loaded.load());
 		assertEquals(MiningBotTarget.AMETHYST_BLOCK, loaded.getTarget());
 		assertEquals(77.0, loaded.getTurnSpeedDps(), 1e-9);
 		assertFalse(loaded.isAimDriftEnabled());
 		assertEquals(0.025, loaded.getDriftAmount(), 1e-9);
 		assertTrue(loaded.reset());
-		ObsidianSettings afterReset = new ObsidianSettings(file);
+		MiningBotSettings afterReset = new MiningBotSettings(file);
 		assertTrue(afterReset.load());
 		assertEquals(MiningBotTarget.AMETHYST_BLOCK, afterReset.getTarget());
 		assertEquals(120.0, afterReset.getTurnSpeedDps(), 1e-9);
@@ -125,7 +125,7 @@ class MiningBotTargetTest {
 		AABB narrowBudLikeShape = new AABB(0.25, 0.0, 0.25, 0.75, 0.375, 0.75);
 		BlockPos pos = new BlockPos(10, 64, -3);
 		List<net.minecraft.world.phys.Vec3> points =
-				ObsidianController.aimPointsForBoxes(List.of(narrowBudLikeShape), pos);
+				MiningBotController.aimPointsForBoxes(List.of(narrowBudLikeShape), pos);
 		assertEquals(7, points.size());
 		for (var point : points) {
 			assertTrue(point.x > pos.getX() + narrowBudLikeShape.minX);
@@ -148,7 +148,7 @@ class MiningBotTargetTest {
 			assertFalse(state.is(Blocks.MEDIUM_AMETHYST_BUD));
 			assertFalse(state.is(Blocks.AMETHYST_CLUSTER));
 			assertEquals(boxes.size() * 7,
-					ObsidianController.aimPointsForBoxes(boxes, BlockPos.ZERO).size());
+					MiningBotController.aimPointsForBoxes(boxes, BlockPos.ZERO).size());
 		}
 	}
 
@@ -196,9 +196,9 @@ class MiningBotTargetTest {
 
 	@Test
 	void actualShapeHitMustBeInsideReachBoundary() {
-		assertTrue(ObsidianController.withinReach(25.0, 5.0));
-		assertFalse(ObsidianController.withinReach(25.01, 5.0));
-		assertFalse(ObsidianController.withinReach(Double.NaN, 5.0));
+		assertTrue(MiningBotController.withinReach(25.0, 5.0));
+		assertFalse(MiningBotController.withinReach(25.01, 5.0));
+		assertFalse(MiningBotController.withinReach(Double.NaN, 5.0));
 	}
 
 	@Test
@@ -218,7 +218,7 @@ class MiningBotTargetTest {
 		Path legacy = tempDir.resolve("dragsimmacro-obsidian.json");
 		Files.writeString(legacy, "{\"schemaVersion\":1,\"turnSpeedDps\":77,"
 				+ "\"targetBlock\":\"large_amethyst_bud\"}", StandardCharsets.UTF_8);
-		ObsidianSettings migrated = new ObsidianSettings(current, legacy);
+		MiningBotSettings migrated = new MiningBotSettings(current, legacy);
 		assertTrue(migrated.load());
 		assertTrue(Files.exists(current));
 		assertTrue(Files.exists(legacy), "legacy file must not be deleted");
@@ -229,7 +229,7 @@ class MiningBotTargetTest {
 				+ "\"targetBlock\":\"amethyst_block\"}", StandardCharsets.UTF_8);
 		Files.writeString(legacy, "{\"schemaVersion\":1,\"turnSpeedDps\":55,"
 				+ "\"targetBlock\":\"obsidian\"}", StandardCharsets.UTF_8);
-		ObsidianSettings preferred = new ObsidianSettings(current, legacy);
+		MiningBotSettings preferred = new MiningBotSettings(current, legacy);
 		assertTrue(preferred.load());
 		assertEquals(135.0, preferred.getTurnSpeedDps(), 1e-9);
 		assertEquals(MiningBotTarget.AMETHYST_BLOCK, preferred.getTarget());
@@ -243,7 +243,7 @@ class MiningBotTargetTest {
 		Files.writeString(blocker, "x", StandardCharsets.UTF_8);
 		Files.writeString(legacy, "{\"schemaVersion\":1,\"turnSpeedDps\":88,"
 				+ "\"targetBlock\":\"amethyst_block\"}", StandardCharsets.UTF_8);
-		ObsidianSettings settings = new ObsidianSettings(current, legacy);
+		MiningBotSettings settings = new MiningBotSettings(current, legacy);
 		assertFalse(settings.load());
 		assertTrue(Files.exists(legacy));
 		assertEquals(88.0, settings.getTurnSpeedDps(), 1e-9,

@@ -8,7 +8,7 @@ import java.util.LinkedList;
 import java.util.List;
 
 /**
- * Queue of on-screen toasts (drawn by {@link ToastOverlay}). Times are {@link MiningClock} milliseconds.
+ * Queue of on-screen toasts (drawn by {@link ToastOverlay}). Times are {@link MacroClock} milliseconds.
  * The same message pushed again while it is still shown bumps a counter instead of stacking.
  */
 public final class MacroToasts {
@@ -64,13 +64,13 @@ public final class MacroToasts {
 
 	/** Macro status message ("[DragSim] Headline — detail"). */
 	public static void push(String message) {
-		push(message, false, MiningClock.nowMs());
+		push(message, false, MacroClock.nowMs());
 	}
 
 	/** Alert raised by {@link AlertMonitor}: always red, shown longer. */
 	public static void pushAlert(String title, String body) {
 		String message = body == null || body.isBlank() ? title : title + " — " + body;
-		push(message, true, MiningClock.nowMs());
+		push(message, true, MacroClock.nowMs());
 	}
 
 	static synchronized void push(String message, boolean alert, long now) {

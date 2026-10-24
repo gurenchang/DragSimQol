@@ -1,6 +1,6 @@
 package com.dragsim.macro.client.mixin;
 
-import com.dragsim.macro.client.ObsidianController;
+import com.dragsim.macro.client.MiningBotController;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.core.BlockPos;
@@ -34,7 +34,7 @@ abstract class MiningBotBreakObservationMixin {
 	private void dragsim$observeAcceptedStart(BlockPos pos, Direction face,
 			CallbackInfoReturnable<Boolean> cir) {
 		if (!cir.getReturnValueZ()) return;
-		ObsidianController bot = ObsidianController.get();
+		MiningBotController bot = MiningBotController.get();
 		if (bot != null) bot.onVanillaStartDestroyBlock(Minecraft.getInstance(), pos, dragsim$preState,
 				dragsim$wasDestroying, dragsim$stoppedPos);
 	}
@@ -48,7 +48,7 @@ abstract class MiningBotBreakObservationMixin {
 	@Inject(method = "stopDestroyBlock", at = @At("RETURN"))
 	private void dragsim$observeStop(CallbackInfo ci) {
 		if (!dragsim$wasDestroying || isDestroying) return;
-		ObsidianController bot = ObsidianController.get();
+		MiningBotController bot = MiningBotController.get();
 		if (bot != null) bot.onVanillaDestroyStopped(dragsim$stoppedPos);
 	}
 }

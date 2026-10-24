@@ -14,7 +14,7 @@ import java.util.Locale;
  * when their count matches the game time advance, they give the clock single-tick resolution.
  *
  * Fed from the network thread (arrival time, not frame time), read from the main thread: all synchronized.
- * Times are {@link MiningClock} milliseconds.
+ * Times are {@link MacroClock} milliseconds.
  */
 public final class ServerTickClock {
 	public enum PingMode { NONE, PER_TICK, OTHER }

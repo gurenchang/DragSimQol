@@ -55,10 +55,10 @@ public final class MiningToolCheck {
 		return name == null || name.isEmpty() ? id : id + "|" + name;
 	}
 
-	public static MiningToolPolicy.ToolState snapshot(int slot, ItemStack stack) {
+	public static RouteWalkerToolPolicy.ToolState snapshot(int slot, ItemStack stack) {
 		if (stack == null || stack.isEmpty()) {
-			return MiningToolPolicy.ToolState.empty(slot);
+			return RouteWalkerToolPolicy.ToolState.empty(slot);
 		}
-		return new MiningToolPolicy.ToolState(slot, identityOf(stack), isSuitable(stack), false);
+		return new RouteWalkerToolPolicy.ToolState(slot, identityOf(stack), isSuitable(stack), false);
 	}
 }

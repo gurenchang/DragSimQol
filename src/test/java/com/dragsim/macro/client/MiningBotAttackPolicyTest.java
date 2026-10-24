@@ -31,14 +31,14 @@ class MiningBotAttackPolicyTest {
 
 	@Test
 	void everyActiveControllerStateAllowsAttack() {
-		for (ObsidianController.State state : ObsidianController.State.values()) {
-			boolean expected = state != ObsidianController.State.OFF;
-			assertEquals(expected, ObsidianController.activeSessionAllowsAttack(
+		for (MiningBotController.State state : MiningBotController.State.values()) {
+			boolean expected = state != MiningBotController.State.OFF;
+			assertEquals(expected, MiningBotController.activeSessionAllowsAttack(
 					state, false, false), "state=" + state);
 		}
-		assertFalse(ObsidianController.activeSessionAllowsAttack(
-				ObsidianController.State.SEARCHING, true, false));
-		assertFalse(ObsidianController.activeSessionAllowsAttack(
-				ObsidianController.State.WAITING_REGEN, false, true));
+		assertFalse(MiningBotController.activeSessionAllowsAttack(
+				MiningBotController.State.SEARCHING, true, false));
+		assertFalse(MiningBotController.activeSessionAllowsAttack(
+				MiningBotController.State.WAITING_REGEN, false, true));
 	}
 }
