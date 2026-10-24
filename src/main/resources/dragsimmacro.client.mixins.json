@@ -12,7 +12,8 @@
     "MiningBotBlockCrackMixin",
     "ServerTickTimeSyncMixin",
     "ServerTickPingMixin",
-    "ServerCheckAlertMixin"
+    "ServerCheckAlertMixin",
+    "CosmeticCapeMixin"
   ],
   "injectors": {
     "defaultRequire": 1

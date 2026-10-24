@@ -12,10 +12,12 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.LivingEntityRenderLayerRegistrationCallback;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.entity.player.AvatarRenderer;
 import org.lwjgl.glfw.GLFW;
 
 public class DragsimMacroClient implements ClientModInitializer {
@@ -194,6 +196,10 @@ public class DragsimMacroClient implements ClientModInitializer {
 			return null;
 		}, miningBot::breakProgress, miningBot::getLastMinedPos);
 		LevelRenderEvents.BEFORE_GIZMOS.register(targetHighlight::render);
+		// Cosmetics: the china hat rides on player renderers (it only draws on the local player).
+		LivingEntityRenderLayerRegistrationCallback.EVENT.register((type, renderer, helper, context) -> {
+			if (renderer instanceof AvatarRenderer<?> avatar) helper.register(new ChinaHatLayer(avatar));
+		});
 
 		// 採掘中は戦闘側が採掘入力・回転を上書きしないよう調停する。
 		// 戦闘の保存設定は書き換えず、採掘停止後に戦闘は自動開始しない。

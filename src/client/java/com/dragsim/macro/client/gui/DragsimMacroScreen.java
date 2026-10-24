@@ -479,6 +479,14 @@ public class DragsimMacroScreen extends Screen {
 				v -> updateConfig(c -> c.targetBlockHighlight = v)));
 		s.add(new InfoSetting("Route Display", "Configured on the Route Walker page",
 				() -> routeWalkerController.getSettings().isShowRoute() ? "ON" : "OFF"));
+		s.add(header("Cosmetics"));
+		String[] capes = java.util.Arrays.stream(Cosmetics.Cape.values()).map(c -> c.label).toArray(String[]::new);
+		s.add(dropdown("Cape", "Preset cape on your player. Only you can see it", capes,
+				() -> Cosmetics.cape().label,
+				v -> updateConfig(c -> c.cosmeticCape = Cosmetics.Cape.fromName(v).name())));
+		s.add(new ToggleSetting("China Hat", "Cone hat in the theme colour on your player. Only you can see it",
+				() -> MacroConfig.get().cosmeticChinaHat,
+				v -> updateConfig(c -> c.cosmeticChinaHat = v)));
 		s.add(header("HUD"));
 		s.add(new ToggleSetting("Mining Bot HUD", "Status card while the Mining Bot runs: mined count and rate, profit, drill ability and fuel",
 				() -> MacroConfig.get().miningBotHud,

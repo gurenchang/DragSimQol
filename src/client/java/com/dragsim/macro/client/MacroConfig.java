@@ -123,6 +123,10 @@ public final class MacroConfig {
 	public String themeAccent = "PURPLE";
 	/** Glowing outline on the block the running macro is targeting. */
 	public boolean targetBlockHighlight = true;
+	/** Cosmetic cape on your own player (a {@code Cosmetics.Cape} name; OFF = vanilla). Only you see it. */
+	public String cosmeticCape = "OFF";
+	/** Cosmetic china hat on your own player. Only you see it. */
+	public boolean cosmeticChinaHat = false;
 	/** Status card (state, time, mined count, drill) while the Mining Bot runs. */
 	public boolean miningBotHud = true;
 	/** Macro status messages as on-screen toasts (bottom right). */
