@@ -45,3 +45,6 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# test / client debug logs (MacroLogger)
+logs/
