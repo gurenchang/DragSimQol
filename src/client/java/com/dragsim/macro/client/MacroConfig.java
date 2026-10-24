@@ -119,6 +119,8 @@ public final class MacroConfig {
 	/** Client-only lightmap boost; default OFF and independent from macro state. */
 	public boolean fullbrightEnabled = false;
 
+	/** GUI / HUD / ESP accent colour: a {@code GuiTheme.Accent} name (PURPLE, CYAN, CRIMSON, EMERALD, GOLD). */
+	public String themeAccent = "PURPLE";
 	/** Glowing outline on the block the running macro is targeting. */
 	public boolean targetBlockHighlight = true;
 	/** Status card (state, time, mined count, drill) while the Mining Bot runs. */

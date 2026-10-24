@@ -29,7 +29,8 @@ public class EspOverlay implements HudElement {
 	// 色はGuiThemeトークンから参照(黒×紫テーマ)
 	private static final int COLOR_BOX_VISIBLE = GuiTheme.SUCCESS;
 	private static final int COLOR_BOX_INVISIBLE = GuiTheme.DANGER;
-	private static final int COLOR_BOX_TARGET = GuiTheme.ACCENT_BRIGHT;
+	// Accent-derived colours are read per frame so a theme change applies at once.
+	private static int colorBoxTarget() { return GuiTheme.ACCENT_BRIGHT; }
 	private static final int COLOR_RAY_CLEAR = withAlpha(GuiTheme.SUCCESS, 0xB0);
 	private static final int COLOR_RAY_BLOCKED = withAlpha(GuiTheme.DANGER, 0xB0);
 	private static final int COLOR_RAY_REST = withAlpha(GuiTheme.TEXT_DISABLED, 0x80);
@@ -105,7 +106,7 @@ public class EspOverlay implements HudElement {
 			EntitySnapshot snapshot = candidate.snapshot();
 			int boxColor;
 			if (currentTarget != null && currentTarget.entityId() == candidate.entityId()) {
-				boxColor = COLOR_BOX_TARGET;
+				boxColor = colorBoxTarget();
 			} else if (candidate.visible()) {
 				boxColor = COLOR_BOX_VISIBLE;
 			} else {
@@ -179,9 +180,9 @@ public class EspOverlay implements HudElement {
 					if (projectInto(eye, forward, right, up, tanHalf, aspect, guiW, guiH,
 							aim.aimX(), aim.aimY(), aim.aimZ(), scratch, 0)) {
 						drawSegment(graphics, scratch[0] - 3, scratch[1], scratch[0] + 3, scratch[1],
-								COLOR_BOX_TARGET);
+								colorBoxTarget());
 						drawSegment(graphics, scratch[0], scratch[1] - 3, scratch[0], scratch[1] + 3,
-								COLOR_BOX_TARGET);
+								colorBoxTarget());
 					}
 				}
 			}

@@ -2,6 +2,7 @@ package com.dragsim.macro.client;
 
 import com.dragsim.macro.DragsimMacroMod;
 import com.dragsim.macro.client.gui.DragsimMacroScreen;
+import com.dragsim.macro.client.gui.GuiTheme;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -104,6 +105,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 		rotationController.setSmoothing(config.getRotationSmoothing());
 		rotationController.setEnabled(Minecraft.getInstance(), config.rotationEnabled);
 		controller.setEspMode(config.getEspMode());
+		GuiTheme.apply(GuiTheme.Accent.fromName(config.themeAccent));
 
 		KeyMapping rotationKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.dragsimmacro.rotation",
@@ -190,7 +192,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 				return hit.getBlockPos();
 			}
 			return null;
-		});
+		}, miningBot::breakProgress, miningBot::getLastMinedPos);
 		LevelRenderEvents.BEFORE_GIZMOS.register(targetHighlight::render);
 
 		// 採掘中は戦闘側が採掘入力・回転を上書きしないよう調停する。

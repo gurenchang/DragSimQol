@@ -31,6 +31,9 @@ public final class ToastOverlay implements HudElement {
 	private static final long FADE_MS = 300;
 	private static final long BUMP_MS = 300;
 	private static final float MOVE_MS = 70f;
+	private static final long ALERT_PULSE_MS = 900;
+	/** Inset of the time-left bar from the card's sides (clears the rounded corners). */
+	private static final int TIMER_INSET = 5;
 
 	private long lastFrameMs = -1;
 
@@ -75,9 +78,20 @@ public final class ToastOverlay implements HudElement {
 		float bump = Math.max(0f, 1f - (now - toast.bumpedAt) / (float) BUMP_MS);
 		int border = GuiPaint.lerpColor(GuiTheme.BORDER, tone, toast.alert ? 0.6f : bump);
 		GuiPaint.shadow(g, x, y, w, h, GuiTheme.CONTROL_RADIUS, 4, Math.round(110 * alpha));
+		// Alerts glow in their tone until they go; ordinary toasts stay flat.
+		if (toast.alert) {
+			float halo = 0.55f + 0.45f * (float) Math.cos(2 * Math.PI * (now - toast.createdAt) / ALERT_PULSE_MS);
+			GuiPaint.glow(g, x, y, w, h, GuiTheme.CONTROL_RADIUS, 4, GuiPaint.withAlpha(tone, Math.round(70 * halo * alpha)));
+		}
 		GuiPaint.roundedRectOutlined(g, x, y, w, h, GuiTheme.CONTROL_RADIUS,
 				GuiPaint.mulAlpha(GuiTheme.PANEL, alpha), GuiPaint.mulAlpha(border, alpha));
 		GuiPaint.roundedRect(g, x + STRIPE_X, y + 4, 2, h - 8, 1, GuiPaint.mulAlpha(tone, alpha));
+		// Time left: a hairline along the bottom that shrinks toward the left.
+		long life = Math.max(1, toast.expiresAt - toast.bumpedAt);
+		float left = Math.max(0f, Math.min(1f, (toast.expiresAt - now) / (float) life));
+		float barW = (w - TIMER_INSET * 2) * left;
+		if (barW > 0.5f) GuiPaint.roundedRect(g, x + TIMER_INSET, y + h - 2.5f, barW, 1f, 0.5f,
+				GuiPaint.mulAlpha(tone, alpha * 0.7f));
 		if (toast.alert) {
 			GuiPaint.icon(g, GuiPaint.Icon.BELL, x + PAD_X + 3, y + (h - ICON_SIZE) / 2f, ICON_SIZE,
 					GuiPaint.mulAlpha(tone, alpha));

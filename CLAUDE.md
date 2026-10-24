@@ -63,6 +63,8 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
 ## GUI conventions
 
 - Colours and sizes only from `GuiTheme`. Rounded shapes/icons/buttons via `GuiPaint` (draws in physical pixels).
+- Accent tokens (`ACCENT*`, `SIDEBAR_SELECTED`, `ESP_*`) change at runtime with the Theme Color setting
+  (`GuiTheme.apply`): read them at draw time, never copy them into `static final` fields.
 - Pages are built in `DragsimMacroScreen.build*()` from `GuiWidgets` rows; `GuiContent` groups rows into cards
   (a `SectionHeader` starts a card). Widgets bind to settings via getter/setter lambdas.
 - Text uses `UiFont.text/small/title` (Oxanium; one font variant per GUI scale 1–4). Create these components at draw

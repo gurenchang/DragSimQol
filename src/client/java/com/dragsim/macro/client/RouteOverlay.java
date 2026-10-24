@@ -3,6 +3,7 @@ package com.dragsim.macro.client;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.dragsim.macro.client.gui.GuiPaint;
 import com.dragsim.macro.client.gui.GuiTheme;
 import com.dragsim.macro.client.gui.UiFont;
 
@@ -35,7 +36,6 @@ public final class RouteOverlay implements HudElement {
 	public static final int MAX_MARKERS = 128;
 	public static final int MAX_LABELS = 32;
 	private static final int SAMPLES_PER_EDGE = 24;
-	private static final int MAX_DOTS_PER_RUN = 128;
 	private static final double MARKER_Y = 0.05;
 	private static final double LABEL_Y = 0.25;
 	/** 目標リングの明滅周期(ms)。位置は揺らさない。 */
@@ -44,13 +44,14 @@ public final class RouteOverlay implements HudElement {
 	private static final double CLIP_MARGIN_PX = 24.0;
 
 	// 採掘専用の派生色(GuiThemeトークン基準。一箇所にまとめる)。
-	private static final int COLOR_NODE_RING = withAlpha(GuiTheme.ACCENT_DIM, 0xE0);
+	// Accent-derived colours are read per frame so a theme change applies at once.
+	private static int colorNodeRing() { return withAlpha(GuiTheme.ACCENT_DIM, 0xE0); }
 	private static final int COLOR_NODE_CENTER = withAlpha(0xF5EDFF, 0xFF);
-	private static final int COLOR_LINE = withAlpha(GuiTheme.ACCENT_DIM, 0x80);
-	private static final int COLOR_TARGET_RING = withAlpha(GuiTheme.ACCENT, 0xFF);
-	private static final int COLOR_TARGET_GLOW = withAlpha(GuiTheme.ACCENT, 0x50);
-	private static final int COLOR_TARGET_LINE = withAlpha(GuiTheme.ACCENT, 0xC0);
-	private static final int COLOR_CHEVRON = withAlpha(GuiTheme.ACCENT_BRIGHT, 0xFF);
+	private static int colorLine() { return withAlpha(GuiTheme.ACCENT_DIM, 0x80); }
+	private static int colorTargetRing() { return withAlpha(GuiTheme.ACCENT, 0xFF); }
+	private static int colorTargetGlow() { return withAlpha(GuiTheme.ACCENT, 0x50); }
+	private static int colorTargetLine() { return withAlpha(GuiTheme.ACCENT, 0xC0); }
+	private static int colorChevron() { return withAlpha(GuiTheme.ACCENT_BRIGHT, 0xFF); }
 	private static final int COLOR_TEXT = GuiTheme.TEXT_PRIMARY;
 	private static final int COLOR_LABEL_BG = 0xA0000000;
 
@@ -317,7 +318,7 @@ public final class RouteOverlay implements HudElement {
 			boolean isActiveEdge = a == activeStart && b == view.targetIndex();
 			drawEdge(graphics, camPos, minX, minY, maxX, maxY,
 					cachedNodes.get(a), cachedNodes.get(b),
-					isActiveEdge ? COLOR_TARGET_LINE : COLOR_LINE,
+					isActiveEdge ? colorTargetLine() : colorLine(),
 					isActiveEdge && view.active() ? pulse : -1.0);
 		}
 		// 合流中は現在位置→合流ノードを別扱いで描く(経路上の無関係な辺は強調しない)。
@@ -326,7 +327,7 @@ public final class RouteOverlay implements HudElement {
 			RouteNode t = cachedNodes.get(view.targetIndex());
 			drawEdge(graphics, camPos, minX, minY, maxX, maxY,
 					new RouteNode(playerPos.x, playerPos.y, playerPos.z), t,
-					COLOR_TARGET_LINE, pulse);
+					colorTargetLine(), pulse);
 		}
 	}
 
@@ -357,22 +358,10 @@ public final class RouteOverlay implements HudElement {
 		drawSampledFallback(graphics, camPos, minX, minY, maxX, maxY, na, nb, color);
 	}
 
-	/** 1px間隔の密な点列で連続した線に見せる(26.2のHudElement APIに斜線primitiveはない)。 */
+	/** 線分は回転したfill 1枚で描く(以前は1px間隔の点列で、1区間最大128回のfillだった)。 */
 	private void drawDenseRun(GuiGraphicsExtractor graphics, double x1, double y1,
 			double x2, double y2, int color) {
-		double dist = Math.hypot(x2 - x1, y2 - y1);
-		if (dist < 0.5) {
-			graphics.fill((int) Math.round(x1), (int) Math.round(y1),
-					(int) Math.round(x1) + 1, (int) Math.round(y1) + 1, color);
-			return;
-		}
-		int steps = Math.min(MAX_DOTS_PER_RUN, Math.max(1, (int) Math.ceil(dist)));
-		for (int i = 0; i <= steps; i++) {
-			double t = i / (double) steps;
-			int x = (int) Math.round(x1 + (x2 - x1) * t);
-			int y = (int) Math.round(y1 + (y2 - y1) * t);
-			graphics.fill(x, y, x + 1, y + 1, color);
-		}
+		GuiPaint.line(graphics, x1, y1, x2, y2, 1f, color);
 	}
 
 	/** 現在区間に進行方向へのシェブロンを流す(停止中は呼ばない)。 */
@@ -402,13 +391,13 @@ public final class RouteOverlay implements HudElement {
 			int y0 = (int) Math.round(py);
 			int xb = (int) Math.round(px - ux * 3);
 			int yb = (int) Math.round(py - uy * 3);
-			graphics.fill(x0, y0, x0 + 1, y0 + 1, COLOR_CHEVRON);
+			graphics.fill(x0, y0, x0 + 1, y0 + 1, colorChevron());
 			graphics.fill((int) Math.round(xb + nx * 2), (int) Math.round(yb + ny * 2),
 					(int) Math.round(xb + nx * 2) + 1, (int) Math.round(yb + ny * 2) + 1,
-					COLOR_CHEVRON);
+					colorChevron());
 			graphics.fill((int) Math.round(xb - nx * 2), (int) Math.round(yb - ny * 2),
 					(int) Math.round(xb - nx * 2) + 1, (int) Math.round(yb - ny * 2) + 1,
-					COLOR_CHEVRON);
+					colorChevron());
 		}
 	}
 
@@ -485,7 +474,7 @@ public final class RouteOverlay implements HudElement {
 				graphics.fill(sx - half - 3, sy - 2, sx + half + 3, sy + font.lineHeight + 1,
 						COLOR_LABEL_BG);
 				graphics.centeredText(font, text, sx, sy,
-						isTarget ? COLOR_TARGET_RING : COLOR_TEXT);
+						isTarget ? colorTargetRing() : COLOR_TEXT);
 				labels++;
 			}
 		}
@@ -493,7 +482,7 @@ public final class RouteOverlay implements HudElement {
 
 	/** 通常ノード: 外径12pxの細い紫リングと白寄りの中心点。 */
 	private void drawNodeMarker(GuiGraphicsExtractor graphics, double cx, double cy) {
-		drawRing(graphics, cx, cy, 6.0, COLOR_NODE_RING);
+		drawRing(graphics, cx, cy, 6.0, colorNodeRing());
 		int x = (int) Math.round(cx);
 		int y = (int) Math.round(cy);
 		graphics.fill(x, y, x + 1, y + 1, COLOR_NODE_CENTER);
@@ -504,7 +493,7 @@ public final class RouteOverlay implements HudElement {
 			double pulse) {
 		double glow = 0.6 + 0.4 * Math.sin(pulse * 2.0 * Math.PI);
 		int ring = withAlpha(GuiTheme.ACCENT, (int) Math.round(200 + 55 * glow));
-		drawRing(graphics, cx, cy, 13.0, COLOR_TARGET_GLOW);
+		drawRing(graphics, cx, cy, 13.0, colorTargetGlow());
 		drawRing(graphics, cx, cy, 9.0, ring);
 		int x = (int) Math.round(cx);
 		int y = (int) Math.round(cy);
@@ -512,16 +501,10 @@ public final class RouteOverlay implements HudElement {
 		graphics.fill(x, y - 1, x + 1, y + 2, COLOR_NODE_CENTER);
 	}
 
-	/** 円周を密な点列で描く(十字の集合に見せない)。 */
+	/** 円周はアンチエイリアス済みリングマスク1枚(以前は点列で最大128回のfill)。 */
 	private void drawRing(GuiGraphicsExtractor graphics, double cx, double cy, double radius,
 			int color) {
-		int dots = Math.min(128, Math.max(24, (int) Math.ceil(2.0 * Math.PI * radius)));
-		for (int i = 0; i < dots; i++) {
-			double a = 2.0 * Math.PI * i / dots;
-			int x = (int) Math.round(cx + radius * Math.cos(a));
-			int y = (int) Math.round(cy + radius * Math.sin(a));
-			graphics.fill(x, y, x + 1, y + 1, color);
-		}
+		GuiPaint.ring(graphics, cx, cy, (float) radius, 1f, color);
 	}
 
 	/**

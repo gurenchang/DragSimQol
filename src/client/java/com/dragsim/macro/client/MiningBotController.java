@@ -58,6 +58,9 @@ public final class MiningBotController {
 	private final Random reactionRandom = new Random();
 	private final DrillActions drillActions = new DrillActions();
 	private final MiningBotStats stats = new MiningBotStats();
+	private final MiningBotLoot loot = new MiningBotLoot();
+	/** Last block confirmed broken (for the highlight's break burst); kept after stop. */
+	private BlockPos lastMinedPos;
 	private final BreakTickMeter<BlockPos> breakMeter = new BreakTickMeter<>();
 	/** Client ticks while the bot runs; the break meter's tick clock. */
 	private long clientTicks;
@@ -122,6 +125,20 @@ public final class MiningBotController {
 	public MiningBotTarget getSelectedTarget() { return settings.getTarget(); }
 	public MiningBotAdaptiveAim getAdaptiveAim() { return adaptiveAim; }
 	public MiningBotStats getStats() { return stats; }
+	public MiningBotLoot getLoot() { return loot; }
+	public BlockPos getLastMinedPos() { return lastMinedPos; }
+
+	/**
+	 * 0..1: how far the current attempt on {@code pos} is through the measured median break time.
+	 * NaN while nothing is being mined there or no break has been measured yet.
+	 */
+	public double breakProgress(BlockPos pos) {
+		if (!isActive() || pos == null) return Double.NaN;
+		MiningBotAttemptLedger.Attempt attempt = attempts.get(pos);
+		long expected = breakMeter.sampleCount() > 0 ? breakMeter.medianMs() : 0;
+		if (attempt == null || expected <= 0) return Double.NaN;
+		return Math.max(0.0, Math.min(1.0, (MacroClock.nowMs() - attempt.startedAt()) / (double) expected));
+	}
 	public BreakTickMeter<BlockPos> getBreakMeter() { return breakMeter; }
 	public int getUnmatchedCracks() { return unmatchedCracks; }
 	/** Stop reason in words for the HUD; "-" before the first stop. */
@@ -275,6 +292,7 @@ public final class MiningBotController {
 					scanTicks = 0;
 					stopReason = "-";
 					stats.start(MacroClock.nowMs());
+					loot.start();
 					breakMeter.clear();
 					unmatchedCracks = 0;
 					tickMismatchWarned = false;
@@ -306,6 +324,7 @@ public final class MiningBotController {
 		state = State.OFF;
 		stopReason = reason == null ? "STOPPED" : reason;
 		stats.stop(MacroClock.nowMs());
+		loot.stop();
 		target = null;
 		candidateCount = 0;
 		waiting.clear();
@@ -341,6 +360,7 @@ public final class MiningBotController {
 		if (!validateOrStop(mc)) return;
 		runDrill(mc);
 		if (!isActive()) return;
+		loot.tick(mc);
 		if (!advance(mc) && isActive() && mc.player != null) {
 			// No target this tick. Ease the view out and publish a fresh camera snapshot;
 			// a stale snapshot would replay the last tick's turn every tick (view stutter).
@@ -722,7 +742,8 @@ public final class MiningBotController {
 		if (confirmation == null) {
 			return;
 		}
-		stats.recordMined();
+		stats.recordMined(now);
+		lastMinedPos = pos.immutable();
 		// An early lead leaves the block while the server keeps mining it: still a full break time.
 		// An interrupted normal attempt is not.
 		BreakTickMeter.Sample tickSample = breakMeter.confirm(pos, clientTicks, now,

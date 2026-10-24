@@ -45,6 +45,9 @@ public class DragsimMacroScreen extends Screen {
 	private final Map<Integer, Integer> scrollPerPage = new HashMap<>();
 	private final Map<Integer, List<Setting>> settingsPerPage = new HashMap<>();
 	private final List<DropdownSetting> dropdowns = new ArrayList<>();
+	/** Sidebar selection highlight: eased y (NaN = snap on the next frame). */
+	private float navHighlightY = Float.NaN;
+	private long lastFrameMs = -1;
 
 	public DragsimMacroScreen(MacroController controller, RotationController rotationController,
 			CombatController combatController, ApproachPlanner approachPlanner,
@@ -80,54 +83,61 @@ public class DragsimMacroScreen extends Screen {
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+		long now = MacroClock.nowMs();
+		float dt = lastFrameMs < 0 ? 0f : Math.min(100f, now - lastFrameMs);
+		lastFrameMs = now;
 		GuiPaint.overlay(g, width, height);
 		int wx = layout.windowX(), wy = layout.windowY(), ww = layout.windowW(), wh = layout.windowH();
 		int sw = layout.sidebarW();
 		GuiPaint.shadow(g, wx, wy, ww, wh, GuiTheme.CORNER_RADIUS, 14, 0xC0);
-		GuiPaint.roundedRectOutlined(g, wx, wy, ww, wh, GuiTheme.CORNER_RADIUS, GuiTheme.PANEL,
-				GuiTheme.WINDOW_BORDER);
+		// frosted window body over the blurred world
+		GuiPaint.roundedRectOutlined(g, wx, wy, ww, wh, GuiTheme.CORNER_RADIUS, GuiTheme.WINDOW_GLASS,
+				GuiPaint.lerpColor(GuiTheme.WINDOW_BORDER, GuiTheme.ACCENT_DIM, 0.35f));
 		// sidebar column (rounded on the window's left corners only)
 		GuiPaint.roundedRect(g, wx + 0.5f, wy + 0.5f, sw, wh - 1, GuiTheme.CORNER_RADIUS - 0.5f, GuiTheme.SIDEBAR);
 		g.fill(wx + sw - GuiTheme.CORNER_RADIUS, wy + 1, wx + sw, wy + wh - 1, GuiTheme.SIDEBAR);
 		GuiPaint.vhairline(g, wx + sw, wy + 1, wy + wh - 1, GuiTheme.BORDER);
-		renderSidebar(g, mouseX, mouseY);
+		renderSidebar(g, mouseX, mouseY, dt);
 		renderHeader(g, mouseX, mouseY);
 		renderContent(g, mouseX, mouseY);
 	}
 
-	private void renderSidebar(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+	private void renderSidebar(GuiGraphicsExtractor g, int mouseX, int mouseY, float dt) {
 		int wx = layout.windowX(), wy = layout.windowY(), wh = layout.windowH(), sw = layout.sidebarW();
-		// brand
-		int bx = wx + 10, by = wy + (GuiTheme.HEADER_HEIGHT - 22) / 2;
-		GuiPaint.shadow(g, bx, by + 1, 22, 22, 6, 4, 0x60);
-		GuiPaint.roundedGradient(g, bx, by, 22, 22, 6, 0xFFB46BFA, GuiTheme.ACCENT_DIM);
-		GuiPaint.icon(g, GuiPaint.Icon.LOGO, bx + 5, by + 5, 12, 0xFFFFFFFF);
-		int textW = sw - 42;
-		Component brandSub = UiFont.small("CONTROL PANEL");
-		boolean showSub = font.width(brandSub) <= textW;
-		g.text(font, GuiWidgets.fitted(font, "DragSim", textW), bx + 29,
-				showSub ? by + 2 : by + (22 - UiFont.BODY_H) / 2, GuiTheme.TEXT_PRIMARY, false);
-		if (showSub) g.text(font, brandSub, bx + 29, by + 13, GuiTheme.TEXT_SECONDARY, false);
+		// brand: the End Crystal mark in the bright accent, then the name (no badge tile)
+		int bx = wx + 12, logo = 16;
+		int by = wy + (GuiTheme.HEADER_HEIGHT - logo) / 2;
+		GuiPaint.icon(g, GuiPaint.Icon.LOGO, bx, by, logo, GuiTheme.ACCENT_BRIGHT);
+		int textX = bx + logo + 6;
+		g.text(font, GuiWidgets.fitted(font, "DragSim", wx + sw - 8 - textX), textX,
+				wy + (GuiTheme.HEADER_HEIGHT - UiFont.BODY_H) / 2, GuiTheme.TEXT_PRIMARY, false);
 		// navigation
 		int navX = wx + 6, navW = sw - 12, rowH = layout.navRowH();
-		g.text(font, UiFont.small("MACROS"), wx + 14, GuiLayout.navItemY(layout, 0) - GuiLayout.GROUP_LABEL_H + 5,
+		g.text(font, UiFont.small("Macros"), wx + 14, GuiLayout.navItemY(layout, 0) - GuiLayout.GROUP_LABEL_H + 5,
 				GuiTheme.TEXT_DISABLED, false);
-		g.text(font, UiFont.small("SETTINGS"), wx + 14,
+		g.text(font, UiFont.small("Settings"), wx + 14,
 				GuiLayout.navItemY(layout, GuiLayout.MACRO_PAGES) - GuiLayout.GROUP_LABEL_H + 5,
 				GuiTheme.TEXT_DISABLED, false);
 		int hoveredNav = GuiLayout.navIndexAt(layout, mouseX, mouseY, PAGES.length);
+		int itemH = rowH - 2;
+		// The selection highlight glides between items instead of jumping.
+		float targetY = GuiLayout.navItemY(layout, selectedPage);
+		navHighlightY = Float.isNaN(navHighlightY) ? targetY
+				: navHighlightY + (targetY - navHighlightY) * Math.min(1f, dt / GuiTheme.NAV_GLIDE_MS);
+		if (Math.abs(targetY - navHighlightY) < 0.05f) navHighlightY = targetY;
+		for (int i = 0; i < PAGES.length; i++) {
+			int y = GuiLayout.navItemY(layout, i);
+			if (i != selectedPage && i == hoveredNav)
+				GuiPaint.roundedRect(g, navX, y, navW, itemH, GuiTheme.CONTROL_RADIUS, GuiTheme.SURFACE_HOVER);
+		}
+		float hy = navHighlightY;
+		GuiPaint.roundedRect(g, navX, hy, navW, itemH, GuiTheme.CONTROL_RADIUS, GuiTheme.SIDEBAR_SELECTED);
+		GuiPaint.horizontalFade(g, navX, Math.round(hy) + 2, navW / 2, itemH - 4, GuiPaint.withAlpha(GuiTheme.ACCENT, 0x18));
+		GuiPaint.roundedRect(g, wx + 1, hy + 5, 3, itemH - 10, 1.5f, GuiTheme.ACCENT);
 		for (int i = 0; i < PAGES.length; i++) {
 			int y = GuiLayout.navItemY(layout, i);
 			boolean selected = i == selectedPage;
 			boolean hovered = i == hoveredNav;
-			int itemH = rowH - 2;
-			if (selected) {
-				GuiPaint.roundedRect(g, navX, y, navW, itemH, GuiTheme.CONTROL_RADIUS, GuiTheme.SIDEBAR_SELECTED);
-				GuiPaint.horizontalFade(g, navX, y + 2, navW / 2, itemH - 4, GuiPaint.withAlpha(GuiTheme.ACCENT, 0x18));
-				GuiPaint.roundedRect(g, wx + 1, y + 5, 3, itemH - 10, 1.5f, GuiTheme.ACCENT);
-			} else if (hovered) {
-				GuiPaint.roundedRect(g, navX, y, navW, itemH, GuiTheme.CONTROL_RADIUS, GuiTheme.SURFACE_HOVER);
-			}
 			int iconColor = selected ? GuiTheme.ACCENT_BRIGHT : hovered ? GuiTheme.TEXT_PRIMARY : GuiTheme.TEXT_SECONDARY;
 			GuiPaint.icon(g, PAGE_ICONS[i], navX + 8, y + (itemH - 10) / 2f, 10, iconColor);
 			g.text(font, GuiWidgets.fitted(font, PAGES[i], navW - 30), navX + 24, y + (itemH - UiFont.BODY_H) / 2,
@@ -145,7 +155,7 @@ public class DragsimMacroScreen extends Screen {
 		// breadcrumb: GROUP / Page
 		int x = layout.contentX() + 2;
 		if (!compactHeader()) {
-			Component group = UiFont.small(selectedPage < GuiLayout.MACRO_PAGES ? "MACROS" : "SETTINGS");
+			Component group = UiFont.small(selectedPage < GuiLayout.MACRO_PAGES ? "Macros" : "Settings");
 			Component slash = UiFont.text("/");
 			g.text(font, group, x, ty + 1, GuiTheme.TEXT_DISABLED, false);
 			x += font.width(group) + 6;
@@ -271,7 +281,7 @@ public class DragsimMacroScreen extends Screen {
 				() -> keyName("key.dragsimmacro.obsidian_toggle"),
 				() -> { releaseCaptures(); mc.setScreen(null); miningBotController.start(mc); },
 				() -> miningBotController.stop(mc, "GUI_STOP")));
-		s.add(header("TARGET & AIM"));
+		s.add(header("Target & aim"));
 		s.add(dropdown("Target Block",
 				"Automatic aim target; held Attack may mine crossed blocks. Large Bud: down-facing and dry only.",
 				new String[]{"Obsidian", "Crying Obsidian", "Large Amethyst Bud", "Amethyst Block"},
@@ -283,7 +293,7 @@ public class DragsimMacroScreen extends Screen {
 				30, 240, 5, settings::getTurnSpeedDps,
 				v -> saveResult(settings.setTurnSpeedDps(v), "turn speed"),
 				v -> String.format(Locale.ROOT, "%.0f deg/s", v)));
-		s.add(header("AIM DRIFT"));
+		s.add(header("Aim drift"));
 		s.add(new ToggleSetting("Aim Drift", "Slow movement within the selected block",
 				settings::isAimDriftEnabled, v -> {
 					saveResult(settings.setAimDriftEnabled(v), "Aim Drift"); rebuildPages();
@@ -292,7 +302,7 @@ public class DragsimMacroScreen extends Screen {
 				0, 0.03, 0.001, settings::getDriftAmount,
 				v -> saveResult(settings.setDriftAmount(v), "drift amount"),
 				v -> String.format(Locale.ROOT, "%.3f blocks", v)));
-		s.add(header("DRILL"));
+		s.add(header("Drill"));
 		s.add(new ToggleSetting("Auto Ability", "Right-click ability on start, then every 240s; waits out the cooldown message",
 				settings::isAutoAbilityEnabled,
 				v -> {
@@ -303,7 +313,7 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Auto Refuel", "On \"out of fuel\": sneak + right-click with a Void Canister in the off-hand",
 				settings::isAutoRefuelEnabled,
 				v -> saveResult(settings.setAutoRefuelEnabled(v), "Auto Refuel")));
-		s.add(header("MINING TIMING"));
+		s.add(header("Mining timing"));
 		s.add(dropdown("Aim Lead Mode",
 				"Starts from the real vanilla mining start; the bot begins turning before arrival. Fixed lead 0ms disables early switching.",
 				new String[]{"Off", "Adaptive", "Fixed", "Tick"},
@@ -395,7 +405,7 @@ public class DragsimMacroScreen extends Screen {
 				() -> keyName("key.dragsimmacro.mining_toggle"),
 				() -> { releaseCaptures(); mc.setScreen(null); routeWalkerController.start(mc); },
 				() -> routeWalkerController.stop(mc, "GUI_STOP")));
-		s.add(header("BASIC SETTINGS"));
+		s.add(header("Basic settings"));
 		s.add(new SliderSetting("Turn Speed", "Linear yaw speed in Auto Turn mode", 30, 240, 5,
 				settings::getTurnSpeedDps, v -> saveResult(settings.setTurnSpeedDps(v), "route turn speed"),
 				v -> String.format(Locale.ROOT, "%.0f deg/s", v)));
@@ -411,12 +421,12 @@ public class DragsimMacroScreen extends Screen {
 				v -> saveResult(settings.setDeviationCheck(v), "route deviation check")));
 		s.add(new ButtonSetting("Turn Speed Default", "Reset only Route Walker turn speed",
 				"Reset Speed", () -> saveResult(settings.resetTurnSpeed(), "route turn speed reset")));
-		s.add(header("ROUTE EDITOR"));
+		s.add(header("Route editor"));
 		s.add(new RouteEditorSetting(routeWalkerController, this::confirmClearRoute));
 	}
 
 	private void buildCombat(Minecraft mc, List<Setting> s) {
-		s.add(header("COMBAT"));
+		s.add(header("Combat"));
 		s.add(dropdown("Combat Mode", "Select the active weapon workflow",
 				new String[]{"SWORD", "FROZEN_SCYTHE"}, () -> MacroConfig.get().getCombatMode().name(), v -> {
 					MacroConfig.get().setCombatMode(CombatMode.valueOf(v)); rebuildPages();
@@ -427,7 +437,7 @@ public class DragsimMacroScreen extends Screen {
 				approachPlanner::isApproachEnabled, approachPlanner::setEnabled));
 		s.add(new ToggleSetting("Rotation", "Camera rotation automation",
 				rotationController::isEnabled, v -> rotationController.setEnabled(mc, v)));
-		s.add(header("TARGETS"));
+		s.add(header("Targets"));
 		s.add(new ToggleSetting("Normal Zealot", "Primary farming target",
 				() -> MacroConfig.get().targetNormalZealot, v -> targetPolicy(c -> c.setTargetNormalZealot(v))));
 		s.add(new ToggleSetting("Zealot Bruiser", "Include Zealot Bruisers",
@@ -436,7 +446,7 @@ public class DragsimMacroScreen extends Screen {
 				() -> MacroConfig.get().attackSpecialZealot, v -> targetPolicy(c -> c.setAttackSpecialZealot(v))));
 		s.add(new SliderSetting("Target Range", "Candidate acquisition range", 20, 80, 5,
 				controller::getRange, controller::setRange, v -> String.format(Locale.ROOT, "%.0fm", v)));
-		s.add(header("LOADOUT"));
+		s.add(header("Loadout"));
 		s.add(new ItemBindingRow("Attack Weapon",
 				() -> describeBinding(MacroConfig.get().getAttackWeaponBinding(), "Not configured"),
 				() -> bindHeld("attack")));
@@ -451,7 +461,14 @@ public class DragsimMacroScreen extends Screen {
 	}
 
 	private void buildVisuals(List<Setting> s) {
-		s.add(header("VISUALS"));
+		s.add(header("Visuals"));
+		String[] accents = java.util.Arrays.stream(GuiTheme.Accent.values()).map(a -> a.label).toArray(String[]::new);
+		s.add(dropdown("Theme Color", "Accent colour of the GUI, HUD, ESP and highlights", accents,
+				() -> GuiTheme.accent().label, v -> {
+					GuiTheme.Accent accent = GuiTheme.Accent.fromName(v);
+					GuiTheme.apply(accent);
+					updateConfig(c -> c.themeAccent = accent.name());
+				}));
 		s.add(dropdown("ESP Mode", "Entity overlay detail", new String[]{"OFF", "NORMAL", "DEBUG"},
 				() -> controller.getEspMode().name(), v -> controller.setEspMode(EspMode.valueOf(v))));
 		s.add(new ToggleSetting("Special Highlight", "Purple highlight for Special Zealots",
@@ -463,7 +480,7 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new InfoSetting("Route Display", "Configured on the Route Walker page",
 				() -> routeWalkerController.getSettings().isShowRoute() ? "ON" : "OFF"));
 		s.add(header("HUD"));
-		s.add(new ToggleSetting("Mining Bot HUD", "Status card while the Mining Bot runs: state, time, mined count, ability",
+		s.add(new ToggleSetting("Mining Bot HUD", "Status card while the Mining Bot runs: mined count and rate, profit, drill ability and fuel",
 				() -> MacroConfig.get().miningBotHud,
 				v -> updateConfig(c -> c.miningBotHud = v)));
 		s.add(new ToggleSetting("On-screen Toasts", "Show macro status messages and alerts at the bottom right",
@@ -475,11 +492,11 @@ public class DragsimMacroScreen extends Screen {
 	}
 
 	private void buildMisc(List<Setting> s) {
-		s.add(header("CLIENT DISPLAY"));
+		s.add(header("Client display"));
 		s.add(new ToggleSetting("Fullbright", "Brighten dark areas for this client",
 				() -> MacroConfig.get().fullbrightEnabled,
 				v -> updateConfig(c -> c.fullbrightEnabled = v)));
-		s.add(header("DESKTOP ALERTS"));
+		s.add(header("Desktop alerts"));
 		s.add(new ToggleSetting("Nearby Player", "While a macro runs: notify when a player comes close",
 				() -> MacroConfig.get().alertNearbyPlayer,
 				v -> { updateConfig(c -> c.alertNearbyPlayer = v); rebuildPages(); }));
@@ -531,7 +548,7 @@ public class DragsimMacroScreen extends Screen {
 					rebuildPages();
 				}));
 		if (advancedSection == 0) {
-		s.add(header("TARGET SELECTION"));
+		s.add(header("Target selection"));
 		s.add(dropdown("Selection Mode", "Engagement scoring or legacy distance selection",
 				new String[]{"ENGAGEMENT", "LEGACY"}, () -> MacroConfig.get().getTargetSelectionMode().name(),
 				v -> MacroConfig.get().setTargetSelectionMode(v)));
@@ -560,7 +577,7 @@ public class DragsimMacroScreen extends Screen {
 				v -> updateConfig(c -> c.nextTargetSwitchAdvantage = v)));
 
 		} else if (advancedSection == 1) {
-		s.add(header("COMBAT ROTATION"));
+		s.add(header("Combat rotation"));
 		s.add(dropdown("Rotation Mode", "Automatic camera interpolation mode",
 				new String[]{"CURVE_SMOOTH", "RENDER_SMOOTH", "DYNAMIC_SMOOTH", "LINEAR"},
 				() -> rotationController.getSmoothing().name(),
@@ -577,7 +594,7 @@ public class DragsimMacroScreen extends Screen {
 				v -> updateConfig(c -> c.corneringSmoothness = v)));
 
 		} else if (advancedSection == 2) {
-		s.add(header("NAVIGATION"));
+		s.add(header("Navigation"));
 		s.add(new ToggleSetting("Navigation", "Local pathfinding",
 				() -> MacroConfig.get().navigationEnabled, v -> updateConfig(c -> c.navigationEnabled = v)));
 		s.add(new ToggleSetting("Auto Jump", "Jump over one-block steps",
@@ -611,7 +628,7 @@ public class DragsimMacroScreen extends Screen {
 				v -> String.format(Locale.ROOT, "%.0fms", v)));
 
 		} else if (GuiContentPolicy.showScytheSection(advancedSection, MacroConfig.get().getCombatMode())) {
-			s.add(header("FROZEN SCYTHE"));
+			s.add(header("Frozen Scythe"));
 			s.add(dropdown("Scythe Use Mode", "Aimed shots or continuous held use",
 					new String[]{"AIMED", "HOLD_RIGHT_CLICK"},
 					() -> MacroConfig.get().getFrozenScytheUseMode().name(), v -> {

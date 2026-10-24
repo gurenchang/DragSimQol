@@ -52,9 +52,10 @@ import org.joml.Vector4f;
  */
 public class CornerEspOverlay implements HudElement {
 	// 色はGuiTheme(黒×紫トークン)から参照。ハードコードしない
-	private static final int RGB_NORMAL = GuiTheme.ESP_NORMAL;
-	private static final int RGB_TARGET = GuiTheme.ESP_TARGET;
-	private static final int RGB_SPECIAL = GuiTheme.ESP_SPECIAL;
+	// Accent-derived colours are read per frame so a theme change applies at once.
+	private static int rgbNormal() { return GuiTheme.ESP_NORMAL; }
+	private static int rgbTarget() { return GuiTheme.ESP_TARGET; }
+	private static int rgbSpecial() { return GuiTheme.ESP_SPECIAL; }
 	private static final int RGB_ID_TEXT = GuiTheme.TEXT_SECONDARY;
 	private static final int RGB_GATE_READY = GuiTheme.SUCCESS;
 	private static final int RGB_GATE_WAIT = GuiTheme.TEXT_SECONDARY;
@@ -293,8 +294,8 @@ public class CornerEspOverlay implements HudElement {
 			boolean isTargetDrawn = isTarget;
 			// Phase 6.6: 非Target Special Zealotはpurpleで識別(落ち着いたviolet)
 			boolean isSpecial = ZealotDetector.typeOf(snapshot) == ZealotDetector.ZealotType.SPECIAL;
-			int baseColor = isTargetDrawn ? RGB_TARGET
-					: (isSpecial && MacroConfig.get().specialEspHighlight ? RGB_SPECIAL : RGB_NORMAL);
+			int baseColor = isTargetDrawn ? rgbTarget()
+					: (isSpecial && MacroConfig.get().specialEspHighlight ? rgbSpecial() : rgbNormal());
 			int alphaMax = isTargetDrawn ? ALPHA_TARGET_MAX
 					: (isSpecial && MacroConfig.get().specialEspHighlight ? ALPHA_SPECIAL_MAX : ALPHA_NORMAL_MAX);
 			int alpha = alphaFor(candidate.distance(), range, fadeStart, alphaMax);
@@ -318,7 +319,7 @@ public class CornerEspOverlay implements HudElement {
 			int cx = (int) Math.round((minX + maxX) / 2);
 
 			if (isTargetDrawn) {
-				int targetColor = withAlpha(RGB_TARGET, alpha);
+				int targetColor = withAlpha(rgbTarget(), alpha);
 
 				// Aim Marker(Phase 4.0): ロック中Target 1体のみ。
 				// RENDER_SMOOTH時はrender controllerが計算した同じtime basisの
@@ -342,7 +343,7 @@ public class CornerEspOverlay implements HudElement {
 						marker = projectToGui(ip.x, aimY, ip.z, camPos, guiW, guiH);
 					}
 					if (marker != null) {
-						drawAimMarker(graphics, marker[0], marker[1], withAlpha(RGB_TARGET, 230));
+						drawAimMarker(graphics, marker[0], marker[1], withAlpha(rgbTarget(), 230));
 					}
 
 					int y = (int) Math.round(minY) - font.lineHeight * 3 - 4;

@@ -21,9 +21,10 @@ import org.joml.Vector4f;
  */
 public class PathDebugOverlay implements HudElement {
 	// 色はGuiThemeトークンから参照(黒×紫テーマ)
-	private static final int COLOR_WALK = withAlpha(GuiTheme.ACCENT_DIM, 0xB0);
+	// Accent-derived colours are read per frame so a theme change applies at once.
+	private static int colorWalk() { return withAlpha(GuiTheme.ACCENT_DIM, 0xB0); }
 	private static final int COLOR_JUMP = withAlpha(GuiTheme.WARNING, 0xB0);
-	private static final int COLOR_DROP = withAlpha(GuiTheme.ACCENT_BRIGHT, 0x90);
+	private static int colorDrop() { return withAlpha(GuiTheme.ACCENT_BRIGHT, 0x90); }
 	private static final int COLOR_GOAL = withAlpha(GuiTheme.SUCCESS, 0xC0);
 	private static final int MAX_DOTS_PER_SEGMENT = 24;
 
@@ -79,9 +80,9 @@ public class PathDebugOverlay implements HudElement {
 	private static int colorFor(PathNodeType type) {
 		return switch (type) {
 			case JUMP_UP_1 -> COLOR_JUMP;
-			case DROP_DOWN_2 -> COLOR_DROP;
+			case DROP_DOWN_2 -> colorDrop();
 			case GOAL -> COLOR_GOAL;
-			default -> COLOR_WALK;
+			default -> colorWalk();
 		};
 	}
 

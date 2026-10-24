@@ -3,18 +3,25 @@ package com.dragsim.macro.client.gui;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.mojang.blaze3d.platform.NativeImage;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 
 /**
  * Shared drawing helpers.
  *
  * Shapes are drawn in physical pixels (the pose is scaled by 1/guiScale), so rounded
- * corners, circles and hairlines stay smooth at every GUI scale. Corner pixels get
- * fractional alpha from a cached 4x4-supersampled coverage table (anti-aliasing).
- * Coordinates in the public API are GUI units, like the rest of the screen.
+ * corners, circles and hairlines stay smooth at every GUI scale. Coordinates in the
+ * public API are GUI units, like the rest of the screen.
+ *
+ * Rounded corners, shadows and glows come from small mask textures (white, alpha =
+ * coverage) generated once per radius and tinted at draw time: a rounded rect is four
+ * corner blits plus three fills, whatever its radius. Drawing them pixel by pixel cost
+ * hundreds of fills per shape and thousands per shadow, which made the GUI sluggish.
  */
 public final class GuiPaint {
 	private GuiPaint() {
@@ -23,11 +30,20 @@ public final class GuiPaint {
 	public enum Icon {
 		PICKAXE("pickaxe"), ROUTE("route"), SWORD("sword"), EYE("eye"), BELL("bell"), GEAR("gear"),
 		KEYBOARD("keyboard"), CLOSE("close"), CHEVRON("chevron"), CHECK("check"),
-		PLAY("play"), STOP("stop"), LOGO("logo");
+		PLAY("play"), STOP("stop"),
+		/** The brand mark (an End Crystal), authored at 16 units so the sidebar draws it pixel-exact. */
+		LOGO("logo", 16);
 
 		private final Identifier[] textures = new Identifier[4];
+		/** Size the textures are authored at, in GUI units (1x..4x of it). */
+		private final int base;
 
 		Icon(String name) {
+			this(name, ICON_BASE);
+		}
+
+		Icon(String name, int base) {
+			this.base = base;
 			for (int i = 0; i < 4; i++) {
 				textures[i] = Identifier.fromNamespaceAndPath("dragsimmacro",
 						"textures/gui/icons/" + name + "_" + (i + 1) + "x.png");
@@ -35,10 +51,23 @@ public final class GuiPaint {
 		}
 	}
 
-	/** Icon textures are authored 10 GUI units square at 1x..4x. */
-	private static final int ICON_BASE = 10;
+	/** Icon textures are authored 10 GUI units square at 1x..4x (unless the icon says otherwise). */
+	static final int ICON_BASE = 10;
 	private static final int SAMPLES = 4;
 	private static final Map<Integer, float[][]> COVERAGE = new HashMap<>();
+	/** Disc masks by radius (px); a rounded rect's corners are the disc's quadrants. */
+	private static final Map<Integer, Identifier> DISCS = new HashMap<>();
+	/** Soft-edged disc masks for shadows and glows, keyed by core radius and falloff (px). */
+	private static final Map<Long, Identifier> SOFT = new HashMap<>();
+	/** Ring masks keyed by outer and inner radius (px). */
+	private static final Map<Long, Identifier> RINGS = new HashMap<>();
+	/** Larger radii are clamped; nothing in the GUI is rounder than this. */
+	private static final int MAX_MASK_RADIUS = 256;
+	/**
+	 * Peak opacity of a shadow/glow relative to its alpha argument: what the old stack of
+	 * translucent layers added up to, so existing call sites keep their look.
+	 */
+	static final float SOFT_PEAK = 0.73f;
 	private static int scaleOverride;
 
 	/** Test/preview hook; 0 = use the game window scale. */
@@ -108,21 +137,59 @@ public final class GuiPaint {
 		roundedRect(g, cx - radius, cy - radius, radius * 2, radius * 2, radius, color);
 	}
 
-	/** Soft drop shadow made of stacked translucent rounded rects. */
+	/** Straight line of the given width (GUI units) at any angle: one rotated fill. */
+	public static void line(GuiGraphicsExtractor g, double x1, double y1, double x2, double y2, float width, int color) {
+		if ((color >>> 24) == 0) return;
+		int s = scale();
+		double dx = (x2 - x1) * s, dy = (y2 - y1) * s;
+		int len = (int) Math.round(Math.hypot(dx, dy));
+		int t = Math.max(1, Math.round(width * s));
+		begin(g, s);
+		g.pose().translate((float) (x1 * s), (float) (y1 * s));
+		g.pose().rotate((float) Math.atan2(dy, dx));
+		g.pose().translate(0f, -t / 2f);
+		g.fill(0, 0, Math.max(1, len), t, color);
+		end(g);
+	}
+
+	/** Anti-aliased circle outline centred on (cx, cy): one blit of a cached ring mask. */
+	public static void ring(GuiGraphicsExtractor g, double cx, double cy, float radius, float thickness, int color) {
+		if ((color >>> 24) == 0 || radius <= 0) return;
+		int s = scale();
+		int outer = Math.min(MAX_MASK_RADIUS, Math.max(1, Math.round((radius + thickness / 2f) * s)));
+		int inner = Math.max(0, outer - Math.max(1, Math.round(thickness * s)));
+		Identifier mask = RINGS.computeIfAbsent(((long) outer << 32) | inner,
+				key -> upload("ring_" + outer + "_" + inner, ringAlpha(outer, inner), outer * 2));
+		int size = outer * 2;
+		begin(g, s);
+		g.blit(RenderPipelines.GUI_TEXTURED, mask, (int) Math.round(cx * s) - outer, (int) Math.round(cy * s) - outer,
+				0, 0, size, size, size, size, color);
+		end(g);
+	}
+
+	/** Soft drop shadow: a blurred rounded rect `spread` wide, nudged down a little. */
 	public static void shadow(GuiGraphicsExtractor g, float x, float y, float w, float h, float radius,
 			float spread, int alpha) {
+		if (alpha <= 0 || w <= 0 || h <= 0) return;
 		int s = scale();
-		int steps = Math.max(2, Math.round(spread * s / 2f));
 		begin(g, s);
 		int px = px(x, s), py = px(y, s), pw = px(x + w, s) - px, ph = px(y + h, s) - py;
-		int r = Math.round(radius * s);
-		for (int i = steps; i >= 1; i--) {
-			int grow = Math.round(i * spread * s / steps);
-			float t = 1f - (i - 1f) / steps;
-			int a = Math.round(alpha * t * t / steps * 2.2f);
-			roundedRectPx(g, px - grow, py - grow + grow / 3, pw + grow * 2, ph + grow * 2, r + grow,
-					withAlpha(0x000000, a));
-		}
+		int sp = Math.max(1, Math.round(spread * s));
+		softRectPx(g, px, py + sp / 4, pw, ph, Math.round(radius * s), sp,
+				withAlpha(0x000000, Math.round(alpha * SOFT_PEAK)));
+		end(g);
+	}
+
+	/** Soft coloured halo around a rounded rect (no offset, unlike {@link #shadow}). */
+	public static void glow(GuiGraphicsExtractor g, float x, float y, float w, float h, float radius,
+			float spread, int color) {
+		int alpha = color >>> 24;
+		if (alpha == 0 || w <= 0 || h <= 0) return;
+		int s = scale();
+		begin(g, s);
+		int px = px(x, s), py = px(y, s), pw = px(x + w, s) - px, ph = px(y + h, s) - py;
+		int sp = Math.max(1, Math.round(spread * s));
+		softRectPx(g, px, py, pw, ph, Math.round(radius * s), sp, withAlpha(color, Math.round(alpha * SOFT_PEAK)));
 		end(g);
 	}
 
@@ -185,8 +252,8 @@ public final class GuiPaint {
 	/** Draws a tinted icon `size` GUI units square, pixel-exact at GUI scales 1-4. */
 	public static void icon(GuiGraphicsExtractor g, Icon icon, float x, float y, float size, int color) {
 		int s = scale();
-		int variant = Math.max(1, Math.min(4, Math.round(size * s / ICON_BASE)));
-		int texSize = ICON_BASE * variant;
+		int variant = Math.max(1, Math.min(4, Math.round(size * s / icon.base)));
+		int texSize = icon.base * variant;
 		int drawSize = Math.round(size * s);
 		begin(g, s);
 		int px = px(x, s), py = px(y, s);
@@ -241,9 +308,10 @@ public final class GuiPaint {
 			boolean hovered) {
 		switch (style) {
 			case PRIMARY -> {
-				if (hovered) shadow(g, x, y + 1, w, h, 6, 4, 0x70);
+				if (hovered) glow(g, x, y, w, h, GuiTheme.CONTROL_RADIUS, 5, withAlpha(GuiTheme.ACCENT, 0x60));
 				roundedGradient(g, x, y, w, h, GuiTheme.CONTROL_RADIUS,
-						hovered ? 0xFFB872FA : GuiTheme.ACCENT, hovered ? 0xFF8A47D6 : 0xFF7F44C8);
+						hovered ? lerpColor(GuiTheme.ACCENT, GuiTheme.ACCENT_BRIGHT, 0.4f) : GuiTheme.ACCENT,
+						lerpColor(GuiTheme.ACCENT, GuiTheme.ACCENT_DIM, hovered ? 0.55f : 0.7f));
 				roundedRect(g, x + 1, y + 0.5f, w - 2, 1, 0.5f, 0x30FFFFFF);
 			}
 			case SECONDARY -> roundedRectOutlined(g, x, y, w, h, GuiTheme.CONTROL_RADIUS,
@@ -294,37 +362,129 @@ public final class GuiPaint {
 		g.pose().popMatrix();
 	}
 
-	/** Rounded rect in physical pixels with anti-aliased corners. */
+	/** Rounded rect in physical pixels: anti-aliased corners from the disc mask, the rest as fills. */
 	static void roundedRectPx(GuiGraphicsExtractor g, int x, int y, int w, int h, int r, int color) {
-		if (w <= 0 || h <= 0) return;
-		r = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+		if (w <= 0 || h <= 0 || (color >>> 24) == 0) return;
+		r = Math.max(0, Math.min(Math.min(r, MAX_MASK_RADIUS), Math.min(w, h) / 2));
 		if (r == 0) {
 			g.fill(x, y, x + w, y + h, color);
 			return;
 		}
-		float[][] cov = coverage(r);
 		if (h > 2 * r) g.fill(x, y + r, x + w, y + h - r, color);
-		for (int row = 0; row < r; row++) {
-			float[] c = cov[row];
-			int full = r;
-			for (int i = 0; i < r; i++) {
-				if (c[i] >= 0.999f) { full = i; break; }
-			}
-			int top = y + row;
-			int bottom = y + h - 1 - row;
-			if (x + full < x + w - full) {
-				g.fill(x + full, top, x + w - full, top + 1, color);
-				g.fill(x + full, bottom, x + w - full, bottom + 1, color);
-			}
-			for (int i = 0; i < full; i++) {
-				if (c[i] <= 0.001f) continue;
-				int a = mulAlpha(color, c[i]);
-				g.fill(x + i, top, x + i + 1, top + 1, a);
-				g.fill(x + w - 1 - i, top, x + w - i, top + 1, a);
-				g.fill(x + i, bottom, x + i + 1, bottom + 1, a);
-				g.fill(x + w - 1 - i, bottom, x + w - i, bottom + 1, a);
+		if (w > 2 * r) {
+			g.fill(x + r, y, x + w - r, y + r, color);
+			g.fill(x + r, y + h - r, x + w - r, y + h, color);
+		}
+		Identifier disc = disc(r);
+		int t = r * 2;
+		g.blit(RenderPipelines.GUI_TEXTURED, disc, x, y, 0, 0, r, r, t, t, color);
+		g.blit(RenderPipelines.GUI_TEXTURED, disc, x + w - r, y, r, 0, r, r, t, t, color);
+		g.blit(RenderPipelines.GUI_TEXTURED, disc, x, y + h - r, 0, r, r, r, t, t, color);
+		g.blit(RenderPipelines.GUI_TEXTURED, disc, x + w - r, y + h - r, r, r, r, r, t, t, color);
+	}
+
+	/**
+	 * A w x h rounded rect (radius r) with a soft edge `sp` wide outside it: the soft mask's
+	 * quadrants at the corners, its middle row/column stretched along the edges, a fill inside.
+	 */
+	private static void softRectPx(GuiGraphicsExtractor g, int x, int y, int w, int h, int r, int sp, int color) {
+		if ((color >>> 24) == 0) return;
+		r = Math.max(0, Math.min(Math.min(r, MAX_MASK_RADIUS), Math.min(w, h) / 2));
+		sp = Math.min(sp, MAX_MASK_RADIUS);
+		int c = r + sp, t = c * 2;
+		Identifier mask = soft(r, sp);
+		int x0 = x - sp, y0 = y - sp, x1 = x + w + sp, y1 = y + h + sp;
+		int midW = x1 - x0 - t, midH = y1 - y0 - t;
+		g.blit(RenderPipelines.GUI_TEXTURED, mask, x0, y0, 0, 0, c, c, t, t, color);
+		g.blit(RenderPipelines.GUI_TEXTURED, mask, x1 - c, y0, c, 0, c, c, t, t, color);
+		g.blit(RenderPipelines.GUI_TEXTURED, mask, x0, y1 - c, 0, c, c, c, t, t, color);
+		g.blit(RenderPipelines.GUI_TEXTURED, mask, x1 - c, y1 - c, c, c, c, c, t, t, color);
+		if (midW > 0) {
+			g.blit(RenderPipelines.GUI_TEXTURED, mask, x0 + c, y0, c, 0, midW, c, 1, c, t, t, color);
+			g.blit(RenderPipelines.GUI_TEXTURED, mask, x0 + c, y1 - c, c, c, midW, c, 1, c, t, t, color);
+		}
+		if (midH > 0) {
+			g.blit(RenderPipelines.GUI_TEXTURED, mask, x0, y0 + c, 0, c, c, midH, c, 1, t, t, color);
+			g.blit(RenderPipelines.GUI_TEXTURED, mask, x1 - c, y0 + c, c, c, c, midH, c, 1, t, t, color);
+		}
+		if (midW > 0 && midH > 0) g.fill(x0 + c, y0 + c, x1 - c, y1 - c, color);
+	}
+
+	private static Identifier disc(int r) {
+		return DISCS.computeIfAbsent(r, radius -> upload("disc_" + radius, discAlpha(radius), radius * 2));
+	}
+
+	private static Identifier soft(int r, int sp) {
+		return SOFT.computeIfAbsent(((long) r << 32) | sp,
+				key -> upload("soft_" + r + "_" + sp, softAlpha(r, sp), (r + sp) * 2));
+	}
+
+	/** White texture with the given alpha per pixel (row-major, size x size). Render thread only. */
+	private static Identifier upload(String name, float[] alpha, int size) {
+		NativeImage image = new NativeImage(size, size, false);
+		for (int y = 0; y < size; y++) {
+			for (int x = 0; x < size; x++) {
+				int a = Math.round(Math.max(0f, Math.min(1f, alpha[y * size + x])) * 255f);
+				image.setPixel(x, y, (a << 24) | 0xFFFFFF);
 			}
 		}
+		Identifier id = Identifier.fromNamespaceAndPath("dragsimmacro", "dynamic/gui_" + name);
+		Minecraft.getInstance().getTextureManager().register(id, new DynamicTexture(() -> "dragsimmacro " + name, image));
+		return id;
+	}
+
+	/** Anti-aliased disc of radius r in a 2r x 2r square: the coverage table mirrored into four quadrants. */
+	static float[] discAlpha(int r) {
+		float[][] cov = coverage(r);
+		int size = r * 2;
+		float[] out = new float[size * size];
+		for (int y = 0; y < size; y++) {
+			int row = y < r ? y : size - 1 - y;
+			for (int x = 0; x < size; x++) {
+				int col = x < r ? x : size - 1 - x;
+				out[y * size + x] = cov[row][col];
+			}
+		}
+		return out;
+	}
+
+	/** Supersampled coverage of the ring between radii inner and outer, in a 2*outer square. */
+	static float[] ringAlpha(int outer, int inner) {
+		int size = outer * 2;
+		float[] out = new float[size * size];
+		double o2 = (double) outer * outer, i2 = (double) inner * inner;
+		for (int y = 0; y < size; y++) {
+			for (int x = 0; x < size; x++) {
+				int hit = 0;
+				for (int sy = 0; sy < SAMPLES; sy++) {
+					for (int sx = 0; sx < SAMPLES; sx++) {
+						double dx = x + (sx + 0.5) / SAMPLES - outer, dy = y + (sy + 0.5) / SAMPLES - outer;
+						double d2 = dx * dx + dy * dy;
+						if (d2 <= o2 && d2 > i2) hit++;
+					}
+				}
+				out[y * size + x] = hit / (float) (SAMPLES * SAMPLES);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Disc of radius r at full alpha, fading to nothing over sp pixels outside it, in a
+	 * 2(r+sp) square. The cubic falloff matches the old stacked-layer shadows.
+	 */
+	static float[] softAlpha(int r, int sp) {
+		int c = r + sp, size = c * 2;
+		float[] out = new float[size * size];
+		for (int y = 0; y < size; y++) {
+			for (int x = 0; x < size; x++) {
+				double dx = x + 0.5 - c, dy = y + 0.5 - c;
+				double u = (Math.sqrt(dx * dx + dy * dy) - r) / sp;
+				float a = u <= 0 ? 1f : u >= 1 ? 0f : (float) Math.pow(1 - u, 3);
+				out[y * size + x] = a;
+			}
+		}
+		return out;
 	}
 
 	/** coverage[row][col] for the top-left corner of a radius-r rounded rect. */

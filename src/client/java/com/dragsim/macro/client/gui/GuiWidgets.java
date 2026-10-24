@@ -1,5 +1,7 @@
 package com.dragsim.macro.client.gui;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.DoubleConsumer;
@@ -31,8 +33,27 @@ public final class GuiWidgets {
 		return fit(font, text, width, true);
 	}
 
+	private record FitKey(String text, int width, boolean small, int scale) {
+	}
+
+	/**
+	 * Fitted labels by text, width and GUI scale. Measuring (and cutting with a binary search)
+	 * every row every frame was a steady cost; the scale in the key keeps the per-scale font
+	 * variant right after a GUI-scale change.
+	 */
+	private static final Map<FitKey, Component> FIT_CACHE = new LinkedHashMap<>(256, 0.75f, true) {
+		@Override protected boolean removeEldestEntry(Map.Entry<FitKey, Component> eldest) {
+			return size() > 1024;
+		}
+	};
+
 	private static Component fit(Font font, String text, int width, boolean small) {
 		if (text == null || width <= 0) return UiFont.text("");
+		return FIT_CACHE.computeIfAbsent(new FitKey(text, width, small, GuiPaint.scale()),
+				key -> measureFit(font, text, width, small));
+	}
+
+	private static Component measureFit(Font font, String text, int width, boolean small) {
 		Component full = small ? UiFont.small(text) : UiFont.text(text);
 		if (font.width(full) <= width) return full;
 		String ellipsis = "…";
@@ -135,8 +156,7 @@ public final class GuiWidgets {
 		@Override public int height() { return 26; }
 		@Override public void render(GuiGraphicsExtractor g, Font font, int x, int y, int w, boolean hovered) {
 			GuiPaint.roundedRect(g, x, y + 11, 3, 8, 1.5f, GuiTheme.ACCENT);
-			g.text(font, fittedSmall(font, title.toUpperCase(java.util.Locale.ROOT), w - 8), x + 8, y + 11,
-					GuiTheme.ACCENT_BRIGHT, false);
+			g.text(font, fitted(font, title, w - 8), x + 8, y + 10, GuiTheme.ACCENT_BRIGHT, false);
 		}
 		@Override public boolean mouseClicked(double mx, double my, int b, int x, int y, int w) { return false; }
 	}
@@ -632,7 +652,7 @@ public final class GuiWidgets {
 			GuiPaint.roundedRectOutlined(g, x, y, w, h, GuiTheme.CARD_RADIUS, GuiTheme.SURFACE, GuiTheme.BORDER);
 			// icon badge
 			int bx = x + 14, by = y + 14;
-			GuiPaint.roundedGradient(g, bx, by, 30, 30, 8, 0xFFB46BFA, 0xFF6D3BA8);
+			GuiPaint.roundedGradient(g, bx, by, 30, 30, 8, GuiTheme.ACCENT_BRIGHT, GuiTheme.ACCENT_DIM);
 			GuiPaint.icon(g, icon, bx + 8, by + 8, 14, 0xFFFFFFFF);
 			// title + description
 			int btnW = buttonW(w);
@@ -713,7 +733,8 @@ public final class GuiWidgets {
 				int bx = x + 2 + (i % cols) * each, by = y + 2 + (i / cols) * 24;
 				boolean sel = i == selected.getAsInt();
 				boolean hot = inside(mouseX, mouseY, bx, by, each, 24);
-				if (sel) GuiPaint.roundedGradient(g, bx, by, each, 24, 5, 0xFF5B3192, 0xFF432470);
+				if (sel) GuiPaint.roundedGradient(g, bx, by, each, 24, 5,
+						GuiPaint.lerpColor(GuiTheme.ACCENT_DIM, GuiTheme.ACCENT_DEEP, 0.4f), GuiTheme.ACCENT_DEEP);
 				else if (hot) GuiPaint.roundedRect(g, bx, by, each, 24, 5, GuiTheme.SURFACE_HOVER);
 				Component label = fitted(font, labels[i], each - 8);
 				g.text(font, label, bx + (each - font.width(label)) / 2, by + (24 - UiFont.BODY_H) / 2,
