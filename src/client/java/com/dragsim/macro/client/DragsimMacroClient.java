@@ -7,6 +7,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
@@ -54,8 +55,14 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// Desktop alerts: nearby players and name mentions / direct messages in chat.
 		// Alerts only while a macro is running (Mining Bot, Route Walker or combat).
 		AlertMonitor alertMonitor = new AlertMonitor(() -> miningBot.isActive() || routeWalker.isActive()
-				|| controller.getState() != MacroController.State.IDLE);
+				|| controller.getState() != MacroController.State.IDLE,
+				() -> miningBot.isActive() || routeWalker.isActive());
 		ClientTickEvents.END_CLIENT_TICK.register(alertMonitor::tick);
+		ClientEntityEvents.ENTITY_LOAD.register((entity, level) -> {
+			alertMonitor.onEntityLoad(Minecraft.getInstance(), entity);
+			SpawnLogCommand.onEntityLoad(Minecraft.getInstance(), entity);
+		});
+		ClientTickEvents.END_CLIENT_TICK.register(SpawnLogCommand::tick);
 		// Server tick clock: log ping-mode / lag transitions (the packets themselves are observed by mixins).
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
 			String change = ServerTickClock.get().stateChange(MacroClock.nowMs());
@@ -84,6 +91,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 		SpecialZealotCommand.register(controller.getTargetSelector());
 		RotationCommand.register(rotationController);
 		ItemInspectCommand.register();
+		SpawnLogCommand.register();
 
 		// Phase 7.0: /zealotgui
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
@@ -139,6 +147,12 @@ public class DragsimMacroClient implements ClientModInitializer {
 				InputConstants.Type.KEYSYM,
 				GLFW.GLFW_KEY_J,
 				DRAGSIM_CATEGORY));
+		// Recording mode: unbound by default (set it in Controls).
+		KeyMapping stealthKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.dragsimmacro.stealth_toggle",
+				InputConstants.Type.KEYSYM,
+				GLFW.GLFW_KEY_UNKNOWN,
+				DRAGSIM_CATEGORY));
 
 		// GをvanillaのUse読み取りより前に処理する。OFFしたtickの自動使用を止める。
 		// 開始・停止キーはフォーカス中にだけ受け付ける。非フォーカス中の残留clickは実行しない。
@@ -171,17 +185,17 @@ public class DragsimMacroClient implements ClientModInitializer {
 			scytheHoldUse.tickStart(mc);
 		});
 
-		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_hud"), new DebugHud(controller, aimSolver, rotationController, attackGate, combatController, approachPlanner, scytheHoldUse));
-		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp"), new EspOverlay(controller, aimSolver));
-		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp_normal"), new CornerEspOverlay(controller, aimSolver, rotationController, attackGate));
-		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_path"), new PathDebugOverlay(controller, approachPlanner));
+		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_hud"), StealthMode.hide(new DebugHud(controller, aimSolver, rotationController, attackGate, combatController, approachPlanner, scytheHoldUse)));
+		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp"), StealthMode.hide(new EspOverlay(controller, aimSolver)));
+		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp_normal"), StealthMode.hide(new CornerEspOverlay(controller, aimSolver, rotationController, attackGate)));
+		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_path"), StealthMode.hide(new PathDebugOverlay(controller, approachPlanner)));
 		// 採掘ルート描画(戦闘ESP・マクロ状態に非依存。OFF中・1ノード・再起動直後も表示)。
 		// チャットより下に描くため先頭へ登録する(チャット入力・補完を遮らない)。
-		HudElementRegistry.addFirst(DragsimMacroMod.id("mining_route"), new RouteOverlay(routeWalker));
-		HudElementRegistry.addLast(DragsimMacroMod.id("mining_bot_hud"), new MiningBotHud(miningBot));
-		HudElementRegistry.addLast(DragsimMacroMod.id("toasts"), new ToastOverlay());
+		HudElementRegistry.addFirst(DragsimMacroMod.id("mining_route"), StealthMode.hide(new RouteOverlay(routeWalker)));
+		HudElementRegistry.addLast(DragsimMacroMod.id("mining_bot_hud"), StealthMode.hide(new MiningBotHud(miningBot)));
+		HudElementRegistry.addLast(DragsimMacroMod.id("toasts"), StealthMode.hide(new ToastOverlay()));
 		// Alert edge flash on top of everything else.
-		HudElementRegistry.addLast(DragsimMacroMod.id("alert_flash"), new AlertFlash());
+		HudElementRegistry.addLast(DragsimMacroMod.id("alert_flash"), StealthMode.hide(new AlertFlash()));
 		// Mining Bot: the block it is aiming at. Route Walker: the End Stone being mined.
 		// Drawn in the world (depth-tested) just before vanilla debug gizmos.
 		TargetBlockHighlight targetHighlight = new TargetBlockHighlight(() -> {
@@ -195,7 +209,9 @@ public class DragsimMacroClient implements ClientModInitializer {
 			}
 			return null;
 		}, miningBot::breakProgress, miningBot::getLastMinedPos);
-		LevelRenderEvents.BEFORE_GIZMOS.register(targetHighlight::render);
+		LevelRenderEvents.BEFORE_GIZMOS.register(ctx -> {
+			if (!StealthMode.on()) targetHighlight.render(ctx);
+		});
 		// Cosmetics: the china hat rides on player renderers (it only draws on the local player).
 		LivingEntityRenderLayerRegistrationCallback.EVENT.register((type, renderer, helper, context) -> {
 			if (renderer instanceof AvatarRenderer<?> avatar) helper.register(new ChinaHatLayer(avatar));
@@ -242,6 +258,9 @@ public class DragsimMacroClient implements ClientModInitializer {
 			}
 			while (attackKey.consumeClick()) {
 				combatController.toggle();
+			}
+			while (stealthKey.consumeClick()) {
+				StealthMode.toggle(mc);
 			}
 			while (guiKey.consumeClick()) {
 				openGui(mc, controller, rotationController, attackGate, combatController, approachPlanner,

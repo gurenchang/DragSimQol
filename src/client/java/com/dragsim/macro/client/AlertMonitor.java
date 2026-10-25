@@ -6,13 +6,31 @@ import java.util.Locale;
 import java.util.function.BooleanSupplier;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectCategory;
+import net.minecraft.world.entity.AreaEffectCloud;
+import net.minecraft.world.entity.Display;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Watches for nearby players, chat mentions, staff checks and server-forced teleports / view changes /
- * hotbar slot and held item changes / knockback, and raises desktop notifications.
+ * Watches for nearby players, chat mentions, staff checks, entities spawned next to you, blocks swapped next to
+ * you, harmful effects, damage, world changes and server-forced teleports / view changes / hotbar slot and held
+ * item changes / knockback, and raises desktop notifications.
  */
 public final class AlertMonitor {
 	private static final int SCAN_INTERVAL_TICKS = 10;
@@ -26,23 +44,43 @@ public final class AlertMonitor {
 	private static final double KNOCKBACK_MIN_SPEED = 0.1;
 	/** One staff check shows up in chat, title and its terminal GUI; alert once. */
 	private static final long STAFF_CHECK_COOLDOWN_MS = 30_000;
+	/** Name and held item arrive in the data packet right after the spawn packet; describe the entity a bit later. */
+	private static final int NEW_ENTITY_DESCRIBE_DELAY_TICKS = 2;
+	private static final long NEW_ENTITY_COOLDOWN_MS = 10_000;
+	/** Server block changes within this distance of the player count as next to you (mining reach plus a margin). */
+	private static final double BLOCK_CHANGE_RADIUS = 6.0;
 	private static final String TITLE = "Minecraft";
 
 	private final PlayerAlertPolicy policy = new PlayerAlertPolicy();
 	private final BooleanSupplier macroRunning;
+	/** Mining Bot / Route Walker. Combat is left out: mobs and damage holograms spawn around you all the time. */
+	private final BooleanSupplier miningRunning;
+	private final List<PendingEntity> pendingEntities = new ArrayList<>();
 	private Object lastLevel;
 	private int ticks;
+	private long clientTicks;
 	private long lastChatAlert = Long.MIN_VALUE;
 	private long lastServerMoveAlert = Long.MIN_VALUE;
 	private long lastSlotAlert = Long.MIN_VALUE;
 	private long lastKnockbackAlert = Long.MIN_VALUE;
 	private long lastHeldItemAlert = Long.MIN_VALUE;
 	private long lastStaffCheckAlert = Long.MIN_VALUE;
+	private long lastNewEntityAlert = Long.MIN_VALUE;
+	private long lastBlockChangeAlert = Long.MIN_VALUE;
+	private long lastEffectAlert = Long.MIN_VALUE;
+	private long lastDamageAlert = Long.MIN_VALUE;
+	/** Level and player seen on the last tick a macro ran; null while none runs. */
+	private Object watchLevel;
+	private Object watchPlayer;
 	private static long expectTeleportUntil = Long.MIN_VALUE;
 	private static AlertMonitor instance;
 
-	public AlertMonitor(BooleanSupplier macroRunning) {
+	private record PendingEntity(Entity entity, Vec3 spawnPos, double distance, double dy, long dueTick) {
+	}
+
+	public AlertMonitor(BooleanSupplier macroRunning, BooleanSupplier miningRunning) {
 		this.macroRunning = macroRunning;
+		this.miningRunning = miningRunning;
 		instance = this;
 	}
 
@@ -55,15 +93,20 @@ public final class AlertMonitor {
 
 	/** END_CLIENT_TICK. Only watches while a macro is running. */
 	public void tick(Minecraft mc) {
+		clientTicks++;
+		checkWorldChange(mc);
 		if (mc == null || mc.player == null || mc.level == null || !macroRunning.getAsBoolean()) {
 			lastLevel = null;
 			policy.reset();
+			pendingEntities.clear();
 			return;
 		}
 		if (mc.level != lastLevel) {
 			lastLevel = mc.level;
 			policy.reset();
+			pendingEntities.clear();
 		}
+		flushNewEntities();
 		if (++ticks < SCAN_INTERVAL_TICKS) return;
 		ticks = 0;
 		MacroConfig config = MacroConfig.get();
@@ -84,6 +127,189 @@ public final class AlertMonitor {
 		String title = alerts.size() == 1 ? "Player nearby" : alerts.size() + " players nearby";
 		MacroLogger.get().log("ALERT_NEARBY_PLAYER " + body);
 		raise(title, body.toString(), false);
+	}
+
+	/**
+	 * Main thread, an entity was added to the client level (Fabric ENTITY_LOAD). While the Mining Bot or Route
+	 * Walker runs, an entity that appears within the radius (horizontal, so one dropped from the sky counts)
+	 * is likely server-spawned next to you, e.g. a staff check casting an ability such as Giant's Sword on you.
+	 * Players have their own alert; items, XP orbs, projectiles and effect clouds are routine and skipped.
+	 */
+	public void onEntityLoad(Minecraft mc, Entity entity) {
+		MacroConfig config = MacroConfig.get();
+		if (!config.alertNewEntity || mc == null || mc.player == null || entity == mc.player) return;
+		if (!miningRunning.getAsBoolean() || !macroRunning.getAsBoolean()) return;
+		if (entity instanceof Player || entity instanceof ItemEntity || entity instanceof ExperienceOrb
+				|| entity instanceof Projectile || entity instanceof AreaEffectCloud) return;
+		double dx = entity.getX() - mc.player.getX();
+		double dz = entity.getZ() - mc.player.getZ();
+		double distance = Math.sqrt(dx * dx + dz * dz);
+		if (distance > config.alertNewEntityRadius) return;
+		double dy = entity.getY() - mc.player.getY();
+		// Join / respawn / server switch: everything around you loads at once.
+		if (mc.player.tickCount < SERVER_MOVE_GRACE_TICKS) {
+			MacroLogger.get().log(String.format(Locale.ROOT, "ALERT_NEW_ENTITY_SKIPPED spawn type=%s %.1fm dy=%.1f",
+					EntityType.getKey(entity.getType()), distance, dy));
+			return;
+		}
+		pendingEntities.add(new PendingEntity(entity, entity.position(), distance, dy,
+				clientTicks + NEW_ENTITY_DESCRIBE_DELAY_TICKS));
+	}
+
+	private void flushNewEntities() {
+		if (pendingEntities.isEmpty()) return;
+		List<PendingEntity> due = new ArrayList<>();
+		pendingEntities.removeIf(p -> {
+			if (p.dueTick() > clientTicks) return false;
+			due.add(p);
+			return true;
+		});
+		if (due.isEmpty()) return;
+		long now = MacroClock.nowMs();
+		boolean repeat = lastNewEntityAlert != Long.MIN_VALUE && now - lastNewEntityAlert < NEW_ENTITY_COOLDOWN_MS;
+		StringBuilder body = new StringBuilder();
+		for (PendingEntity p : due) {
+			MacroLogger.get().log(String.format(Locale.ROOT,
+					"ALERT_NEW_ENTITY%s type=%s %s at (%.1f, %.1f, %.1f) %.1fm dy=%.1f",
+					repeat ? " (repeat)" : "", EntityType.getKey(p.entity().getType()), entityDetail(p.entity()),
+					p.spawnPos().x, p.spawnPos().y, p.spawnPos().z, p.distance(), p.dy()));
+			if (!body.isEmpty()) body.append(", ");
+			body.append(entityLabel(p.entity())).append(String.format(Locale.ROOT, " (%.0fm", p.distance()))
+					.append(Math.abs(p.dy()) >= 5 ? String.format(Locale.ROOT, ", %+.0f up)", p.dy()) : ")");
+		}
+		if (repeat) return;
+		lastNewEntityAlert = now;
+		String title = due.size() == 1 ? "Entity spawned nearby" : due.size() + " entities spawned nearby";
+		raise(title, body.toString(), true);
+	}
+
+	/** Short label for the notification: custom name if any, else the entity type. */
+	private static String entityLabel(Entity entity) {
+		if (entity.hasCustomName()) return entity.getCustomName().getString();
+		String type = entity.getType().getDescription().getString();
+		// Giant's Sword is an item_display of a Golden Sword dropped from ~24 blocks up: name the item.
+		if (entity instanceof Display.ItemDisplay display && !display.getItemStack().isEmpty()) {
+			return itemLabel(display.getItemStack()) + " (" + type + ")";
+		}
+		return type;
+	}
+
+	/** Log detail: name, held / displayed item, invisibility. */
+	static String entityDetail(Entity entity) {
+		StringBuilder s = new StringBuilder();
+		if (entity.hasCustomName()) s.append("name=\"").append(entity.getCustomName().getString()).append("\" ");
+		ItemStack item = ItemStack.EMPTY;
+		if (entity instanceof Display.ItemDisplay display) {
+			item = display.getItemStack();
+		} else if (entity instanceof LivingEntity living) {
+			item = living.getMainHandItem();
+			if (item.isEmpty()) item = living.getItemBySlot(EquipmentSlot.HEAD);
+		}
+		if (!item.isEmpty()) s.append("item=").append(itemLabel(item)).append(' ');
+		s.append(entity.isInvisible() ? "invisible" : "visible");
+		return s.toString();
+	}
+
+	/**
+	 * Compares with the last tick a macro ran. The macros stop themselves on a world change or death (often earlier
+	 * in this same tick), so this runs before the running check and only needs the previous tick's state.
+	 */
+	private void checkWorldChange(Minecraft mc) {
+		boolean running = mc != null && mc.player != null && mc.level != null && macroRunning.getAsBoolean();
+		if (watchLevel != null && MacroConfig.get().alertWorldChange) {
+			String change = mc == null || mc.level == null || mc.player == null ? "Disconnected"
+					: mc.level != watchLevel ? "World changed"
+					: mc.player != watchPlayer ? "Respawned"
+					: mc.player.isDeadOrDying() ? "Died" : null;
+			if (change != null) {
+				String where = mc != null && mc.level != null ? mc.level.dimension().identifier().toString() : "-";
+				MacroLogger.get().log("ALERT_WORLD_CHANGE " + change + " level=" + where);
+				raise(change + " during macro", "Macro stopped (" + change.toLowerCase(Locale.ROOT) + ")", true);
+				running = false;
+			}
+		}
+		watchLevel = running ? mc.level : null;
+		watchPlayer = running ? mc.player : null;
+	}
+
+	/**
+	 * Main thread, before a server block update is applied (ClientLevel.setServerVerifiedBlockState). While the
+	 * Mining Bot runs, a block next to you changing into or out of anything other than the target, air or bedrock
+	 * (target -> bedrock is a normal regen / area break) is likely a staff block check.
+	 */
+	public void onServerBlockUpdate(Minecraft mc, ClientLevel level, BlockPos pos, BlockState newState) {
+		if (!MacroConfig.get().alertBlockChange || mc == null || mc.player == null || level != mc.level) return;
+		MiningBotController bot = MiningBotController.get();
+		if (bot == null || !bot.isActive() || !macroRunning.getAsBoolean()) return;
+		double distanceSqr = pos.distToCenterSqr(mc.player.position());
+		if (distanceSqr > BLOCK_CHANGE_RADIUS * BLOCK_CHANGE_RADIUS) return;
+		BlockState oldState = level.getBlockState(pos);
+		if (oldState.getBlock() == newState.getBlock()) return;
+		MiningBotTarget target = bot.getSelectedTarget();
+		if (target.isRoutineBlock(oldState) && target.isRoutineBlock(newState)) return;
+		String detail = String.format(Locale.ROOT, "%s -> %s at %s (%.1fm)",
+				BuiltInRegistries.BLOCK.getKey(oldState.getBlock()), BuiltInRegistries.BLOCK.getKey(newState.getBlock()),
+				pos.toShortString(), Math.sqrt(distanceSqr));
+		if (mc.player.tickCount < SERVER_MOVE_GRACE_TICKS) {
+			MacroLogger.get().log("ALERT_BLOCK_CHANGE_SKIPPED spawn " + detail);
+			return;
+		}
+		long now = MacroClock.nowMs();
+		boolean repeat = lastBlockChangeAlert != Long.MIN_VALUE && now - lastBlockChangeAlert < SERVER_MOVE_COOLDOWN_MS;
+		MacroLogger.get().log("ALERT_BLOCK_CHANGE" + (repeat ? " (repeat) " : " ") + detail);
+		if (repeat) return;
+		lastBlockChangeAlert = now;
+		raise("Block changed next to you", oldState.getBlock().getName().getString() + " -> "
+				+ newState.getBlock().getName().getString(), true);
+	}
+
+	/**
+	 * Main thread, before a server effect packet for the local player is applied. Alerts when a harmful effect
+	 * (blindness, levitation, slowness, mining fatigue ...) is newly given; refreshing one you already have doesn't count.
+	 */
+	public void onServerEffect(Minecraft mc, Holder<MobEffect> effect, int amplifier, int durationTicks, boolean alreadyActive) {
+		if (!MacroConfig.get().alertEffect || mc == null || mc.player == null || !macroRunning.getAsBoolean()) return;
+		if (alreadyActive) return;
+		String detail = String.format(Locale.ROOT, "%s %s level %d for %.1fs", effect.getRegisteredName(),
+				effect.value().getCategory(), amplifier + 1, durationTicks / 20.0);
+		if (effect.value().getCategory() != MobEffectCategory.HARMFUL) {
+			MacroLogger.get().log("ALERT_EFFECT_SKIPPED not harmful " + detail);
+			return;
+		}
+		if (mc.player.tickCount < SERVER_MOVE_GRACE_TICKS) {
+			MacroLogger.get().log("ALERT_EFFECT_SKIPPED spawn " + detail);
+			return;
+		}
+		long now = MacroClock.nowMs();
+		boolean repeat = lastEffectAlert != Long.MIN_VALUE && now - lastEffectAlert < SERVER_MOVE_COOLDOWN_MS;
+		MacroLogger.get().log("ALERT_EFFECT" + (repeat ? " (repeat) " : " ") + detail);
+		if (repeat) return;
+		lastEffectAlert = now;
+		raise("Effect given by server", String.format(Locale.ROOT, "%s %d (%.0fs)",
+				effect.value().getDisplayName().getString(), amplifier + 1, durationTicks / 20.0), false);
+	}
+
+	/**
+	 * Main thread, a damage event for the local player. While the Mining Bot or Route Walker runs nothing should
+	 * hurt you, so any damage alerts (combat is left out: zealots hit you all the time).
+	 */
+	public void onServerDamage(Minecraft mc, DamageSource source) {
+		if (!MacroConfig.get().alertDamage || mc == null || mc.player == null) return;
+		if (!miningRunning.getAsBoolean() || !macroRunning.getAsBoolean()) return;
+		Entity attacker = source.getEntity() != null ? source.getEntity() : source.getDirectEntity();
+		String detail = source.getMsgId() + ", " + (attacker == null ? "no attacker"
+				: attacker.getName().getString() + " (" + EntityType.getKey(attacker.getType()) + ")");
+		if (mc.player.tickCount < SERVER_MOVE_GRACE_TICKS) {
+			MacroLogger.get().log("ALERT_DAMAGE_SKIPPED spawn " + detail);
+			return;
+		}
+		long now = MacroClock.nowMs();
+		boolean repeat = lastDamageAlert != Long.MIN_VALUE && now - lastDamageAlert < SERVER_MOVE_COOLDOWN_MS;
+		MacroLogger.get().log("ALERT_DAMAGE" + (repeat ? " (repeat) " : " ") + detail
+				+ String.format(Locale.ROOT, " health=%.1f", mc.player.getHealth()));
+		if (repeat) return;
+		lastDamageAlert = now;
+		raise("Took damage while mining", detail, false);
 	}
 
 	/** Chat or system message text received from the server. */
@@ -247,11 +473,14 @@ public final class AlertMonitor {
 		raise("Server opened a GUI during macro", title.isBlank() ? "(untitled)" : title, true);
 	}
 
-	/** Desktop notification, screen-edge flash and an on-screen toast. */
+	/** Desktop notification, screen-edge flash and an on-screen toast (only the notification in recording mode). */
 	private static void raise(String title, String body, boolean urgent) {
-		DesktopNotifier.notify(TITLE + " - " + title, body);
+		MacroConfig config = MacroConfig.get();
+		if (!config.stealthMode || config.stealthDesktopAlerts) DesktopNotifier.notify(TITLE + " - " + title, body);
+		// Recording mode: nothing in the game window.
+		if (config.stealthMode) return;
 		AlertFlash.trigger(urgent);
-		if (MacroConfig.get().toastNotifications) MacroToasts.pushAlert(title, body);
+		if (config.toastNotifications) MacroToasts.pushAlert(title, body);
 	}
 
 	public void test() {

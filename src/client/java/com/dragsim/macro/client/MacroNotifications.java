@@ -15,6 +15,10 @@ public final class MacroNotifications {
 
 	public static void send(Minecraft mc, String message) {
 		MacroConfig config = MacroConfig.get();
+		if (config.stealthMode) {
+			MacroLogger.get().log(message);
+			return;
+		}
 		if (config.chatNotifications && mc != null && mc.gui != null) {
 			// client-only system message (never transmitted to the server)
 			mc.gui.getChat().addClientSystemMessage(ChatFormat.format(message));

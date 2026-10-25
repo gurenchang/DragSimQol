@@ -3,11 +3,13 @@ package com.dragsim.macro.client.mixin;
 import com.dragsim.macro.client.AlertMonitor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
 import net.minecraft.network.protocol.game.ClientboundExplodePacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
@@ -19,8 +21,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Feeds server-side staff checks to the alert monitor: teleport / rotate / held-slot / inventory
- * packets (before/after state), velocity applied to the player, and staff check text in titles or
- * container names.
+ * packets (before/after state), velocity applied to the player, effects and damage on the player, and staff
+ * check text in titles or container names.
  * The handlers first run on the network thread and bail out at ensureRunningOnSameThread, so
  * "before" captures inject after it, and TAIL injections only ever run on the main thread.
  */
@@ -87,6 +89,26 @@ abstract class ServerCheckAlertMixin {
 		AlertMonitor monitor = AlertMonitor.get();
 		if (monitor == null || mc.player == null) return;
 		packet.playerKnockback().ifPresent(v -> monitor.onServerKnockback(mc, "explosion", v));
+	}
+
+	// Effect given to us; whether we already had it is read before the packet is applied.
+	@Inject(method = "handleUpdateMobEffect",
+			at = @At(value = "INVOKE", target = ENSURE_SAME_THREAD, shift = At.Shift.AFTER))
+	private void dragsim$beforeMobEffect(ClientboundUpdateMobEffectPacket packet, CallbackInfo ci) {
+		Minecraft mc = Minecraft.getInstance();
+		AlertMonitor monitor = AlertMonitor.get();
+		if (monitor == null || mc.player == null || packet.getEntityId() != mc.player.getId()) return;
+		monitor.onServerEffect(mc, packet.getEffect(), packet.getEffectAmplifier(), packet.getEffectDurationTicks(),
+				mc.player.hasEffect(packet.getEffect()));
+	}
+
+	@Inject(method = "handleDamageEvent",
+			at = @At(value = "INVOKE", target = ENSURE_SAME_THREAD, shift = At.Shift.AFTER))
+	private void dragsim$beforeDamage(ClientboundDamageEventPacket packet, CallbackInfo ci) {
+		Minecraft mc = Minecraft.getInstance();
+		AlertMonitor monitor = AlertMonitor.get();
+		if (monitor == null || mc.player == null || mc.level == null || packet.entityId() != mc.player.getId()) return;
+		monitor.onServerDamage(mc, packet.getSource(mc.level));
 	}
 
 	// Staff check text shown as a title, subtitle or container (terminal) name.

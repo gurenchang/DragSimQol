@@ -46,12 +46,13 @@ public final class Cosmetics {
 		return mc.player != null && state.id == mc.player.getId();
 	}
 
+	/** Recording mode hides the cosmetics. */
 	public static Cape cape() {
-		return Cape.fromName(MacroConfig.get().cosmeticCape);
+		return StealthMode.on() ? Cape.OFF : Cape.fromName(MacroConfig.get().cosmeticCape);
 	}
 
 	public static boolean chinaHat() {
-		return MacroConfig.get().cosmeticChinaHat;
+		return MacroConfig.get().cosmeticChinaHat && !StealthMode.on();
 	}
 
 	/** Called after vanilla fills the player's render state: puts the chosen cape on the local player. */

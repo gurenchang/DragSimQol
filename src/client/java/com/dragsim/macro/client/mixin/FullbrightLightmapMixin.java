@@ -1,7 +1,7 @@
 package com.dragsim.macro.client.mixin;
 
-import com.dragsim.macro.client.MacroConfig;
 import com.dragsim.macro.client.FullbrightLightmapPolicy;
+import com.dragsim.macro.client.StealthMode;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightmapRenderStateExtractor;
 import net.minecraft.client.renderer.state.LightmapRenderState;
@@ -29,7 +29,7 @@ abstract class FullbrightLightmapMixin {
 
 	@Inject(method = "extract", at = @At("HEAD"))
 	private void dragsim$refreshOnToggle(LightmapRenderState state, float partialTick, CallbackInfo ci) {
-		boolean enabled = MacroConfig.get().fullbrightEnabled;
+		boolean enabled = StealthMode.fullbright();
 		// tick() already marks the extractor dirty every tick in 26.2. This
 		// transition check also covers a GUI toggle between ticks and OFF: the
 		// next extraction runs vanilla code and restores every normal field.
@@ -42,7 +42,7 @@ abstract class FullbrightLightmapMixin {
 	@Inject(method = "extract", at = @At("RETURN"))
 	private void dragsim$applyFullbright(LightmapRenderState state, float partialTick, CallbackInfo ci) {
 		Minecraft mc = Minecraft.getInstance();
-		if (!MacroConfig.get().fullbrightEnabled || !state.needsUpdate
+		if (!StealthMode.fullbright() || !state.needsUpdate
 				|| mc.level == null || mc.player == null) return;
 		// Apply to the freshly extracted vanilla state only. The actual
 		// night-vision/darkness fields and player effects remain untouched.

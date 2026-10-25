@@ -135,6 +135,10 @@ public final class MacroConfig {
 	public boolean chatNotifications = true;
 	/** Red pulse around the screen edge when an alert fires. */
 	public boolean alertScreenFlash = true;
+	/** Recording mode: the mod shows nothing on screen (HUD, chat, toasts, flash, cosmetics, fullbright). See StealthMode. */
+	public boolean stealthMode = false;
+	/** In recording mode, still send desktop notifications for alerts (they show outside the game window). */
+	public boolean stealthDesktopAlerts = true;
 
 	// ==== Desktop alerts ====
 	/** While a macro runs: desktop notification when another player comes within alertRadius blocks. */
@@ -156,6 +160,17 @@ public final class MacroConfig {
 	public boolean alertKnockback = true;
 	/** Desktop notification on a staff check message ("QUICK CHECK! ...") and on a server GUI opening mid-macro. */
 	public boolean alertStaffCheck = true;
+	/** While the Mining Bot / Route Walker runs: desktop notification when an entity spawns within alertNewEntityRadius blocks (horizontal). */
+	public boolean alertNewEntity = true;
+	public double alertNewEntityRadius = 16.0;
+	/** While the Mining Bot runs: desktop notification when a block next to you becomes something other than the target, air or bedrock. */
+	public boolean alertBlockChange = true;
+	/** While a macro runs: desktop notification when the server gives you a new harmful effect (blindness, levitation ...). */
+	public boolean alertEffect = true;
+	/** While the Mining Bot / Route Walker runs: desktop notification when you take damage. */
+	public boolean alertDamage = true;
+	/** Desktop notification when a running macro is stopped by a world change, respawn, death or disconnect. */
+	public boolean alertWorldChange = true;
 
 	// ==== Target filters(Phase 7.0) ====
 	public boolean targetNormalZealot = true;

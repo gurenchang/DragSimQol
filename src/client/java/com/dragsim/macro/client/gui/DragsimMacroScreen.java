@@ -461,6 +461,13 @@ public class DragsimMacroScreen extends Screen {
 	}
 
 	private void buildVisuals(List<Setting> s) {
+		s.add(header("Recording mode"));
+		s.add(new ToggleSetting("Recording Mode", "Show nothing from the mod on screen: HUD, highlight, chat, toasts, flash, cosmetics and fullbright. Macros and alerts keep running",
+				() -> MacroConfig.get().stealthMode,
+				v -> updateConfig(c -> c.stealthMode = v)));
+		s.add(new ToggleSetting("Desktop Alerts While Recording", "In recording mode, still send alerts as desktop notifications (outside the game window)",
+				() -> MacroConfig.get().stealthDesktopAlerts,
+				v -> updateConfig(c -> c.stealthDesktopAlerts = v)));
 		s.add(header("Visuals"));
 		String[] accents = java.util.Arrays.stream(GuiTheme.Accent.values()).map(a -> a.label).toArray(String[]::new);
 		s.add(dropdown("Theme Color", "Accent colour of the GUI, HUD, ESP and highlights", accents,
@@ -541,6 +548,25 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Staff Check", "Notify on a staff check message (\"QUICK CHECK!\") or a server GUI opening mid-macro",
 				() -> MacroConfig.get().alertStaffCheck,
 				v -> updateConfig(c -> c.alertStaffCheck = v)));
+		s.add(new ToggleSetting("New Entity Check", "While mining: notify when an entity spawns next to you (e.g. a staff check casting Giant's Sword)",
+				() -> MacroConfig.get().alertNewEntity,
+				v -> { updateConfig(c -> c.alertNewEntity = v); rebuildPages(); }));
+		if (MacroConfig.get().alertNewEntity) s.add(new SliderSetting("Entity Radius", "Horizontal distance that counts as next to you",
+				4, 48, 1, () -> MacroConfig.get().alertNewEntityRadius,
+				v -> updateConfig(c -> c.alertNewEntityRadius = v),
+				v -> String.format(Locale.ROOT, "%.0f blocks", v)));
+		s.add(new ToggleSetting("Block Check", "While the Mining Bot runs: notify when a block next to you turns into something other than the target, air or bedrock",
+				() -> MacroConfig.get().alertBlockChange,
+				v -> updateConfig(c -> c.alertBlockChange = v)));
+		s.add(new ToggleSetting("Effect Check", "While a macro runs: notify when the server gives you a new harmful effect (blindness, levitation ...)",
+				() -> MacroConfig.get().alertEffect,
+				v -> updateConfig(c -> c.alertEffect = v)));
+		s.add(new ToggleSetting("Damage Check", "While mining: notify when you take damage",
+				() -> MacroConfig.get().alertDamage,
+				v -> updateConfig(c -> c.alertDamage = v)));
+		s.add(new ToggleSetting("World Change", "Notify when a running macro stops because of a world change, respawn, death or disconnect",
+				() -> MacroConfig.get().alertWorldChange,
+				v -> updateConfig(c -> c.alertWorldChange = v)));
 		s.add(new ToggleSetting("Screen Flash", "Pulse the screen edge red when an alert fires",
 				() -> MacroConfig.get().alertScreenFlash,
 				v -> updateConfig(c -> c.alertScreenFlash = v)));

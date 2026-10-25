@@ -44,6 +44,16 @@ public enum MiningBotTarget {
 		};
 	}
 
+	/**
+	 * Blocks a mining spot cycles through on its own: the target (any facing), air when mined and bedrock while it
+	 * regenerates (area breaks included). Amethyst buds also regrow through their smaller stages.
+	 */
+	public boolean isRoutineBlock(BlockState state) {
+		if (state.isAir() || state.is(Blocks.BEDROCK) || state.is(block())) return true;
+		return this == LARGE_AMETHYST_BUD && (state.is(Blocks.SMALL_AMETHYST_BUD) || state.is(Blocks.MEDIUM_AMETHYST_BUD)
+				|| state.is(Blocks.AMETHYST_CLUSTER));
+	}
+
 	/** Empty hands are rejected even if a block happens not to require a tool. Prismarine shards are always allowed. */
 	public boolean isSuitableTool(ItemStack stack) {
 		return stack != null && !stack.isEmpty()
