@@ -24,6 +24,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
@@ -235,7 +236,8 @@ public final class AlertMonitor {
 	/**
 	 * Main thread, before a server block update is applied (ClientLevel.setServerVerifiedBlockState). While the
 	 * Mining Bot runs, a block next to you changing into or out of anything other than the target, air or bedrock
-	 * (target -> bedrock is a normal regen / area break) is likely a staff block check.
+	 * (target -> bedrock is a normal regen / area break) is likely a staff block check. Blocks your own mining
+	 * broke (End Stone crossed by held Attack, area breaks) and their regens are skipped (OwnMiningTrace).
 	 */
 	public void onServerBlockUpdate(Minecraft mc, ClientLevel level, BlockPos pos, BlockState newState) {
 		if (!MacroConfig.get().alertBlockChange || mc == null || mc.player == null || level != mc.level) return;
@@ -247,11 +249,20 @@ public final class AlertMonitor {
 		if (oldState.getBlock() == newState.getBlock()) return;
 		MiningBotTarget target = bot.getSelectedTarget();
 		if (target.isRoutineBlock(oldState) && target.isRoutineBlock(newState)) return;
+		boolean oldMined = oldState.isAir() || oldState.is(Blocks.BEDROCK);
+		boolean newMined = newState.isAir() || newState.is(Blocks.BEDROCK);
+		boolean own = bot.miningTrace().explains(pos, oldState.getBlock(), oldMined, newState.getBlock(), newMined,
+				MacroClock.nowMs());
 		String detail = String.format(Locale.ROOT, "%s -> %s at %s (%.1fm)",
 				BuiltInRegistries.BLOCK.getKey(oldState.getBlock()), BuiltInRegistries.BLOCK.getKey(newState.getBlock()),
 				pos.toShortString(), Math.sqrt(distanceSqr));
 		if (mc.player.tickCount < SERVER_MOVE_GRACE_TICKS) {
 			MacroLogger.get().log("ALERT_BLOCK_CHANGE_SKIPPED spawn " + detail);
+			return;
+		}
+		// Your own mining (area breaks included) and the regen afterwards, not a check. See OwnMiningTrace.
+		if (own) {
+			MacroLogger.get().log("ALERT_BLOCK_CHANGE_SKIPPED own " + detail);
 			return;
 		}
 		long now = MacroClock.nowMs();

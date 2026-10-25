@@ -118,6 +118,13 @@ public final class MacroConfig {
 	public boolean specialEspHighlight = true;
 	/** Client-only lightmap boost; default OFF and independent from macro state. */
 	public boolean fullbrightEnabled = false;
+	/** Hide the small block-texture particles that fly off while you hit a block. Client-only; also in recording mode. */
+	public boolean hideBlockHitParticles = false;
+	/** Hide the burst of block-texture particles when a block breaks. Client-only; also in recording mode. */
+	public boolean hideBlockBreakParticles = false;
+
+	/** Manual Mining Bot / Route Walker stop: the view turn slows to a halt instead of freezing. See StopInertia. */
+	public boolean stopInertia = true;
 
 	/** GUI / HUD / ESP accent colour: a {@code GuiTheme.Accent} name (PURPLE, CYAN, CRIMSON, EMERALD, GOLD). */
 	public String themeAccent = "PURPLE";

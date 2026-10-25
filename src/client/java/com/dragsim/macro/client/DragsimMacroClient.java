@@ -272,6 +272,8 @@ public class DragsimMacroClient implements ClientModInitializer {
 			// Target探索ではなくAimSolutionのみ入力
 			rotationController.tick(mc, aimSolver.getSolution());
 		});
+		// 手動停止後の慣性旋回。どの回転writerよりも後に走らせ、他者が視点を動かしたら即終了する。
+		ClientTickEvents.END_CLIENT_TICK.register(StopInertia::tick);
 
 		// Phase 4.1e: render-rate camera tracking。
 		// EndExtraction = camera抽出直後(本frameのcamera確定済み)/世界描画前。

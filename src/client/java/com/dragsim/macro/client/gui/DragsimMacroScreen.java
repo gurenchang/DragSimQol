@@ -526,6 +526,16 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Fullbright", "Brighten dark areas for this client",
 				() -> MacroConfig.get().fullbrightEnabled,
 				v -> updateConfig(c -> c.fullbrightEnabled = v)));
+		s.add(new ToggleSetting("Hide Hit Particles", "Hide the bits of block that fly off while you hit a block",
+				() -> MacroConfig.get().hideBlockHitParticles,
+				v -> updateConfig(c -> c.hideBlockHitParticles = v)));
+		s.add(new ToggleSetting("Hide Break Particles", "Hide the burst of block bits when a block breaks",
+				() -> MacroConfig.get().hideBlockBreakParticles,
+				v -> updateConfig(c -> c.hideBlockBreakParticles = v)));
+		s.add(header("Macros"));
+		s.add(new ToggleSetting("Stop Inertia", "On a manual Mining Bot or Route Walker stop, let the view turn slow to a halt instead of freezing",
+				() -> MacroConfig.get().stopInertia,
+				v -> updateConfig(c -> c.stopInertia = v)));
 		s.add(header("Desktop alerts"));
 		s.add(new ToggleSetting("Nearby Player", "While a macro runs: notify when a player comes close",
 				() -> MacroConfig.get().alertNearbyPlayer,

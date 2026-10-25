@@ -45,6 +45,7 @@ public final class LifecycleSafety {
 			AttackGate attackGate, CombatController combatController, ApproachPlanner approachPlanner,
 			AimSolver aimSolver, Minecraft mc, String reason) {
 		MacroLogger.get().log("LIFECYCLE " + reason);
+		StopInertia.reset();
 
 		// input cleanup(ownership付きのみ)
 		combatController.stopAndReleaseAll(mc);

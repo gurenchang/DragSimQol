@@ -426,6 +426,8 @@ public final class RouteWalkerController {
 		// 停止・再開時に古い旋回を再生しないようsnapshotを捨てる。
 		MiningCameraSmoothing.invalidate(MiningCameraSmoothing.Owner.ROUTE_WALKER);
 		AutomationCoordinator.release(AutomationCoordinator.Owner.ROUTE_WALKER);
+		// 手動停止は旋回を慣性で止める(StopInertia)。
+		if ("MANUAL_STOP".equals(stopReason)) StopInertia.onManualStop(mc);
 		// 所有入力だけを解除する。フォーカス復帰後の物理押下は壊さない。
 		boolean focused = mc != null && mc.isWindowActive();
 		session.update(sessionInput, RouteWalkerInputSession.Want.none(), stopReason, focused);

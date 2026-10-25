@@ -104,6 +104,8 @@ public final class MiningBotController {
 	private int scanTicks;
 	private int candidateCount;
 	private String stopReason = "-";
+	/** Blocks this client broke, for the block-change alert. Kept across sessions: regens come later. */
+	private final OwnMiningTrace miningTrace = new OwnMiningTrace();
 	private LocalPlayer startPlayer;
 	private Object startLevel;
 	private Vec3 startPosition;
@@ -351,6 +353,7 @@ public final class MiningBotController {
 		}
 		MiningCameraSmoothing.invalidate(MiningCameraSmoothing.Owner.MINING_BOT);
 		AutomationCoordinator.release(AutomationCoordinator.Owner.MINING_BOT);
+		if ("MANUAL_STOP".equals(stopReason)) StopInertia.onManualStop(mc);
 		MacroLogger.get().log("MINING_BOT_STOP reason=" + stopReason);
 		if (!"SILENT".equals(reason)) {
 			notify(mc, "[DragSim] Mining Bot OFF — " + displayReason(stopReason));
@@ -570,6 +573,11 @@ public final class MiningBotController {
 		return allowed;
 	}
 
+	/** Own breaks and their regens, which the block-change alert skips. */
+	public OwnMiningTrace miningTrace() {
+		return miningTrace;
+	}
+
 	/**
 	 * Attack holding is intentionally independent of automatic target acquisition.
 	 */
@@ -709,6 +717,7 @@ public final class MiningBotController {
 	public void onVanillaStartDestroyBlock(Minecraft mc, BlockPos pos, BlockState preState,
 			boolean wasDestroying, BlockPos previousPos) {
 		if (!isActive() || !validateOrStop(mc) || pos == null) return;
+		miningTrace.hit(pos, MacroClock.nowMs());
 		if (wasDestroying && previousPos != null && !previousPos.equals(pos)) {
 			attempts.markInterrupted(previousPos);
 			noteLeftBlock(previousPos, "next_block");

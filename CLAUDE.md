@@ -50,11 +50,13 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `ApproachPlanner` (+ `LocalPathPlanner`/`Path*` A*), `AttackGate`, Frozen Scythe hold-use (`ScytheHold*`).
   - Shared: `AutomationCoordinator` (only one automation owns input at a time — `tryAcquire`/`release`),
     `LifecycleSafety` (resets on disconnect/join), `ServerTickClock` (server TPS / tick clock from packets),
-    `MacroClock` (monotonic ms clock for client-side timers).
+    `MacroClock` (monotonic ms clock for client-side timers), `StopInertia` (view coasts to a halt on a manual
+    Mining Bot / Route Walker stop).
   - Visuals: `TargetBlockHighlight` (in-world, `LevelRenderEvents.BEFORE_GIZMOS`), `CornerEspOverlay`, `EspOverlay`,
-    `DebugHud`, fullbright (`FullbrightLightmapPolicy` + mixin).
+    `DebugHud`, fullbright (`FullbrightLightmapPolicy` + mixin), hit/break particle hiding (`BlockParticlesMixin`).
   - Alerts/feedback: `AlertMonitor` (players, mentions, staff check text/GUI, server TP/rotate/slot/item/knockback,
-    entities spawned nearby, block swaps, harmful effects, damage, world change), `PlayerAlertPolicy`,
+    entities spawned nearby, block swaps, harmful effects, damage, world change; `OwnMiningTrace` keeps your own
+    breaks, area breaks and their regens out of the block-swap alert), `PlayerAlertPolicy`,
     `DesktopNotifier`, `AlertFlash` (red screen-edge pulse), `MacroToasts` → `ToastOverlay`, `ChatFormat`
     (chat colours), `MacroNotifications`. `/spawnlog` (`SpawnLogCommand`) prints nearby entity spawns.
   - Recording mode: `StealthMode` (`MacroConfig.stealthMode`) — the mod draws nothing on screen.
