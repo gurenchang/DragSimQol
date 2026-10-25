@@ -37,7 +37,10 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
 - `src/client/java/com/dragsim/macro/client/`
   - `DragsimMacroClient` — wiring: keybinds, commands, tick/render event registration, HUD elements.
   - Mining Bot (`/miningbot`, alias `/obsidian`): `MiningBotController` (state machine), `MiningBotRotation`
-    (human-like aim), `MiningBotSettings`, `MiningBotInputSession`, `MiningBotTarget`,
+    (planned minimum-jerk turns), `MiningBotSettings`, `MiningBotInputSession`, `MiningBotTarget`,
+    human-aim layers: `MiningBotAimDrift` (in-block drift), `MiningBotHandTremor` (shake added on output only),
+    `MiningBotMouseSteps` (view changes rounded to whole mouse counts at the player's sensitivity),
+    `MiningBotLandingPoint` (near-side random landing point), `MiningBotTargetOrder` (sweep-direction habits),
     `MiningBotAdaptiveAim` / `MiningBotFixedAim` / `MiningBotTickAim` (break-timing lead),
     `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps),
     `MiningBotHud` + `MiningBotStats` (HUD panel), `BreakTickMeter` (per-block break time).
@@ -50,8 +53,11 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `MacroClock` (monotonic ms clock for client-side timers).
   - Visuals: `TargetBlockHighlight` (in-world, `LevelRenderEvents.BEFORE_GIZMOS`), `CornerEspOverlay`, `EspOverlay`,
     `DebugHud`, fullbright (`FullbrightLightmapPolicy` + mixin).
-  - Alerts/feedback: `AlertMonitor`, `PlayerAlertPolicy`, `DesktopNotifier`, `AlertFlash` (red screen-edge pulse),
-    `MacroToasts` → `ToastOverlay`, `ChatFormat` (chat colours), `MacroNotifications`.
+  - Alerts/feedback: `AlertMonitor` (players, mentions, staff check text/GUI, server TP/rotate/slot/item/knockback,
+    entities spawned nearby, block swaps, harmful effects, damage, world change), `PlayerAlertPolicy`,
+    `DesktopNotifier`, `AlertFlash` (red screen-edge pulse), `MacroToasts` → `ToastOverlay`, `ChatFormat`
+    (chat colours), `MacroNotifications`. `/spawnlog` (`SpawnLogCommand`) prints nearby entity spawns.
+  - Recording mode: `StealthMode` (`MacroConfig.stealthMode`) — the mod draws nothing on screen.
   - Config (JSON in `config/`): `MacroConfig` → `dragsimmacro.json`; `MiningBotSettings` → `dragsimmacro-miningbot.json`
     (migrates old `dragsimmacro-obsidian.json`); `RouteWalkerSettings` → `dragsimmacro-mining-settings.json`;
     routes → `dragsimmacro-mining.json`. Debug log: `MacroLogger` → `logs/zealotmacro.log`.
@@ -61,6 +67,10 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
 - `docs/*.ja.md` — design notes and specs (Japanese). `tools/gen_gui_icons.py` regenerates GUI icon PNGs.
 
 ## GUI conventions
+
+- Recording mode must hide anything new the mod shows: register HUD elements as
+  `HudElementRegistry.addLast(id, StealthMode.hide(element))`, guard world rendering with `StealthMode.on()`,
+  and send status text through `MacroNotifications.send` (it already skips chat/toasts in recording mode).
 
 - Colours and sizes only from `GuiTheme`. Rounded shapes/icons/buttons via `GuiPaint` (draws in physical pixels).
 - Accent tokens (`ACCENT*`, `SIDEBAR_SELECTED`, `ESP_*`) change at runtime with the Theme Color setting

@@ -21,6 +21,9 @@ public final class MiningBotSettings {
 	public static final double MAX_DRIFT_AMOUNT = 0.03;
 	public static final double DEFAULT_DRIFT_AMOUNT = 0.018;
 	public static final boolean DEFAULT_AIM_DRIFT = true;
+	public static final boolean DEFAULT_HAND_TREMOR = true;
+	/** Degrees, standard deviation of the hand tremor while holding still. */
+	public static final double DEFAULT_TREMOR_AMOUNT = 0.12;
 	public static final long MIN_LEAD_MS = 0, MAX_LEAD_MS = 500, DEFAULT_MAX_LEAD_MS = 200;
 	public static final long MIN_FIXED_BREAK_MS = 50, MAX_FIXED_BREAK_MS = 60000,
 			DEFAULT_FIXED_BREAK_MS = 1000;
@@ -33,6 +36,14 @@ public final class MiningBotSettings {
 	private double turnSpeedDps = DEFAULT_TURN_SPEED_DPS;
 	private boolean aimDrift = DEFAULT_AIM_DRIFT;
 	private double driftAmount = DEFAULT_DRIFT_AMOUNT;
+	private boolean handTremor = DEFAULT_HAND_TREMOR;
+	private double tremorAmount = DEFAULT_TREMOR_AMOUNT;
+	/** Round view changes to whole mouse counts (MiningBotMouseSteps). */
+	private boolean mouseSteps = true;
+	/** Land on the near side of the block at a random point (MiningBotLandingPoint). */
+	private boolean naturalLanding = true;
+	/** Sweep-direction habits when picking the next block (MiningBotTargetOrder). */
+	private boolean targetHabits = true;
 	private MiningBotTarget target = MiningBotTarget.OBSIDIAN;
 	private AimLeadMode aimLeadMode = AimLeadMode.OFF;
 	private long maxLeadMs = DEFAULT_MAX_LEAD_MS;
@@ -64,6 +75,11 @@ public final class MiningBotSettings {
 	public MiningBotTarget getTarget() { return target; }
 	public boolean isAimDriftEnabled() { return aimDrift; }
 	public double getDriftAmount() { return driftAmount; }
+	public boolean isHandTremorEnabled() { return handTremor; }
+	public double getTremorAmount() { return tremorAmount; }
+	public boolean isMouseStepsEnabled() { return mouseSteps; }
+	public boolean isNaturalLandingEnabled() { return naturalLanding; }
+	public boolean isTargetHabitsEnabled() { return targetHabits; }
 	public AimLeadMode getAimLeadMode() { return aimLeadMode; }
 	public boolean isAimLeadEnabled() { return aimLeadMode != AimLeadMode.OFF; }
 	public boolean isAdaptiveAimLeadEnabled() { return aimLeadMode == AimLeadMode.ADAPTIVE; }
@@ -130,6 +146,46 @@ public final class MiningBotSettings {
 		return false;
 	}
 
+	public boolean setHandTremorEnabled(boolean value) {
+		boolean previous = handTremor;
+		handTremor = value;
+		if (save()) return true;
+		handTremor = previous;
+		return false;
+	}
+
+	public boolean setTremorAmount(double value) {
+		double previous = tremorAmount;
+		tremorAmount = clampTremor(value);
+		if (save()) return true;
+		tremorAmount = previous;
+		return false;
+	}
+
+	public boolean setMouseStepsEnabled(boolean value) {
+		boolean previous = mouseSteps;
+		mouseSteps = value;
+		if (save()) return true;
+		mouseSteps = previous;
+		return false;
+	}
+
+	public boolean setNaturalLandingEnabled(boolean value) {
+		boolean previous = naturalLanding;
+		naturalLanding = value;
+		if (save()) return true;
+		naturalLanding = previous;
+		return false;
+	}
+
+	public boolean setTargetHabitsEnabled(boolean value) {
+		boolean previous = targetHabits;
+		targetHabits = value;
+		if (save()) return true;
+		targetHabits = previous;
+		return false;
+	}
+
 	/** Changes only the target field and rolls it back if persistence fails. */
 	public boolean setTarget(MiningBotTarget value) {
 		if (value == null) return false;
@@ -149,6 +205,10 @@ public final class MiningBotSettings {
 	static double clampDrift(double value) {
 		if (!Double.isFinite(value)) return DEFAULT_DRIFT_AMOUNT;
 		return Math.max(MIN_DRIFT_AMOUNT, Math.min(MAX_DRIFT_AMOUNT, value));
+	}
+	static double clampTremor(double value) {
+		if (!Double.isFinite(value)) return DEFAULT_TREMOR_AMOUNT;
+		return Math.max(0.0, Math.min(MiningBotHandTremor.MAX_AMOUNT_DEG, value));
 	}
 	static long clampLead(long value) { return Math.max(MIN_LEAD_MS, Math.min(MAX_LEAD_MS, value)); }
 	static long clampFixedBreak(long value) {
@@ -199,6 +259,12 @@ public final class MiningBotSettings {
 			boolean parsedDrift = !json.has("aimDrift") || json.get("aimDrift").getAsBoolean();
 			double parsedDriftAmount = clampDrift(json.has("driftAmount")
 					? json.get("driftAmount").getAsDouble() : DEFAULT_DRIFT_AMOUNT);
+			boolean parsedTremor = json.has("handTremor") ? json.get("handTremor").getAsBoolean() : DEFAULT_HAND_TREMOR;
+			double parsedTremorAmount = clampTremor(json.has("tremorAmount")
+					? json.get("tremorAmount").getAsDouble() : DEFAULT_TREMOR_AMOUNT);
+			boolean parsedMouseSteps = !json.has("mouseSteps") || json.get("mouseSteps").getAsBoolean();
+			boolean parsedLanding = !json.has("naturalLanding") || json.get("naturalLanding").getAsBoolean();
+			boolean parsedHabits = !json.has("targetHabits") || json.get("targetHabits").getAsBoolean();
 			MiningBotTarget parsedTarget = MiningBotTarget.OBSIDIAN;
 			AimLeadMode parsedAimLeadMode = json.has("aimLeadMode")
 					? AimLeadMode.valueOf(json.get("aimLeadMode").getAsString().trim().toUpperCase(Locale.ROOT))
@@ -235,6 +301,11 @@ public final class MiningBotSettings {
 			turnSpeedDps = parsedSpeed;
 			aimDrift = parsedDrift;
 			driftAmount = parsedDriftAmount;
+			handTremor = parsedTremor;
+			tremorAmount = parsedTremorAmount;
+			mouseSteps = parsedMouseSteps;
+			naturalLanding = parsedLanding;
+			targetHabits = parsedHabits;
 			target = parsedTarget;
 			return true;
 		} catch (Exception e) {
@@ -253,6 +324,11 @@ public final class MiningBotSettings {
 			json.addProperty("targetBlock", target.configValue());
 			json.addProperty("aimDrift", aimDrift);
 			json.addProperty("driftAmount", driftAmount);
+			json.addProperty("handTremor", handTremor);
+			json.addProperty("tremorAmount", tremorAmount);
+			json.addProperty("mouseSteps", mouseSteps);
+			json.addProperty("naturalLanding", naturalLanding);
+			json.addProperty("targetHabits", targetHabits);
 			json.addProperty("aimLeadMode", aimLeadMode.name());
 			// Kept for readers of the previous schema. New readers use aimLeadMode.
 			json.addProperty("adaptiveAimLead", isAdaptiveAimLeadEnabled());

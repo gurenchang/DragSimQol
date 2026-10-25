@@ -302,6 +302,21 @@ public class DragsimMacroScreen extends Screen {
 				0, 0.03, 0.001, settings::getDriftAmount,
 				v -> saveResult(settings.setDriftAmount(v), "drift amount"),
 				v -> String.format(Locale.ROOT, "%.3f blocks", v)));
+		s.add(header("Human aim"));
+		s.add(new ToggleSetting("Hand Tremor", "Small irregular shake on the aim, a bit more while turning",
+				settings::isHandTremorEnabled, v -> {
+					saveResult(settings.setHandTremorEnabled(v), "Hand Tremor"); rebuildPages();
+				}));
+		if (settings.isHandTremorEnabled()) s.add(new SliderSetting("Tremor Amount", "Typical shake while holding still",
+				0, MiningBotHandTremor.MAX_AMOUNT_DEG, 0.01, settings::getTremorAmount,
+				v -> saveResult(settings.setTremorAmount(v), "tremor amount"),
+				v -> String.format(Locale.ROOT, "%.2f°", v)));
+		s.add(new ToggleSetting("Mouse Steps", "Turn only in whole mouse counts at your sensitivity, like a real mouse",
+				settings::isMouseStepsEnabled, v -> saveResult(settings.setMouseStepsEnabled(v), "Mouse Steps")));
+		s.add(new ToggleSetting("Natural Landing", "Land on the near side of each block at a random spot, not the same point",
+				settings::isNaturalLandingEnabled, v -> saveResult(settings.setNaturalLandingEnabled(v), "Natural Landing")));
+		s.add(new ToggleSetting("Sweep Habits", "Prefer blocks that continue the current sweep; sometimes take the second-nearest",
+				settings::isTargetHabitsEnabled, v -> saveResult(settings.setTargetHabitsEnabled(v), "Sweep Habits")));
 		s.add(header("Drill"));
 		s.add(new ToggleSetting("Auto Ability", "Right-click ability on start, then every 240s; waits out the cooldown message",
 				settings::isAutoAbilityEnabled,

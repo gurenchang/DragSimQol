@@ -51,6 +51,9 @@ public final class MiningBotController {
 	private final MiningBotRotation rotation = new MiningBotRotation();
 	private final MiningBotInputSession input = new MiningBotInputSession();
 	private final MiningBotAimDrift aimDrift = new MiningBotAimDrift();
+	private final MiningBotHandTremor tremor = new MiningBotHandTremor();
+	private final MiningBotTargetOrder targetOrder = new MiningBotTargetOrder();
+	private final Random landingRandom = new Random();
 	private final Set<BlockPos> waiting = new HashSet<>();
 	private final MiningBotAdaptiveAim adaptiveAim = new MiningBotAdaptiveAim();
 	private final MiningBotTimeoutPolicy<BlockPos> timeoutPolicy = new MiningBotTimeoutPolicy<>(64);
@@ -272,6 +275,8 @@ public final class MiningBotController {
 		// candidateFor evaluates angular distance against this controller state.
 		// Seed it from the real player rotation before the one and only initial scan.
 		rotation.sync(mc.player.getYRot(), mc.player.getXRot());
+		tremor.reset();
+		targetOrder.reset();
 		List<Candidate> initialCandidates = scan(mc);
 		boolean started = activateWithCandidate(initialCandidates,
 				() -> AutomationCoordinator.tryAcquire(AutomationCoordinator.Owner.MINING_BOT),
@@ -285,9 +290,7 @@ public final class MiningBotController {
 					waiting.clear();
 					adaptiveAim.clear();
 					timeoutPolicy.clear();
-					aimDrift.reset();
-					driftEngaged = false;
-					target = initial;
+					target = takeTarget(mc, initial);
 					candidateCount = initialCandidates.size();
 					scanTicks = 0;
 					stopReason = "-";
@@ -391,7 +394,7 @@ public final class MiningBotController {
 							+ " lead=" + effectiveLeadMs() + " afterMs=" + (now - current.startedAt())
 							+ (tickMode ? String.format(Locale.ROOT, " afterTicks=%.2f hold=%d+%d tps=%.1f",
 									elapsed, settings.getBreakTicks(), settings.getTickMargin(), tickTimingTps()) : ""));
-						target = alternatives.getFirst(); aimDrift.reset(); driftEngaged = false; state = State.AIMING;
+						target = takeTarget(mc, alternatives.getFirst()); state = State.AIMING;
 					}
 				}
 			}
@@ -418,9 +421,7 @@ public final class MiningBotController {
 				input.update(keyInput, attackWanted(), mc.isWindowActive());
 				return false;
 			}
-			target = candidates.getFirst();
-			aimDrift.reset();
-			driftEngaged = false;
+			target = takeTarget(mc, candidates.getFirst());
 			state = scannedState;
 		}
 
@@ -635,7 +636,37 @@ public final class MiningBotController {
 				.thenComparingInt(c -> c.pos().getX())
 				.thenComparingInt(c -> c.pos().getY())
 				.thenComparingInt(c -> c.pos().getZ()));
-		return result;
+		if (!settings.isTargetHabitsEnabled()) return result;
+		return targetOrder.order(result, c -> MiningRotationController.angleError(c.yaw(), rotation.yaw()),
+				c -> c.pitch() - rotation.pitch());
+	}
+
+	/** Takes a new target: a human landing point on it, and the movement noted for the sweep habit. */
+	private Candidate takeTarget(Minecraft mc, Candidate candidate) {
+		Candidate taken = settings.isNaturalLandingEnabled() ? landOn(mc, candidate) : candidate;
+		targetOrder.noteMove(MiningRotationController.angleError(taken.yaw(), rotation.yaw()),
+				taken.pitch() - rotation.pitch());
+		aimDrift.reset();
+		driftEngaged = false;
+		return taken;
+	}
+
+	/** Replaces the candidate's fixed point with a near-side landing point, if that one is reachable too. */
+	private Candidate landOn(Minecraft mc, Candidate candidate) {
+		Vec3 eye = mc.player.getEyePosition();
+		BlockHitResult hit = mc.level.clip(new ClipContext(eye, candidate.aim(),
+				ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, mc.player));
+		if (hit.getType() != HitResult.Type.BLOCK || !hit.getBlockPos().equals(candidate.pos())) return candidate;
+		BlockState state = mc.level.getBlockState(candidate.pos());
+		AABB bounds = boundsContaining(state, mc, candidate.pos(),
+				hit.getLocation().subtract(new Vec3(hit.getDirection().getStepX(), hit.getDirection().getStepY(),
+						hit.getDirection().getStepZ()).scale(1.0e-3)));
+		if (bounds == null) return candidate;
+		Vec3 view = Vec3.directionFromRotation((float) rotation.pitch(), (float) rotation.yaw());
+		Vec3 point = MiningBotLandingPoint.pick(landingRandom, eye, view, hit.getLocation(), hit.getDirection(), bounds);
+		Candidate landed = refreshTarget(mc, new Candidate(candidate.pos(), point, point, hit.getDirection(), bounds,
+				candidate.yaw(), candidate.pitch(), candidate.angularDistance(), candidate.distanceSqr()), point);
+		return landed != null ? landed : candidate;
 	}
 
 	private Candidate candidateFor(Minecraft mc, BlockPos pos) {
@@ -923,13 +954,33 @@ public final class MiningBotController {
 				&& distanceSqr <= reach * reach + 1.0e-7;
 	}
 
+	/**
+	 * Applies the planned angles plus hand tremor. The tremor only goes to the player (and so to the
+	 * server and the crosshair); the planner keeps its own clean angles.
+	 */
 	private void applyRotation(Minecraft mc, MiningBotRotation.Angles angles) {
-		mc.player.yRotO = (float) rotation.previousYaw();
-		mc.player.xRotO = (float) rotation.previousPitch();
-		mc.player.setYRot((float) angles.yaw());
-		mc.player.setXRot((float) angles.pitch());
-		MiningCameraSmoothing.publishMiningBot(rotation.previousYaw(), rotation.yaw(),
-				rotation.previousPitch(), rotation.pitch());
+		tremor.update(settings.isHandTremorEnabled(), settings.getTremorAmount(),
+				Math.hypot(angles.yaw() - rotation.previousYaw(), angles.pitch() - rotation.previousPitch()));
+		double wantedYaw = angles.yaw() + tremor.yaw();
+		double wantedPitch = angles.pitch() + tremor.pitch();
+		// Start from the real current view, so mouse-count rounding never builds up.
+		float previousYaw = mc.player.getYRot();
+		float previousPitch = mc.player.getXRot();
+		float yaw;
+		float pitch;
+		if (settings.isMouseStepsEnabled()) {
+			double sensitivity = mc.options.sensitivity().get();
+			yaw = MiningBotMouseSteps.turnYaw(previousYaw, wantedYaw, sensitivity);
+			pitch = MiningBotMouseSteps.turnPitch(previousPitch, wantedPitch, sensitivity);
+		} else {
+			yaw = (float) wantedYaw;
+			pitch = (float) MiningBotRotation.clampPitch(wantedPitch);
+		}
+		mc.player.yRotO = previousYaw;
+		mc.player.xRotO = previousPitch;
+		mc.player.setYRot(yaw);
+		mc.player.setXRot(pitch);
+		MiningCameraSmoothing.publishMiningBot(previousYaw, yaw, previousPitch, pitch);
 	}
 
 	private String validateSession(Minecraft mc) {
