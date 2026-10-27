@@ -317,6 +317,8 @@ public class DragsimMacroScreen extends Screen {
 				settings::isNaturalLandingEnabled, v -> saveResult(settings.setNaturalLandingEnabled(v), "Natural Landing")));
 		s.add(new ToggleSetting("Sweep Habits", "Prefer blocks that continue the current sweep; sometimes take the second-nearest",
 				settings::isTargetHabitsEnabled, v -> saveResult(settings.setTargetHabitsEnabled(v), "Sweep Habits")));
+		s.add(new ToggleSetting("Area Break Avoid", "Skip blocks next to one still breaking; the area break may take them anyway",
+				settings::isAreaBreakAvoidEnabled, v -> saveResult(settings.setAreaBreakAvoidEnabled(v), "Area Break Avoid")));
 		s.add(header("Drill"));
 		s.add(new ToggleSetting("Auto Ability", "Right-click ability on start, then every 240s; waits out the cooldown message",
 				settings::isAutoAbilityEnabled,

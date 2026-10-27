@@ -103,6 +103,12 @@ public final class MiningBotAttemptLedger {
 		return result;
 	}
 	public boolean contains(BlockPos pos) { return attempts.containsKey(pos); }
+	/** Blocks left early that the server is still breaking. */
+	public List<BlockPos> earlyPositions() {
+		List<BlockPos> result = new ArrayList<>();
+		for (Attempt attempt : attempts.values()) if (attempt.kind() == Kind.EARLY) result.add(attempt.pos());
+		return result;
+	}
 	private void trim() {
 		while (attempts.size() >= maxEntries) {
 			Map.Entry<BlockPos, Attempt> first = attempts.entrySet().iterator().next();

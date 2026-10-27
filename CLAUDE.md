@@ -46,6 +46,7 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     human-aim layers: `MiningBotAimDrift` (in-block drift), `MiningBotHandTremor` (shake added on output only),
     `MiningBotMouseSteps` (view changes rounded to whole mouse counts at the player's sensitivity),
     `MiningBotLandingPoint` (near-side random landing point), `MiningBotTargetOrder` (sweep-direction habits),
+    `MiningBotAreaAvoid` (skip neighbours of a block still breaking — the server's area break may take them),
     `MiningBotAdaptiveAim` / `MiningBotFixedAim` / `MiningBotTickAim` (break-timing lead),
     `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps),
     `MiningBotHud` + `MiningBotStats` (HUD panel), `BreakTickMeter` (per-block break time).

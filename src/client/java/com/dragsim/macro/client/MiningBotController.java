@@ -385,8 +385,8 @@ public final class MiningBotController {
 			if (shouldLeadAttempt(settings, adaptiveAim, current, now, elapsed,
 					tickMode && ServerTickClock.get().stalled(now))
 					&& settings.getTarget().matches(mc.level.getBlockState(current.pos()))) {
-				List<Candidate> alternatives = scan(mc).stream()
-						.filter(candidate -> !candidate.pos().equals(current.pos())).toList();
+				List<Candidate> alternatives = avoidAreaBreaks(scan(mc).stream()
+						.filter(candidate -> !candidate.pos().equals(current.pos())).toList(), current.pos());
 				if (!alternatives.isEmpty()) {
 					long earlyTimeout = Math.max(1000, current.deadline() - now);
 					if (attempts.markEarly(current.pos(), now, earlyTimeout)) {
@@ -424,7 +424,7 @@ public final class MiningBotController {
 				input.update(keyInput, attackWanted(), mc.isWindowActive());
 				return false;
 			}
-			target = takeTarget(mc, candidates.getFirst());
+			target = takeTarget(mc, avoidAreaBreaks(candidates, null).getFirst());
 			state = scannedState;
 		}
 
@@ -647,6 +647,23 @@ public final class MiningBotController {
 		if (!settings.isTargetHabitsEnabled()) return result;
 		return targetOrder.order(result, c -> MiningRotationController.angleError(c.yaw(), rotation.yaw()),
 				c -> c.pitch() - rotation.pitch());
+	}
+
+	/** Candidates reordered by MiningBotAreaAvoid; {@code alsoBreaking} is a block about to be left early (nullable). */
+	private List<Candidate> avoidAreaBreaks(List<Candidate> ordered, BlockPos alsoBreaking) {
+		if (!settings.isAreaBreakAvoidEnabled() || ordered.isEmpty()) return ordered;
+		List<BlockPos> breaking = attempts.earlyPositions();
+		if (alsoBreaking != null) breaking.add(alsoBreaking);
+		if (breaking.isEmpty()) return ordered;
+		List<Candidate> result = MiningBotAreaAvoid.order(ordered, c -> breaking.stream().anyMatch(b ->
+				MiningBotAreaAvoid.adjacent(c.pos().getX() - b.getX(), c.pos().getY() - b.getY(), c.pos().getZ() - b.getZ())),
+				Candidate::angularDistance);
+		if (result != ordered) {
+			MacroLogger.get().detail(String.format(Locale.ROOT, "MINING_BOT_AREA_AVOID skipped=%s took=%s extraDeg=%.1f",
+					ordered.getFirst().pos().toShortString(), result.getFirst().pos().toShortString(),
+					result.getFirst().angularDistance() - ordered.getFirst().angularDistance()));
+		}
+		return result;
 	}
 
 	/** Takes a new target: a human landing point on it, and the movement noted for the sweep habit. */

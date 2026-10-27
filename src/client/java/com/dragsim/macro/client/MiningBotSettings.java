@@ -44,6 +44,8 @@ public final class MiningBotSettings {
 	private boolean naturalLanding = true;
 	/** Sweep-direction habits when picking the next block (MiningBotTargetOrder). */
 	private boolean targetHabits = true;
+	/** Skip neighbours of a block that is still breaking; the area break may take them (MiningBotAreaAvoid). */
+	private boolean areaBreakAvoid = true;
 	private MiningBotTarget target = MiningBotTarget.OBSIDIAN;
 	private AimLeadMode aimLeadMode = AimLeadMode.OFF;
 	private long maxLeadMs = DEFAULT_MAX_LEAD_MS;
@@ -80,6 +82,7 @@ public final class MiningBotSettings {
 	public boolean isMouseStepsEnabled() { return mouseSteps; }
 	public boolean isNaturalLandingEnabled() { return naturalLanding; }
 	public boolean isTargetHabitsEnabled() { return targetHabits; }
+	public boolean isAreaBreakAvoidEnabled() { return areaBreakAvoid; }
 	public AimLeadMode getAimLeadMode() { return aimLeadMode; }
 	public boolean isAimLeadEnabled() { return aimLeadMode != AimLeadMode.OFF; }
 	public boolean isAdaptiveAimLeadEnabled() { return aimLeadMode == AimLeadMode.ADAPTIVE; }
@@ -186,6 +189,14 @@ public final class MiningBotSettings {
 		return false;
 	}
 
+	public boolean setAreaBreakAvoidEnabled(boolean value) {
+		boolean previous = areaBreakAvoid;
+		areaBreakAvoid = value;
+		if (save()) return true;
+		areaBreakAvoid = previous;
+		return false;
+	}
+
 	/** Changes only the target field and rolls it back if persistence fails. */
 	public boolean setTarget(MiningBotTarget value) {
 		if (value == null) return false;
@@ -265,6 +276,7 @@ public final class MiningBotSettings {
 			boolean parsedMouseSteps = !json.has("mouseSteps") || json.get("mouseSteps").getAsBoolean();
 			boolean parsedLanding = !json.has("naturalLanding") || json.get("naturalLanding").getAsBoolean();
 			boolean parsedHabits = !json.has("targetHabits") || json.get("targetHabits").getAsBoolean();
+			boolean parsedAreaAvoid = !json.has("areaBreakAvoid") || json.get("areaBreakAvoid").getAsBoolean();
 			MiningBotTarget parsedTarget = MiningBotTarget.OBSIDIAN;
 			AimLeadMode parsedAimLeadMode = json.has("aimLeadMode")
 					? AimLeadMode.valueOf(json.get("aimLeadMode").getAsString().trim().toUpperCase(Locale.ROOT))
@@ -306,6 +318,7 @@ public final class MiningBotSettings {
 			mouseSteps = parsedMouseSteps;
 			naturalLanding = parsedLanding;
 			targetHabits = parsedHabits;
+			areaBreakAvoid = parsedAreaAvoid;
 			target = parsedTarget;
 			return true;
 		} catch (Exception e) {
@@ -329,6 +342,7 @@ public final class MiningBotSettings {
 			json.addProperty("mouseSteps", mouseSteps);
 			json.addProperty("naturalLanding", naturalLanding);
 			json.addProperty("targetHabits", targetHabits);
+			json.addProperty("areaBreakAvoid", areaBreakAvoid);
 			json.addProperty("aimLeadMode", aimLeadMode.name());
 			// Kept for readers of the previous schema. New readers use aimLeadMode.
 			json.addProperty("adaptiveAimLead", isAdaptiveAimLeadEnabled());
