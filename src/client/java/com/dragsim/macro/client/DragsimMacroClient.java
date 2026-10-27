@@ -184,6 +184,9 @@ public class DragsimMacroClient implements ClientModInitializer {
 			}
 			scytheHoldUse.tickStart(mc);
 		});
+		// Auto Clicker: queue attack clicks before vanilla's handleKeybinds reads them this tick.
+		AutoClicker autoClicker = new AutoClicker();
+		ClientTickEvents.START_CLIENT_TICK.register(autoClicker::tickStart);
 
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_hud"), StealthMode.hide(new DebugHud(controller, aimSolver, rotationController, attackGate, combatController, approachPlanner, scytheHoldUse)));
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp"), StealthMode.hide(new EspOverlay(controller, aimSolver)));

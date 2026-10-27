@@ -1,5 +1,6 @@
 package com.dragsim.macro.client.mixin;
 
+import com.dragsim.macro.client.AutoClicker;
 import com.dragsim.macro.client.RouteWalkerController;
 import com.dragsim.macro.client.MiningBotController;
 import com.dragsim.macro.client.MiningBotAttackPolicy;
@@ -47,6 +48,12 @@ abstract class ScytheHoldMinecraftMixin {
 		if (bot != null && bot.isActive()) {
 			cir.setReturnValue(false);
 		}
+	}
+
+	/** Auto Clicker: air clicks keep swinging instead of waiting out vanilla's 10-tick miss cooldown. */
+	@Inject(method = "startAttack", at = @At("HEAD"))
+	private void dragsim$autoClickerSkipMissCooldown(CallbackInfoReturnable<Boolean> cir) {
+		AutoClicker.beforeStartAttack((Minecraft) (Object) this);
 	}
 
 	/** Always lets vanilla continueAttack run; only replaces whether destruction may continue. */

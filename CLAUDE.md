@@ -48,6 +48,8 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `RouteOverlay`, `RouteWalkerSettings`.
   - Combat (Zealot, `/zealot*`): `MacroController`, `TargetSelector`, `RotationController`, `CombatController`,
     `ApproachPlanner` (+ `LocalPathPlanner`/`Path*` A*), `AttackGate`, Frozen Scythe hold-use (`ScytheHold*`).
+  - Auto Clicker (GUI toggle on the Combat page): `AutoClicker` queues attack clicks on the vanilla KeyMapping while
+    the button is physically held; `AutoClickerSchedule` = random min–max CPS timing.
   - Shared: `AutomationCoordinator` (only one automation owns input at a time — `tryAcquire`/`release`),
     `LifecycleSafety` (resets on disconnect/join), `ServerTickClock` (server TPS / tick clock from packets),
     `MacroClock` (monotonic ms clock for client-side timers), `StopInertia` (view coasts to a halt on a manual

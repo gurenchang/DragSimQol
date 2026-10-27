@@ -473,6 +473,23 @@ public class DragsimMacroScreen extends Screen {
 				() -> bindHeld("warp")));
 		s.add(new InfoSetting("Macro Toggle Key", "Change bindings in Minecraft Controls",
 				() -> keyName("key.dragsimmacro.macro_toggle")));
+		s.add(header("Auto Clicker"));
+		s.add(new ToggleSetting("Auto Clicker", "While ON, holding left click keeps clicking at a random rate between Min and Max CPS. Paused while a macro runs",
+				() -> MacroConfig.get().autoClickerEnabled,
+				v -> { updateConfig(c -> c.autoClickerEnabled = v); rebuildPages(); }));
+		if (MacroConfig.get().autoClickerEnabled) {
+			s.add(new SliderSetting("Min CPS", "Slowest click rate", 1, 20, 0.5,
+					() -> MacroConfig.get().getAutoClickerMinCps(),
+					v -> MacroConfig.get().setAutoClickerMinCps(v),
+					v -> String.format(Locale.ROOT, "%.1f CPS", v)));
+			s.add(new SliderSetting("Max CPS", "Fastest click rate", 1, 20, 0.5,
+					() -> MacroConfig.get().getAutoClickerMaxCps(),
+					v -> MacroConfig.get().setAutoClickerMaxCps(v),
+					v -> String.format(Locale.ROOT, "%.1f CPS", v)));
+			s.add(new ToggleSetting("Break Blocks", "Stop clicking while the crosshair is on a block, so holding still mines it",
+					() -> MacroConfig.get().autoClickerBreakBlocks,
+					v -> updateConfig(c -> c.autoClickerBreakBlocks = v)));
+		}
 	}
 
 	private void buildVisuals(List<Setting> s) {

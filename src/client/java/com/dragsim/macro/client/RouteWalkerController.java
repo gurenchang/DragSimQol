@@ -818,7 +818,7 @@ public final class RouteWalkerController {
 	}
 
 	/** 物理入力の読み取り。MODが書込んだKeyMapping状態は参照しない。 */
-	private static boolean isPhysicalDown(Minecraft mc, net.minecraft.client.KeyMapping mapping) {
+	static boolean isPhysicalDown(Minecraft mc, net.minecraft.client.KeyMapping mapping) {
 		if (mc == null || !mc.isWindowActive() || mc.options == null || mc.getWindow() == null) {
 			return false;
 		}

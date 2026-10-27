@@ -126,6 +126,14 @@ public final class MacroConfig {
 	/** Manual Mining Bot / Route Walker stop: the view turn slows to a halt instead of freezing. See StopInertia. */
 	public boolean stopInertia = true;
 
+	// ==== Auto Clicker(GUI only; see AutoClicker) ====
+	/** While held, the attack button clicks at a random rate between autoClickerMinCps and autoClickerMaxCps. */
+	public boolean autoClickerEnabled = false;
+	public double autoClickerMinCps = 9.0;
+	public double autoClickerMaxCps = 13.0;
+	/** Pause while the crosshair is on a block, so holding the button still mines it. */
+	public boolean autoClickerBreakBlocks = true;
+
 	/** GUI / HUD / ESP accent colour: a {@code GuiTheme.Accent} name (PURPLE, CYAN, CRIMSON, EMERALD, GOLD). */
 	public String themeAccent = "PURPLE";
 	/** Glowing outline on the block the running macro is targeting. */
@@ -552,6 +560,31 @@ public final class MacroConfig {
 			return 8;
 		}
 		return (int) Math.max(4, Math.min(16, goalCandidateCount));
+	}
+
+	// ==== Auto Clicker typed accessors ====
+
+	/** Clamped 1〜20 CPS and never above the max. */
+	public double getAutoClickerMinCps() {
+		return Math.min(AutoClickerSchedule.clampCps(autoClickerMinCps), getAutoClickerMaxCps());
+	}
+
+	public double getAutoClickerMaxCps() {
+		return AutoClickerSchedule.clampCps(autoClickerMaxCps);
+	}
+
+	/** Raising the min above the max pushes the max up with it. */
+	public void setAutoClickerMinCps(double value) {
+		autoClickerMinCps = AutoClickerSchedule.clampCps(value);
+		autoClickerMaxCps = Math.max(getAutoClickerMaxCps(), autoClickerMinCps);
+		save();
+	}
+
+	/** Lowering the max below the min pushes the min down with it. */
+	public void setAutoClickerMaxCps(double value) {
+		autoClickerMaxCps = AutoClickerSchedule.clampCps(value);
+		autoClickerMinCps = Math.min(AutoClickerSchedule.clampCps(autoClickerMinCps), autoClickerMaxCps);
+		save();
 	}
 
 	public boolean isPredictiveFollowing() {
