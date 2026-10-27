@@ -28,13 +28,16 @@ The user plays in PrismLauncher: `C:\Users\guren\AppData\Roaming\PrismLauncher\i
 (`mods/` — installed jar plus NoFrills, Recorder etc.; `config/` — live settings; `logs/zealotmacro.log` — the mod's
 debug log, `MINING_BOT_*` events with timestamps; `recordings/`). Read these to check what the user actually ran.
 
-- `recordings/*.mcrc` come from the Recorder mod (`mods/recorder.jar`), not from this mod. The format spec is
-  `RECORDING_FORMAT.md` inside that jar: big-endian header, then rows of (ms, direction, raw play packet) for both
-  directions plus local input. Parse it with a short Python script (no parser is kept in the repo).
-- Packet IDs are protocol-specific (775 for 26.1.2); look them up by registration order in `GameProtocols.java`.
-  Block state IDs: `java -DbundlerMainClass=net.minecraft.data.Main -jar ~/.gradle/caches/fabric-loom/26.1.2/minecraft-server.jar --reports --output <dir>`
-  → `reports/blocks.json`.
-- When comparing two recordings, compute rates from each file's own first/last break — never reuse a span.
+- `recordings/*.mcrc` come from the Recorder mod (`mods/recorder.jar`, format spec `RECORDING_FORMAT.md` inside it):
+  every play packet in both directions plus local key/mouse input, with ms timestamps.
+- **`python -I tools/mcrc_report.py`** reports mining from them: blocks/s, break events, own vs area breaks,
+  same-block restarts, START cadence, area-break hits, plus the mod log lines in the recording's time window.
+  No args = newest recording of at least 3 s; `-n 2` compares the two newest side by side; file names or pasted
+  paths work too; `--timeline --from <ms> --to <ms>` dumps the decoded events. Use it when the user sends a
+  recording, and compare against the previous one.
+- It takes packet ids from `GameProtocols.java` in `mcsrc/<game version>` (registration order) and block state
+  ids from the server jar's data reports (generated once into `tools/.cache/`, git-ignored). For packets it doesn't
+  decode yet, add them to `events()` the same way.
 
 ## Looking up Minecraft / Fabric APIs
 
@@ -89,7 +92,7 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
   - `gui/` — settings screen (see below).
 - `src/test/java` — pure-logic tests; the test classpath includes the client source set.
 - `docs/*.ja.md` — design notes and specs (Japanese). `tools/gen_gui_icons.py` regenerates GUI icon PNGs,
-  `tools/gen_capes.py` the cape textures.
+  `tools/gen_capes.py` the cape textures, `tools/mcrc_report.py` analyses replays (see above).
 
 ## GUI conventions
 

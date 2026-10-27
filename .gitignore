@@ -48,3 +48,6 @@ replay_*.log
 
 # test / client debug logs (MacroLogger)
 logs/
+
+# tools/mcrc_report.py cache (block state ids per game version)
+tools/.cache/
