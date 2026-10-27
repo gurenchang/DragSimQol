@@ -51,3 +51,4 @@ logs/
 
 # tools/mcrc_report.py cache (block state ids per game version)
 tools/.cache/
+__pycache__/

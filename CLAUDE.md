@@ -38,6 +38,11 @@ debug log, `MINING_BOT_*` events with timestamps; `recordings/`). Read these to 
 - It takes packet ids from `GameProtocols.java` in `mcsrc/<game version>` (registration order) and block state
   ids from the server jar's data reports (generated once into `tools/.cache/`, git-ignored). For packets it doesn't
   decode yet, add them to `events()` the same way.
+- Non-mining questions (chat, sounds, entity spawns, particles — e.g. the dragon summon timing): write a scratch
+  script outside the repo that imports `mcrc_report` (`read_mcrc`, `packet_ids`, `Buf`, `block_pos`) and decodes
+  those packets. Entity / sound / particle registry ids are in `reports/registries.json` of the same data-generator
+  run (`java -DbundlerMainClass=net.minecraft.data.Main -jar <loom>/26.1.2/minecraft-server.jar --reports`);
+  only `blocks.json` is cached. Chat arrives as NBT components with legacy `§` codes inside the text.
 
 ## Looking up Minecraft / Fabric APIs
 
