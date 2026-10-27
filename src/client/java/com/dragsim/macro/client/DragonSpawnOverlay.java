@@ -2,9 +2,13 @@ package com.dragsim.macro.client;
 
 import java.util.Locale;
 
+import com.dragsim.macro.DragsimMacroMod;
 import com.dragsim.macro.client.gui.GuiPaint;
 import com.dragsim.macro.client.gui.GuiTheme;
 import com.dragsim.macro.client.gui.UiFont;
+import com.mojang.blaze3d.pipeline.DepthStencilState;
+import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
@@ -16,8 +20,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.rendertype.LayeringTransform;
+import net.minecraft.client.renderer.rendertype.OutputTarget;
+import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
@@ -28,6 +35,10 @@ import org.joml.Vector4f;
  * the dragon's position as the server adds it, (-671.0, 60.0, -276.0) in both recordings. A small cube centred on
  * that point with a cross through it, a beam up from the altar, and a label (time, distance) projected on the HUD so
  * it shows through terrain. The first version outlined the whole 16 x 8 x 16 dragon box; too wide to aim with.
+ *
+ * Drawn without a depth test: until the dragon spawns, the point sits inside the altar's structure (black concrete
+ * from y 45 to 76, a purple glass pillar up from the altar) that the server clears only as it spawns — a depth-tested
+ * marker was completely hidden (2026-10-28).
  *
  * Shown in recording mode too (user's choice, 2026-10-27): it has its own toggles (Dragon Spawn Timer / Marker).
  */
@@ -44,6 +55,24 @@ public final class DragonSpawnOverlay implements HudElement {
 	private static final double CROSS_ARM = 0.8;
 	/** The label sits this far above the point. */
 	private static final double LABEL_RISE = 0.6;
+
+	/** Lines and faces that ignore depth (the vanilla translucent lines / debug quads pipelines, depth test off). */
+	private static final RenderType LINES_SEE_THROUGH = RenderType.create("dragsimmacro_lines_see_through",
+			RenderSetup.builder(RenderPipelines.register(RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
+							.withLocation(DragsimMacroMod.id("pipeline/lines_see_through"))
+							.withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
+							.build()))
+					.setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
+					.setOutputTarget(OutputTarget.ITEM_ENTITY_TARGET)
+					.createRenderSetup());
+	private static final RenderType QUADS_SEE_THROUGH = RenderType.create("dragsimmacro_quads_see_through",
+			RenderSetup.builder(RenderPipelines.register(RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
+							.withLocation(DragsimMacroMod.id("pipeline/quads_see_through"))
+							.withCull(false)
+							.withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
+							.build()))
+					.sortOnUpload()
+					.createRenderSetup());
 
 	private final double[] box = new double[6];
 	private final double[][] corners = new double[8][3];
@@ -142,12 +171,12 @@ public final class DragonSpawnOverlay implements HudElement {
 		PoseStack.Pose pose = ctx.poseStack().last();
 		MultiBufferSource.BufferSource buffers = ctx.bufferSource();
 
-		RenderType faces = RenderTypes.debugQuads();
+		RenderType faces = QUADS_SEE_THROUGH;
 		TargetBlockHighlight.drawFaces(buffers.getBuffer(faces), pose, corners,
 				TargetBlockHighlight.argb(GuiTheme.ACCENT, 0x60 * alpha));
 		buffers.endBatch(faces);
 
-		RenderType lines = RenderTypes.linesTranslucent();
+		RenderType lines = LINES_SEE_THROUGH;
 		VertexConsumer line = buffers.getBuffer(lines);
 		TargetBlockHighlight.drawEdges(line, pose, corners,
 				TargetBlockHighlight.argb(GuiTheme.ACCENT_BRIGHT, 0xE0 * alpha), base * 1.4F);
