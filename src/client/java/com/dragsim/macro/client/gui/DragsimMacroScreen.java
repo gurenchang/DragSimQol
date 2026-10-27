@@ -521,6 +521,9 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Dragon Spawn Timer", "After the 8th Summoning Eye: countdown to the dragon under the crosshair. Also shown in recording mode",
 				() -> MacroConfig.get().dragonSpawnTimer,
 				v -> updateConfig(c -> c.dragonSpawnTimer = v)));
+		s.add(new ToggleSetting("Dragon Spawn Marker", "With the timer: mark the exact point where the dragon appears, with a beam up from the altar",
+				() -> MacroConfig.get().dragonSpawnMarker,
+				v -> updateConfig(c -> c.dragonSpawnMarker = v)));
 		s.add(new InfoSetting("Route Display", "Configured on the Route Walker page",
 				() -> routeWalkerController.getSettings().isShowRoute() ? "ON" : "OFF"));
 		s.add(header("Cosmetics"));
