@@ -221,10 +221,8 @@ public class DragsimMacroClient implements ClientModInitializer {
 		LevelRenderEvents.BEFORE_GIZMOS.register(ctx -> {
 			if (!StealthMode.on()) targetHighlight.render(ctx);
 		});
-		// Dragon summon countdown and spawn marker. Not hidden in recording mode on purpose (own toggle).
-		DragonSpawnOverlay dragonSpawn = new DragonSpawnOverlay();
-		HudElementRegistry.addLast(DragsimMacroMod.id("dragon_spawn"), dragonSpawn);
-		LevelRenderEvents.BEFORE_GIZMOS.register(dragonSpawn::renderWorld);
+		// Dragon summon countdown. Not hidden in recording mode on purpose (own toggle).
+		HudElementRegistry.addLast(DragsimMacroMod.id("dragon_spawn"), new DragonSpawnOverlay());
 		// Cosmetics: the china hat rides on player renderers (it only draws on the local player).
 		LivingEntityRenderLayerRegistrationCallback.EVENT.register((type, renderer, helper, context) -> {
 			if (renderer instanceof AvatarRenderer<?> avatar) helper.register(new ChinaHatLayer(avatar));

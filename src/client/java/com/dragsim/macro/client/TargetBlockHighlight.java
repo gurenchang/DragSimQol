@@ -239,7 +239,7 @@ public final class TargetBlockHighlight {
 	}
 
 	/** Camera-relative corners of box `b` grown by `grow` on every side. */
-	static void setCorners(double[][] out, double[] b, double grow, Vec3 cam) {
+	private static void setCorners(double[][] out, double[] b, double grow, Vec3 cam) {
 		for (int i = 0; i < 8; i++) {
 			out[i][0] = ((i & 1) == 0 ? b[0] - grow : b[3] + grow) - cam.x;
 			out[i][1] = ((i & 2) == 0 ? b[1] - grow : b[4] + grow) - cam.y;
@@ -247,7 +247,7 @@ public final class TargetBlockHighlight {
 		}
 	}
 
-	static void drawFaces(VertexConsumer c, PoseStack.Pose pose, double[][] k, int color) {
+	private static void drawFaces(VertexConsumer c, PoseStack.Pose pose, double[][] k, int color) {
 		quad(c, pose, k, color, 0, 1, 3, 2); // z min
 		quad(c, pose, k, color, 4, 6, 7, 5); // z max
 		quad(c, pose, k, color, 0, 2, 6, 4); // x min
@@ -263,7 +263,7 @@ public final class TargetBlockHighlight {
 		}
 	}
 
-	static void drawEdges(VertexConsumer c, PoseStack.Pose pose, double[][] k, int color, float width) {
+	private static void drawEdges(VertexConsumer c, PoseStack.Pose pose, double[][] k, int color, float width) {
 		for (int[] e : EDGES) segment(c, pose, k[e[0]], k[e[1]], 1.0, color, width);
 	}
 
@@ -280,7 +280,7 @@ public final class TargetBlockHighlight {
 	}
 
 	/** Line from `from` toward `to`, covering fraction t of the way. */
-	static void segment(VertexConsumer c, PoseStack.Pose pose, double[] from, double[] to, double t,
+	private static void segment(VertexConsumer c, PoseStack.Pose pose, double[] from, double[] to, double t,
 			int color, float width) {
 		float dx = (float) (to[0] - from[0]), dy = (float) (to[1] - from[1]), dz = (float) (to[2] - from[2]);
 		float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -316,7 +316,7 @@ public final class TargetBlockHighlight {
 				pos.getX() + local.maxX + INFLATE, pos.getY() + local.maxY + INFLATE, pos.getZ() + local.maxZ + INFLATE};
 	}
 
-	static int argb(int rgb, double alpha) {
+	private static int argb(int rgb, double alpha) {
 		int a = (int) Math.round(Math.max(0.0, Math.min(255.0, alpha)));
 		return (a << 24) | (rgb & 0xFFFFFF);
 	}

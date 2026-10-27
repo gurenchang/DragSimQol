@@ -1,6 +1,8 @@
 # Dragon Spawn Timer（ドラゴン召喚タイマー）仕様
 
-Summoning Eye を8個はめてからドラゴンが出現するまでのカウントダウンと、出現地点のマーカー。
+Summoning Eye を8個はめてからドラゴンが出現するまでのカウントダウン（照準の下に表示）。
+出現地点のESP（箱・ビーム・ウェイポイント）も一度作ったが、不要とのことで外した（2026-10-27）。
+出現地点の計算は、出てきたドラゴンが今回の召喚のものかを見分けるのに使っている。
 実装: `DragonSpawnTimer`（判定）/ `DragonSpawnOverlay`（描画）。設定: Visuals → Dragon Spawn Timer（`MacroConfig.dragonSpawnTimer`）。
 
 ## 実測（Recorder リプレイ 2本、2026-10-27、サーバー 20 TPS）

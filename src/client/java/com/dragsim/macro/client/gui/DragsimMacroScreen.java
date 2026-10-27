@@ -518,7 +518,7 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Target Highlight", "Glowing outline on the block the macro is mining",
 				() -> MacroConfig.get().targetBlockHighlight,
 				v -> updateConfig(c -> c.targetBlockHighlight = v)));
-		s.add(new ToggleSetting("Dragon Spawn Timer", "After the 8th Summoning Eye: countdown to the dragon and a marker where it spawns. Also shown in recording mode",
+		s.add(new ToggleSetting("Dragon Spawn Timer", "After the 8th Summoning Eye: countdown to the dragon under the crosshair. Also shown in recording mode",
 				() -> MacroConfig.get().dragonSpawnTimer,
 				v -> updateConfig(c -> c.dragonSpawnTimer = v)));
 		s.add(new InfoSetting("Route Display", "Configured on the Route Walker page",

@@ -85,8 +85,7 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `DesktopNotifier`, `AlertFlash` (red screen-edge pulse), `MacroToasts` → `ToastOverlay`, `ChatFormat`
     (chat colours), `MacroNotifications`. `/spawnlog` (`SpawnLogCommand`) prints nearby entity spawns.
   - Dragon summon: `DragonSpawnTimer` (8th Summoning Eye → dragon in 170 server ticks, spawn point from the frame
-    ring; spec measured from replays in `docs/DRAGON_SPAWN_TIMER.ja.md`) → `DragonSpawnOverlay` (countdown HUD,
-    in-world box/beam, projected waypoint label).
+    ring; spec measured from replays in `docs/DRAGON_SPAWN_TIMER.ja.md`) → `DragonSpawnOverlay` (countdown HUD).
   - Recording mode: `StealthMode` (`MacroConfig.stealthMode`) — the mod draws nothing on screen
     (except the Dragon Spawn Timer, which has its own toggle — the user's choice).
   - Config (JSON in `config/`): `MacroConfig` → `dragsimmacro.json`; `MiningBotSettings` → `dragsimmacro-miningbot.json`
