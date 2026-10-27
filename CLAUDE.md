@@ -15,6 +15,11 @@ export JAVA_HOME="/c/Users/guren/.gradle/jdks/jdk-25.0.4.1+1"
 ```
 
 `-q` prints nothing on success. Failures: `grep -l '<failure' build/test-results/test/*.xml`.
+
+**Release builds: bump the version first.** Before building a jar to hand out or release, raise `version` in
+`gradle.properties` (minor for new features, patch for fixes only — `1.5.0` → `1.6.0` / `1.5.1`) and commit it.
+Then `./gradlew clean build`, tag `v<version>`, and `gh release create v<version> build/libs/dragsimmacro-<version>.jar`
+(main jar only, notes in Japanese). Never reuse a released version. Compile checks and test runs don't need a bump.
 `./gradlew runClient` starts a dev client (game dir `run/`, git-ignored; assets already cached).
 
 ## Looking up Minecraft / Fabric APIs
