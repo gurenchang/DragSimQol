@@ -22,6 +22,20 @@ Then `./gradlew clean build`, tag `v<version>`, and `gh release create v<version
 (main jar only, notes in Japanese). Never reuse a released version. Compile checks and test runs don't need a bump.
 `./gradlew runClient` starts a dev client (game dir `run/`, git-ignored; assets already cached).
 
+## Play instance & replays
+
+The user plays in PrismLauncher: `C:\Users\guren\AppData\Roaming\PrismLauncher\instances\26.1.2 dragsim\minecraft\`
+(`mods/` — installed jar plus NoFrills, Recorder etc.; `config/` — live settings; `logs/zealotmacro.log` — the mod's
+debug log, `MINING_BOT_*` events with timestamps; `recordings/`). Read these to check what the user actually ran.
+
+- `recordings/*.mcrc` come from the Recorder mod (`mods/recorder.jar`), not from this mod. The format spec is
+  `RECORDING_FORMAT.md` inside that jar: big-endian header, then rows of (ms, direction, raw play packet) for both
+  directions plus local input. Parse it with a short Python script (no parser is kept in the repo).
+- Packet IDs are protocol-specific (775 for 26.1.2); look them up by registration order in `GameProtocols.java`.
+  Block state IDs: `java -DbundlerMainClass=net.minecraft.data.Main -jar ~/.gradle/caches/fabric-loom/26.1.2/minecraft-server.jar --reports --output <dir>`
+  → `reports/blocks.json`.
+- When comparing two recordings, compute rates from each file's own first/last break — never reuse a span.
+
 ## Looking up Minecraft / Fabric APIs
 
 - Minecraft sources (decompiled): `C:\Users\guren\mcsrc\26.1.2\minecraft` — search there with Grep instead of
@@ -74,7 +88,8 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
   - `mixin/` — listed in `src/main/resources/dragsimmacro.client.mixins.json`.
   - `gui/` — settings screen (see below).
 - `src/test/java` — pure-logic tests; the test classpath includes the client source set.
-- `docs/*.ja.md` — design notes and specs (Japanese). `tools/gen_gui_icons.py` regenerates GUI icon PNGs.
+- `docs/*.ja.md` — design notes and specs (Japanese). `tools/gen_gui_icons.py` regenerates GUI icon PNGs,
+  `tools/gen_capes.py` the cape textures.
 
 ## GUI conventions
 
