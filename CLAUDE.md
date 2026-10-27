@@ -85,6 +85,8 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
 ## Working notes
 
 - Code style: tabs; match the surrounding comment density and language (files mix English and Japanese comments).
+- When docs (this file, `docs/*.ja.md`, comments) and the existing code disagree, follow the code's way of doing it,
+  and list every mismatch you found in your final reply.
 - Several source files are 800–1300 lines; read targeted ranges (Grep first, then Read with offset/limit).
 - Tests write `MacroLogger` output to `logs/` in the repo root (git-ignored).
 
