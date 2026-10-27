@@ -3,7 +3,7 @@
 ## Epsilon (Apache-2.0)
 
 `CornerEspOverlay` のスクリーン投影手法(world→screen の8隅矩形投影・z∈[0,1]カリング)は
-以下のOSS実装を参考に、本プロジェクトのMinecraft 26.2 / Fabric API 向けに再実装したものです。
+以下のOSS実装を参考に、本プロジェクトのMinecraft 26.1.2 / Fabric API 向けに再実装したものです。
 
 - Epsilon — https://github.com/XTGY/Epsilon (branch: 26.1.x)
 - License: Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0)

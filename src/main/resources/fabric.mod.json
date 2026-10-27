@@ -2,13 +2,14 @@
 	"schemaVersion": 1,
 	"id": "dragsimmacro",
 	"version": "${version}",
-	"name": "DragSim Zealot Macro",
-	"description": "Phase 1: client-only entity scanner for DragSim research. /zealotdebug on|off",
+	"name": "DragSimQol",
+	"description": "Client-side mining and combat macros (Mining Bot, Route Walker, Zealot combat), Auto Clicker, alerts, ESP and QoL settings. Open the settings with /zealotgui.",
 	"authors": [
-		"you"
+		"gurenchang"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/"
+		"homepage": "https://github.com/gurenchang/DragSimQol",
+		"sources": "https://github.com/gurenchang/DragSimQol"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/dragsimmacro/icon.png",

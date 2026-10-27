@@ -13,7 +13,7 @@ public class DragsimMacroMod implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-		LOGGER.info("DragSim Zealot Macro loaded");
+		LOGGER.info("DragSimQol loaded");
 	}
 
 	public static Identifier id(String path) {
