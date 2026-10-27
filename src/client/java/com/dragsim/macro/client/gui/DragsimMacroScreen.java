@@ -496,7 +496,7 @@ public class DragsimMacroScreen extends Screen {
 
 	private void buildVisuals(List<Setting> s) {
 		s.add(header("Recording mode"));
-		s.add(new ToggleSetting("Recording Mode", "Show nothing from the mod on screen: HUD, highlight, chat, toasts, flash, cosmetics and fullbright. Macros and alerts keep running",
+		s.add(new ToggleSetting("Recording Mode", "Show nothing from the mod on screen: HUD, highlight, chat, toasts, flash, cosmetics and fullbright (not the Dragon Spawn Timer). Macros and alerts keep running",
 				() -> MacroConfig.get().stealthMode,
 				v -> updateConfig(c -> c.stealthMode = v)));
 		s.add(new ToggleSetting("Desktop Alerts While Recording", "In recording mode, still send alerts as desktop notifications (outside the game window)",
@@ -518,6 +518,9 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Target Highlight", "Glowing outline on the block the macro is mining",
 				() -> MacroConfig.get().targetBlockHighlight,
 				v -> updateConfig(c -> c.targetBlockHighlight = v)));
+		s.add(new ToggleSetting("Dragon Spawn Timer", "After the 8th Summoning Eye: countdown to the dragon and a marker where it spawns. Also shown in recording mode",
+				() -> MacroConfig.get().dragonSpawnTimer,
+				v -> updateConfig(c -> c.dragonSpawnTimer = v)));
 		s.add(new InfoSetting("Route Display", "Configured on the Route Walker page",
 				() -> routeWalkerController.getSettings().isShowRoute() ? "ON" : "OFF"));
 		s.add(header("Cosmetics"));

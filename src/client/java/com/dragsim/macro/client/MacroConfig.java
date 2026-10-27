@@ -140,6 +140,8 @@ public final class MacroConfig {
 	public String themeAccent = "PURPLE";
 	/** Glowing outline on the block the running macro is targeting. */
 	public boolean targetBlockHighlight = true;
+	/** After the 8th Summoning Eye: countdown to the dragon and a marker where it spawns. Also in recording mode. */
+	public boolean dragonSpawnTimer = true;
 	/** Cosmetic cape on your own player (a {@code Cosmetics.Cape} name; OFF = vanilla). Only you see it. */
 	public String cosmeticCape = "OFF";
 	/** Cosmetic china hat on your own player. Only you see it. */

@@ -8,6 +8,7 @@ import net.minecraft.client.Minecraft;
  * target highlight, chat messages, toasts, the alert flash, cosmetics and fullbright are off; the game looks vanilla.
  * Macros and alert detection keep working. Desktop notifications are optional (stealthDesktopAlerts), and the
  * file log (logs/zealotmacro.log) is still written since it never shows on screen.
+ * Exception: the dragon spawn timer ({@link DragonSpawnOverlay}) stays, behind its own toggle (user's choice).
  */
 public final class StealthMode {
 	private StealthMode() {

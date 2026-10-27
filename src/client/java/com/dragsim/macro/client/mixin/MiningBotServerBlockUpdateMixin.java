@@ -1,6 +1,7 @@
 package com.dragsim.macro.client.mixin;
 
 import com.dragsim.macro.client.AlertMonitor;
+import com.dragsim.macro.client.DragonSpawnTimer;
 import com.dragsim.macro.client.MiningBotController;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -11,7 +12,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Observes server-verified block updates after packet thread handoff (Mining Bot progress and the block check). */
+/**
+ * Observes server-verified block updates after packet thread handoff (Mining Bot progress, the block check and
+ * the dragon summon's frame reset). The level still holds the old state here.
+ */
 @Mixin(ClientLevel.class)
 abstract class MiningBotServerBlockUpdateMixin {
 	@Inject(method = "setServerVerifiedBlockState", at = @At("HEAD"))
@@ -21,5 +25,6 @@ abstract class MiningBotServerBlockUpdateMixin {
 		if (monitor != null) monitor.onServerBlockUpdate(Minecraft.getInstance(), (ClientLevel) (Object) this, pos, state);
 		MiningBotController bot = MiningBotController.get();
 		if (bot != null) bot.onServerVerifiedBlockUpdate(Minecraft.getInstance(), (ClientLevel) (Object) this, pos, state);
+		DragonSpawnTimer.get().onServerBlock((ClientLevel) (Object) this, pos, state);
 	}
 }

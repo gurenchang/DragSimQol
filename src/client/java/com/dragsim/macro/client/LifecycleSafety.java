@@ -46,6 +46,7 @@ public final class LifecycleSafety {
 			AimSolver aimSolver, Minecraft mc, String reason) {
 		MacroLogger.get().log("LIFECYCLE " + reason);
 		StopInertia.reset();
+		DragonSpawnTimer.get().reset();
 
 		// input cleanup(ownership付きのみ)
 		combatController.stopAndReleaseAll(mc);

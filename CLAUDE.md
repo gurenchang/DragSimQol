@@ -84,7 +84,11 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     breaks, area breaks and their regens out of the block-swap alert), `PlayerAlertPolicy`,
     `DesktopNotifier`, `AlertFlash` (red screen-edge pulse), `MacroToasts` → `ToastOverlay`, `ChatFormat`
     (chat colours), `MacroNotifications`. `/spawnlog` (`SpawnLogCommand`) prints nearby entity spawns.
-  - Recording mode: `StealthMode` (`MacroConfig.stealthMode`) — the mod draws nothing on screen.
+  - Dragon summon: `DragonSpawnTimer` (8th Summoning Eye → dragon in 170 server ticks, spawn point from the frame
+    ring; spec measured from replays in `docs/DRAGON_SPAWN_TIMER.ja.md`) → `DragonSpawnOverlay` (countdown HUD,
+    in-world box/beam, projected waypoint label).
+  - Recording mode: `StealthMode` (`MacroConfig.stealthMode`) — the mod draws nothing on screen
+    (except the Dragon Spawn Timer, which has its own toggle — the user's choice).
   - Config (JSON in `config/`): `MacroConfig` → `dragsimmacro.json`; `MiningBotSettings` → `dragsimmacro-miningbot.json`
     (migrates old `dragsimmacro-obsidian.json`); `RouteWalkerSettings` → `dragsimmacro-mining-settings.json`;
     routes → `dragsimmacro-mining.json`. Debug log: `MacroLogger` → `logs/zealotmacro.log`.
@@ -99,6 +103,8 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
 - Recording mode must hide anything new the mod shows: register HUD elements as
   `HudElementRegistry.addLast(id, StealthMode.hide(element))`, guard world rendering with `StealthMode.on()`,
   and send status text through `MacroNotifications.send` (it already skips chat/toasts in recording mode).
+  The user plays with recording mode always on, so ask before hiding a feature they asked to see; the Dragon
+  Spawn Timer is the one exception so far.
 
 - Colours and sizes only from `GuiTheme`. Rounded shapes/icons/buttons via `GuiPaint` (draws in physical pixels).
 - Accent tokens (`ACCENT*`, `SIDEBAR_SELECTED`, `ESP_*`) change at runtime with the Theme Color setting

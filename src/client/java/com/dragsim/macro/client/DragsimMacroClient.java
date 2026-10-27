@@ -60,6 +60,7 @@ public class DragsimMacroClient implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(alertMonitor::tick);
 		ClientEntityEvents.ENTITY_LOAD.register((entity, level) -> {
 			alertMonitor.onEntityLoad(Minecraft.getInstance(), entity);
+			DragonSpawnTimer.get().onEntityLoad(entity);
 			SpawnLogCommand.onEntityLoad(Minecraft.getInstance(), entity);
 		});
 		ClientTickEvents.END_CLIENT_TICK.register(SpawnLogCommand::tick);
@@ -72,6 +73,11 @@ public class DragsimMacroClient implements ClientModInitializer {
 			if (!overlay) alertMonitor.onMessage(Minecraft.getInstance(), message.getString());
 			alertMonitor.onStaffCheckText(Minecraft.getInstance(), overlay ? "action bar" : "chat", message.getString());
 		});
+		// Dragon summon: the (8/8) Summoning Eye message starts the countdown (frame resets start it too, see the mixin).
+		ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+			if (!overlay) DragonSpawnTimer.get().onGameMessage(Minecraft.getInstance(), message.getString());
+		});
+		ClientTickEvents.END_CLIENT_TICK.register(DragonSpawnTimer.get()::tick);
 		ClientReceiveMessageEvents.CHAT.register((message, signedMessage, sender, params, timestamp) ->
 				alertMonitor.onMessage(Minecraft.getInstance(), message.getString()));
 		ScreenEvents.BEFORE_INIT.register((mc, screen, width, height) -> {
@@ -215,6 +221,10 @@ public class DragsimMacroClient implements ClientModInitializer {
 		LevelRenderEvents.BEFORE_GIZMOS.register(ctx -> {
 			if (!StealthMode.on()) targetHighlight.render(ctx);
 		});
+		// Dragon summon countdown and spawn marker. Not hidden in recording mode on purpose (own toggle).
+		DragonSpawnOverlay dragonSpawn = new DragonSpawnOverlay();
+		HudElementRegistry.addLast(DragsimMacroMod.id("dragon_spawn"), dragonSpawn);
+		LevelRenderEvents.BEFORE_GIZMOS.register(dragonSpawn::renderWorld);
 		// Cosmetics: the china hat rides on player renderers (it only draws on the local player).
 		LivingEntityRenderLayerRegistrationCallback.EVENT.register((type, renderer, helper, context) -> {
 			if (renderer instanceof AvatarRenderer<?> avatar) helper.register(new ChinaHatLayer(avatar));
