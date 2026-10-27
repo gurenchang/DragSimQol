@@ -122,6 +122,8 @@ public final class MacroConfig {
 	public boolean hideBlockHitParticles = false;
 	/** Hide the burst of block-texture particles when a block breaks. Client-only; also in recording mode. */
 	public boolean hideBlockBreakParticles = false;
+	/** Keep a block break going when the server rewrites the held tool in place. See BreakResetFix. */
+	public boolean breakResetFix = true;
 
 	/** Manual Mining Bot / Route Walker stop: the view turn slows to a halt instead of freezing. See StopInertia. */
 	public boolean stopInertia = true;

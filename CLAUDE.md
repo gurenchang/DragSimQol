@@ -58,7 +58,7 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
   - Shared: `AutomationCoordinator` (only one automation owns input at a time — `tryAcquire`/`release`),
     `LifecycleSafety` (resets on disconnect/join), `ServerTickClock` (server TPS / tick clock from packets),
     `MacroClock` (monotonic ms clock for client-side timers), `StopInertia` (view coasts to a halt on a manual
-    Mining Bot / Route Walker stop).
+    Mining Bot / Route Walker stop), `BreakResetFix` (a server update of the held drill doesn't restart the break).
   - Visuals: `TargetBlockHighlight` (in-world, `LevelRenderEvents.BEFORE_GIZMOS`), `CornerEspOverlay`, `EspOverlay`,
     `DebugHud`, fullbright (`FullbrightLightmapPolicy` + mixin), hit/break particle hiding (`BlockParticlesMixin`).
   - Alerts/feedback: `AlertMonitor` (players, mentions, staff check text/GUI, server TP/rotate/slot/item/knockback,

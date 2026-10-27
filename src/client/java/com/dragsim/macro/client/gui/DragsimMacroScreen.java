@@ -549,6 +549,10 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Hide Break Particles", "Hide the burst of block bits when a block breaks",
 				() -> MacroConfig.get().hideBlockBreakParticles,
 				v -> updateConfig(c -> c.hideBlockBreakParticles = v)));
+		s.add(header("Mining"));
+		s.add(new ToggleSetting("Break Reset Fix", "Keep mining when the server updates your held drill instead of restarting the block",
+				() -> MacroConfig.get().breakResetFix,
+				v -> updateConfig(c -> c.breakResetFix = v)));
 		s.add(header("Macros"));
 		s.add(new ToggleSetting("Stop Inertia", "On a manual Mining Bot or Route Walker stop, let the view turn slow to a halt instead of freezing",
 				() -> MacroConfig.get().stopInertia,
