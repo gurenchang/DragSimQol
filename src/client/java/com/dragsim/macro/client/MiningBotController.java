@@ -486,6 +486,11 @@ public final class MiningBotController {
 					+ " measuredMs=" + drillActions.measuredCooldownMs());
 		} else if (message == DrillActions.Message.OUT_OF_FUEL) {
 			MacroLogger.get().log("MINING_BOT_OUT_OF_FUEL refuelWanted=" + drillActions.isRefuelWanted());
+		} else if (message == DrillActions.Message.REFUELLED) {
+			boolean full = drillActions.refuelTankFull();
+			boolean refueling = drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL;
+			if (refueling) drillSequence.onRefuelled(full);
+			MacroLogger.get().log("MINING_BOT_REFUELLED full=" + full + " refueling=" + refueling);
 		}
 	}
 
@@ -544,6 +549,7 @@ public final class MiningBotController {
 		}
 		MacroLogger.get().log("MINING_BOT_DRILL_ACTION_END kind=" + finished.kind()
 				+ " clicked=" + finished.clicked() + " timedOut=" + finished.timedOut()
+				+ (finished.kind() == DrillActions.Kind.REFUEL ? " clicks=" + finished.clicks() : "")
 				+ (finished.kind() == DrillActions.Kind.ABILITY
 						? " cooldownMs=" + drillActions.abilityCooldownMs() + " loreMs=" + loreMs : ""));
 		input.update(keyInput, attackWanted(), mc.isWindowActive());

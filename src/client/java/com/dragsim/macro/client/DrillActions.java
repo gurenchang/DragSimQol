@@ -15,12 +15,13 @@ import java.util.regex.Pattern;
  * to the cooldown in the drill's lore ({@link DrillAbilityCooldown}), or 240s before one is known.
  * Refuel: requested by "Your drill is out of fuel!" and run after a human-like reaction delay.
  * Messages that arrive right after a refuel are treated as in-flight; later ones count as a
- * failed refuel.
+ * failed refuel. Upgrades raise the tank size and each refuel adds a fixed amount, so the
+ * sequence keeps clicking until the reply "Refuelled +10,000 (25,000/25,000)" shows a full tank.
  */
 public final class DrillActions {
 	/** CHECK: a right-click right after the ability only to get the server's cooldown reply. */
 	public enum Kind { NONE, ABILITY, CHECK, REFUEL }
-	public enum Message { NONE, COOLDOWN, OUT_OF_FUEL }
+	public enum Message { NONE, COOLDOWN, OUT_OF_FUEL, REFUELLED }
 
 	/** Base cooldown without reductions; used until the drill's lore has been read. */
 	static final long DEFAULT_ABILITY_COOLDOWN_MS = 240_000;
@@ -38,6 +39,8 @@ public final class DrillActions {
 	static final String OUT_OF_FUEL_TEXT = "your drill is out of fuel";
 	private static final Pattern COOLDOWN = Pattern.compile(
 			"this ability is on cooldown for (\\d+(?:\\.\\d+)?)\\s*s");
+	private static final Pattern REFUELLED = Pattern.compile(
+			"refuell?ed\\s*\\+?[0-9,]+\\s*\\(([0-9,]+)\\s*/\\s*([0-9,]+)\\)");
 	private static final Pattern FORMATTING = Pattern.compile("§.");
 
 	private long abilityCooldownMs = DEFAULT_ABILITY_COOLDOWN_MS;
@@ -52,6 +55,7 @@ public final class DrillActions {
 	private long refuelAt;
 	private long lastRefuelAt = Long.MIN_VALUE;
 	private int refuelFailures;
+	private boolean refuelTankFull;
 	private Kind running = Kind.NONE;
 
 	public void start(long now, boolean useAbility) {
@@ -110,6 +114,19 @@ public final class DrillActions {
 			refuelWanted = true;
 			refuelAt = now + Math.max(0, refuelDelayMs);
 			return Message.OUT_OF_FUEL;
+		}
+		Matcher refuelled = REFUELLED.matcher(text);
+		if (refuelled.find()) {
+			try {
+				long fuel = Long.parseLong(refuelled.group(1).replace(",", ""));
+				long max = Long.parseLong(refuelled.group(2).replace(",", ""));
+				refuelTankFull = fuel >= max;
+			} catch (NumberFormatException e) {
+				// Unreadable amounts: treat as full so the sequence stops clicking.
+				refuelTankFull = true;
+			}
+			if (running == Kind.REFUEL) refuelFailures = 0;
+			return Message.REFUELLED;
 		}
 		return Message.NONE;
 	}
@@ -189,6 +206,8 @@ public final class DrillActions {
 	public long measuredCooldownMs() { return measuredCooldownMs; }
 	public boolean refuelGaveUp() { return refuelFailures >= MAX_REFUEL_FAILURES; }
 	public boolean isRefuelWanted() { return refuelWanted; }
+	/** Whether the last "Refuelled" reply showed a full tank. */
+	public boolean refuelTankFull() { return refuelTankFull; }
 	public Kind running() { return running; }
 
 	/** Milliseconds until the next ability try; -1 when not scheduled. */

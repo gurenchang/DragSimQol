@@ -8,7 +8,8 @@ import java.util.Random;
  *
  * Ability / Check: wait until destroying stops -> Use down 1 tick -> Use up.
  * Refuel:  Sneak down -> wait until destroying stops (and sneak was sent) plus a longer,
- *          human-like pause -> Use down 1 tick -> Use up -> pause -> Sneak up.
+ *          human-like pause -> Use down 1 tick -> Use up -> wait for the "Refuelled" reply ->
+ *          not full: pause, click again (sneak stays down) / full or no reply: pause -> Sneak up.
  */
 public final class DrillUseSequence {
 	public interface Io {
@@ -17,9 +18,14 @@ public final class DrillUseSequence {
 		void sneak(boolean down);
 	}
 
-	enum Phase { START, PREPARE, PRESSED, RELEASE_SNEAK, DONE }
+	enum Phase { START, PREPARE, PRESSED, AWAIT_REPLY, RELEASE_SNEAK, DONE }
 
+	/** Per click: from the start or the last click until the sequence must be over. */
 	static final int TIMEOUT_TICKS = 40;
+	/** No "Refuelled" reply within this many ticks: stop refuelling. */
+	static final int REPLY_TIMEOUT_TICKS = 20;
+	/** Safety cap on refuel clicks in one sequence. */
+	static final int MAX_REFUEL_CLICKS = 10;
 
 	private final DrillActions.Kind kind;
 	private final Random random;
@@ -27,6 +33,9 @@ public final class DrillUseSequence {
 	private int wait;
 	private int ticks;
 	private boolean clicked;
+	private int clicks;
+	/** Reply that arrived before the click was released; null when none. */
+	private Boolean earlyReplyFull;
 	private boolean timedOut;
 
 	public DrillUseSequence(DrillActions.Kind kind, Random random) {
@@ -36,6 +45,7 @@ public final class DrillUseSequence {
 
 	public DrillActions.Kind kind() { return kind; }
 	public boolean clicked() { return clicked; }
+	public int clicks() { return clicks; }
 	public boolean timedOut() { return timedOut; }
 	public boolean done() { return phase == Phase.DONE; }
 
@@ -60,17 +70,25 @@ public final class DrillUseSequence {
 				if (--wait > 0) return false;
 				io.use(true);
 				clicked = true;
+				clicks++;
+				ticks = 0;
 				phase = Phase.PRESSED;
 			}
 			case PRESSED -> {
 				io.use(false);
 				if (kind == DrillActions.Kind.REFUEL) {
-					wait = 2 + random.nextInt(4);
-					phase = Phase.RELEASE_SNEAK;
+					wait = REPLY_TIMEOUT_TICKS;
+					phase = Phase.AWAIT_REPLY;
+					if (earlyReplyFull != null) onRefuelled(earlyReplyFull);
+					earlyReplyFull = null;
 				} else {
 					phase = Phase.DONE;
 					return true;
 				}
+			}
+			case AWAIT_REPLY -> {
+				if (--wait > 0) return false;
+				releaseSneakSoon();
 			}
 			case RELEASE_SNEAK -> {
 				if (--wait > 0) return false;
@@ -83,6 +101,24 @@ public final class DrillUseSequence {
 			}
 		}
 		return false;
+	}
+
+	/** Server reply to a refuel click: click again while the tank is not full. */
+	public void onRefuelled(boolean full) {
+		if (phase == Phase.PRESSED) earlyReplyFull = full;
+		if (phase != Phase.AWAIT_REPLY) return;
+		if (full || clicks >= MAX_REFUEL_CLICKS) {
+			releaseSneakSoon();
+			return;
+		}
+		// Read the chat, then right-click again with sneak still held.
+		wait = 6 + random.nextInt(9);
+		phase = Phase.PREPARE;
+	}
+
+	private void releaseSneakSoon() {
+		wait = 2 + random.nextInt(4);
+		phase = Phase.RELEASE_SNEAK;
 	}
 
 	/** Lets go of every key this sequence may hold. Safe to call at any time. */
