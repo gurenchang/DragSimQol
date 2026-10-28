@@ -18,8 +18,12 @@ export JAVA_HOME="/c/Users/guren/.gradle/jdks/jdk-25.0.4.1+1"
 
 **Release builds: bump the version first.** Before building a jar to hand out or release, raise `version` in
 `gradle.properties` (minor for new features, patch for fixes only — `1.5.0` → `1.6.0` / `1.5.1`) and commit it.
-Then `./gradlew clean build`, tag `v<version>`, and `gh release create v<version> build/libs/dragsimmacro-<version>.jar`
-(main jar only, notes in Japanese). Never reuse a released version. Compile checks and test runs don't need a bump.
+Then `./gradlew clean build`, tag `v<version>`, push `main` and the tag to `origin`, and
+`gh release create v<version> build/libs/dragsimmacro-<version>.jar --repo gurenchang/DragSimQol`
+(main jar only, notes in Japanese; cover every change since the last GitHub release). Always pass `--repo`: gh's
+default repo here is the upstream fork parent, and without it the release fails or lands on the wrong repo.
+Never reuse a released version — a jar that went into the play instance counts as released even without a tag.
+Compile checks and test runs don't need a bump.
 `./gradlew runClient` starts a dev client (game dir `run/`, git-ignored; assets already cached).
 
 ## Play instance & replays
@@ -71,6 +75,8 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `MiningBotAreaAvoid` (skip neighbours of a block still breaking — the server's area break may take them),
     `MiningBotAdaptiveAim` / `MiningBotFixedAim` / `MiningBotTickAim` (break-timing lead),
     `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps),
+    `DrillAbilityCooldown` / `DrillFuel` (read from the held drill's lore — the ability cooldown there already
+    includes the player's reductions and changes with their gear, so don't hard-code it),
     `MiningBotHud` + `MiningBotStats` (HUD panel), `BreakTickMeter` (per-block break time).
   - Route Walker (`/mining`): `RouteWalkerController`, `RouteStore` / `RouteFile` / `RouteNode`, `RouteFollower`,
     `RouteOverlay`, `RouteWalkerSettings`.
@@ -127,6 +133,9 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
   and list every mismatch you found in your final reply.
 - Several source files are 800–1300 lines; read targeted ranges (Grep first, then Read with offset/limit).
 - Tests write `MacroLogger` output to `logs/` in the repo root (git-ignored).
+- Keep tests lean: test behaviour, not constants or message strings copied back from the source, and not
+  vanilla Minecraft itself. When cases only differ in input → expected output, use one table-driven test (see
+  `ScytheFireGateTest.eachBlockingConditionWaitsWithItsReason`). Extend an existing test before adding a near-duplicate.
 
 ## Git
 
