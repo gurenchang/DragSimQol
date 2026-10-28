@@ -17,7 +17,10 @@ export JAVA_HOME="/c/Users/guren/.gradle/jdks/jdk-25.0.4.1+1"
 `-q` prints nothing on success. Failures: `grep -l '<failure' build/test-results/test/*.xml`.
 
 **Release builds: bump the version first.** Before building a jar to hand out or release, raise `version` in
-`gradle.properties` (minor for new features, patch for fixes only — `1.5.0` → `1.6.0` / `1.5.1`) and commit it.
+`gradle.properties` and commit it. Patch (`1.8.0` → `1.8.1`) for fixes and small adjustments to an existing
+feature — e.g. changing how the drill ability timing is obtained, even when it adds a step or a log field.
+Minor (`1.8.0` → `1.9.0`) only for a clearly new feature (a new automation, page, overlay or alert type).
+When unsure, it's a patch.
 Then `./gradlew clean build`, tag `v<version>`, push `main` and the tag to `origin`, and
 `gh release create v<version> build/libs/dragsimmacro-<version>.jar --repo gurenchang/DragSimQol`
 (main jar only, notes in Japanese; cover every change since the last GitHub release). Always pass `--repo`: gh's
