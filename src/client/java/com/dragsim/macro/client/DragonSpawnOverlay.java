@@ -56,8 +56,11 @@ public final class DragonSpawnOverlay implements HudElement {
 	/** The label sits this far above the point. */
 	private static final double LABEL_RISE = 0.6;
 
-	/** Lines and faces that ignore depth (the vanilla translucent lines / debug quads pipelines, depth test off). */
-	private static final RenderType LINES_SEE_THROUGH = RenderType.create("dragsimmacro_lines_see_through",
+	/**
+	 * Lines and faces that ignore depth (the vanilla translucent lines / debug quads pipelines, depth test off).
+	 * Shared with other markers that must show through blocks ({@link AmethystWaypointOverlay}).
+	 */
+	static final RenderType LINES_SEE_THROUGH = RenderType.create("dragsimmacro_lines_see_through",
 			RenderSetup.builder(RenderPipelines.register(RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
 							.withLocation(DragsimMacroMod.id("pipeline/lines_see_through"))
 							.withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
@@ -65,7 +68,7 @@ public final class DragonSpawnOverlay implements HudElement {
 					.setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
 					.setOutputTarget(OutputTarget.ITEM_ENTITY_TARGET)
 					.createRenderSetup());
-	private static final RenderType QUADS_SEE_THROUGH = RenderType.create("dragsimmacro_quads_see_through",
+	static final RenderType QUADS_SEE_THROUGH = RenderType.create("dragsimmacro_quads_see_through",
 			RenderSetup.builder(RenderPipelines.register(RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
 							.withLocation(DragsimMacroMod.id("pipeline/quads_see_through"))
 							.withCull(false)
@@ -123,7 +126,7 @@ public final class DragonSpawnOverlay implements HudElement {
 		DragonSpawnTimer.Summon s = timer.summon();
 		Camera camera = mc.gameRenderer.getMainCamera();
 		camera.getViewRotationProjectionMatrix(viewProjection);
-		double[] at = project(s.x(), s.y() + LABEL_RISE, s.z(), camera.position(),
+		double[] at = project(viewProjection, projOut, s.x(), s.y() + LABEL_RISE, s.z(), camera.position(),
 				mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight());
 		if (at == null) return;
 		Component name = UiFont.text(value);
@@ -137,7 +140,8 @@ public final class DragonSpawnOverlay implements HudElement {
 	}
 
 	/** World point → GUI coordinates (same pipeline as CornerEspOverlay); null behind the camera. */
-	private double[] project(double wx, double wy, double wz, Vec3 cam, int guiW, int guiH) {
+	static double[] project(Matrix4f viewProjection, Vector4f projOut, double wx, double wy, double wz, Vec3 cam,
+			int guiW, int guiH) {
 		projOut.set((float) (wx - cam.x), (float) (wy - cam.y), (float) (wz - cam.z), 1.0F);
 		viewProjection.transform(projOut);
 		if (projOut.w <= 1.0E-3F || !Float.isFinite(projOut.w)) return null;

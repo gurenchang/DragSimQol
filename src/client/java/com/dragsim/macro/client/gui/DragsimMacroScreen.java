@@ -524,6 +524,9 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Dragon Spawn Marker", "With the timer: mark the exact point where the dragon appears, with a beam up from the altar",
 				() -> MacroConfig.get().dragonSpawnMarker,
 				v -> updateConfig(c -> c.dragonSpawnMarker = v)));
+		s.add(new ToggleSetting("Amethyst Waypoint", "Marks the best Amethyst Block spot (-718, 1, -308); fades out as you arrive. Also shown in recording mode",
+				() -> MacroConfig.get().amethystWaypoint,
+				v -> updateConfig(c -> c.amethystWaypoint = v)));
 		s.add(new InfoSetting("Route Display", "Configured on the Route Walker page",
 				() -> routeWalkerController.getSettings().isShowRoute() ? "ON" : "OFF"));
 		s.add(header("Cosmetics"));

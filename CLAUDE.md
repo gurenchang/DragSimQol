@@ -102,8 +102,10 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     ring; spec measured from replays in `docs/DRAGON_SPAWN_TIMER.ja.md`) → `DragonSpawnOverlay` (countdown HUD,
     marker on the exact spawn point, drawn with depth-test-off render types since the point sits inside the altar's
     structure until the dragon spawns — reuse those for anything that must show through blocks).
+  - `AmethystWaypointOverlay`: fixed waypoint on the best Amethyst Block spot (found from replay chunk data),
+    fades out as you arrive; GUI toggle Amethyst Waypoint.
   - Recording mode: `StealthMode` (`MacroConfig.stealthMode`) — the mod draws nothing on screen
-    (except the Dragon Spawn Timer, which has its own toggle — the user's choice).
+    (except the Dragon Spawn Timer and the Amethyst Waypoint, which have their own toggles — the user's choice).
   - Config (JSON in `config/`): `MacroConfig` → `dragsimmacro.json`; `MiningBotSettings` → `dragsimmacro-miningbot.json`
     (migrates old `dragsimmacro-obsidian.json`); `RouteWalkerSettings` → `dragsimmacro-mining-settings.json`;
     routes → `dragsimmacro-mining.json`. Debug log: `MacroLogger` → `logs/zealotmacro.log`.
@@ -119,7 +121,7 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
   `HudElementRegistry.addLast(id, StealthMode.hide(element))`, guard world rendering with `StealthMode.on()`,
   and send status text through `MacroNotifications.send` (it already skips chat/toasts in recording mode).
   The user plays with recording mode always on, so ask before hiding a feature they asked to see; the Dragon
-  Spawn Timer is the one exception so far.
+  Spawn Timer and the Amethyst Waypoint are the exceptions so far.
 
 - Colours and sizes only from `GuiTheme`. Rounded shapes/icons/buttons via `GuiPaint` (draws in physical pixels).
 - Accent tokens (`ACCENT*`, `SIDEBAR_SELECTED`, `ESP_*`) change at runtime with the Theme Color setting
