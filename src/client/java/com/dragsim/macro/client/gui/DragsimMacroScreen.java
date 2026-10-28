@@ -320,7 +320,7 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Area Break Avoid", "Skip blocks next to one still breaking; the area break may take them anyway",
 				settings::isAreaBreakAvoidEnabled, v -> saveResult(settings.setAreaBreakAvoidEnabled(v), "Area Break Avoid")));
 		s.add(header("Drill"));
-		s.add(new ToggleSetting("Auto Ability", "Right-click ability on start, then again when the drill's cooldown (read from its lore) is over",
+		s.add(new ToggleSetting("Auto Ability", "Right-click ability on start; a 2nd click ~3s later reads the cooldown from chat for the next use",
 				settings::isAutoAbilityEnabled,
 				v -> {
 					boolean ok = settings.setAutoAbilityEnabled(v);

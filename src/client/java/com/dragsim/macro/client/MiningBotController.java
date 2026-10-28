@@ -482,10 +482,16 @@ public final class MiningBotController {
 		long now = MacroClock.nowMs();
 		DrillActions.Message message = drillActions.onMessage(text, now, refuelReactionMs(reactionRandom));
 		if (message == DrillActions.Message.COOLDOWN) {
-			MacroLogger.get().log("MINING_BOT_ABILITY_COOLDOWN nextInMs=" + drillActions.msUntilAbility(now));
+			MacroLogger.get().log("MINING_BOT_ABILITY_COOLDOWN nextInMs=" + drillActions.msUntilAbility(now)
+					+ " measuredMs=" + drillActions.measuredCooldownMs());
 		} else if (message == DrillActions.Message.OUT_OF_FUEL) {
 			MacroLogger.get().log("MINING_BOT_OUT_OF_FUEL refuelWanted=" + drillActions.isRefuelWanted());
 		}
+	}
+
+	/** Gap between the ability and the right-click that asks for its cooldown: 2.5–3.5s. */
+	private static long checkDelayMs(Random random) {
+		return 2_500 + random.nextInt(1_001);
 	}
 
 	/** Time to notice the chat message before reaching for the canister: 0.6–1.5s. */
@@ -525,19 +531,21 @@ public final class MiningBotController {
 		if (!drillSequence.tick(drillIo)) return;
 		DrillUseSequence finished = drillSequence;
 		drillSequence = null;
+		long loreMs = -1;
 		if (finished.clicked()) {
 			if (finished.kind() == DrillActions.Kind.ABILITY) {
-				// Cooldown reductions change with the gear: take the drill's current value each use.
-				drillActions.setAbilityCooldownMs(DrillAbilityCooldown.read(mc.player.getMainHandItem()));
+				// Fallback until the cooldown check has measured the real value.
+				loreMs = DrillAbilityCooldown.read(mc.player.getMainHandItem());
+				drillActions.setAbilityCooldownMs(loreMs);
 			}
-			drillActions.finish(finished.kind(), now);
+			drillActions.finish(finished.kind(), now, checkDelayMs(reactionRandom));
 		} else {
 			drillActions.abort(finished.kind(), now);
 		}
 		MacroLogger.get().log("MINING_BOT_DRILL_ACTION_END kind=" + finished.kind()
 				+ " clicked=" + finished.clicked() + " timedOut=" + finished.timedOut()
 				+ (finished.kind() == DrillActions.Kind.ABILITY
-						? " cooldownMs=" + drillActions.abilityCooldownMs() : ""));
+						? " cooldownMs=" + drillActions.abilityCooldownMs() + " loreMs=" + loreMs : ""));
 		input.update(keyInput, attackWanted(), mc.isWindowActive());
 	}
 

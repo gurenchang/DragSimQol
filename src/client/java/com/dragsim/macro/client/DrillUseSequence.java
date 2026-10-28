@@ -6,7 +6,7 @@ import java.util.Random;
  * Tick-driven right-click sequence for the drill. The caller keeps Attack released for
  * the whole sequence, because vanilla ignores Use while a block is being destroyed.
  *
- * Ability: wait until destroying stops -> Use down 1 tick -> Use up.
+ * Ability / Check: wait until destroying stops -> Use down 1 tick -> Use up.
  * Refuel:  Sneak down -> wait until destroying stops (and sneak was sent) plus a longer,
  *          human-like pause -> Use down 1 tick -> Use up -> pause -> Sneak up.
  */

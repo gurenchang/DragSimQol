@@ -13,18 +13,48 @@ import org.junit.jupiter.api.Test;
 class DrillActionsTest {
 	private static final DrillActions.Kind NONE = DrillActions.Kind.NONE;
 	private static final DrillActions.Kind ABILITY = DrillActions.Kind.ABILITY;
+	private static final DrillActions.Kind CHECK = DrillActions.Kind.CHECK;
 	private static final DrillActions.Kind REFUEL = DrillActions.Kind.REFUEL;
 
 	@Test
-	void abilityRunsOnStartThenAfterDefaultCooldownPlusMargin() {
+	void abilityRunsOnStartThenChecksAndWithoutReplyFallsBackToTheLore() {
 		DrillActions a = new DrillActions();
+		a.setAbilityCooldownMs(204_000);
+		a.setAbilityCooldownMs(-1);
+		assertEquals(204_000, a.abilityCooldownMs(), "no lore line keeps the last value");
 		a.start(1_000, true);
 		assertEquals(ABILITY, a.due(1_000, true, true));
 		a.begin(ABILITY);
 		assertEquals(NONE, a.due(1_050, true, true), "nothing new while running");
-		a.finish(ABILITY, 1_200);
-		assertEquals(NONE, a.due(1_200 + 240_000, true, true));
-		assertEquals(ABILITY, a.due(1_200 + 243_000, true, true));
+		a.finish(ABILITY, 1_200, 3_000);
+		assertEquals(NONE, a.due(4_199, true, true));
+		assertEquals(CHECK, a.due(4_200, true, true));
+		a.begin(CHECK);
+		a.finish(CHECK, 4_300);
+		// No reply: the check click used the ability itself, so the cooldown counts from it.
+		assertEquals(NONE, a.due(4_300 + 206_999, true, true));
+		assertEquals(ABILITY, a.due(4_300 + 207_000, true, true));
+	}
+
+	@Test
+	void checkReplySetsTheNextUseAndMeasuresTheFullCooldown() {
+		DrillActions a = new DrillActions();
+		a.setAbilityCooldownMs(204_000);
+		a.start(0, true);
+		a.begin(ABILITY);
+		a.finish(ABILITY, 0, 3_000);
+		a.begin(CHECK);
+		a.finish(CHECK, 3_000);
+		assertEquals(DrillActions.Message.COOLDOWN,
+				a.onMessage("§cThis ability is on cooldown for 141.0s.", 3_250));
+		assertEquals(144_000, a.measuredCooldownMs());
+		assertEquals(144_000, a.abilityCooldownMs());
+		assertEquals(ABILITY, a.due(3_250 + 144_000, true, true));
+		assertEquals(NONE, a.due(3_250 + 143_999, true, true));
+		a.setAbilityCooldownMs(204_000);
+		assertEquals(144_000, a.abilityCooldownMs(), "a measured cooldown beats the lore");
+		a.start(500_000, true);
+		assertEquals(144_000, a.abilityCooldownMs(), "kept across restarts");
 	}
 
 	@Test
@@ -38,6 +68,7 @@ class DrillActionsTest {
 		assertEquals(NONE, a.due(500 + 89_599, true, true));
 		assertEquals(ABILITY, a.due(500 + 89_600, true, true));
 		assertEquals(89_600, a.msUntilAbility(500));
+		assertEquals(NONE, a.due(500 + 5_000, true, true), "a refused use needs no cooldown check");
 	}
 
 	@Test
@@ -157,22 +188,6 @@ class DrillActionsTest {
 			assertEquals(List.of("sneak+", "use+", "use-", "sneak-"), io.events);
 			assertTrue(seq.clicked());
 		}
-	}
-
-	@Test
-	void abilityUsesTheCooldownReadFromTheDrill() {
-		DrillActions a = new DrillActions();
-		a.setAbilityCooldownMs(204_000);
-		a.start(0, true);
-		a.begin(ABILITY);
-		a.finish(ABILITY, 1_000);
-		assertEquals(NONE, a.due(1_000 + 206_000, true, true));
-		assertEquals(ABILITY, a.due(1_000 + 207_000, true, true));
-		assertEquals(204_000, a.abilityCooldownMs());
-		a.setAbilityCooldownMs(-1);
-		assertEquals(204_000, a.abilityCooldownMs(), "no lore line keeps the last value");
-		a.start(500_000, true);
-		assertEquals(204_000, a.abilityCooldownMs(), "kept across restarts");
 	}
 
 	@Test

@@ -7,21 +7,28 @@ import java.util.regex.Pattern;
 /**
  * Minecraft-independent schedule for drill right-click actions during the Mining Bot.
  *
- * Ability: used once when the bot starts, then again after the drill's cooldown + 3s. The cooldown
- * comes from the drill's lore ({@link DrillAbilityCooldown}, it shrinks as the gear improves);
- * 240s until one has been read. A server cooldown message ("This ability is on cooldown for 86.6s")
- * moves the next try to that time + 3s.
+ * Ability: used once when the bot starts, then again when the server's cooldown is over + 3s.
+ * About 3s after each use a second right-click (CHECK) asks the server: its reply "This ability is
+ * on cooldown for 86.6s" sets the next use to that time + 3s, and with the time since the use gives
+ * the full cooldown. Any cooldown message reschedules the same way; a reply to the ability click
+ * itself means the use was refused, so no check follows. Without a reply the next use falls back
+ * to the cooldown in the drill's lore ({@link DrillAbilityCooldown}), or 240s before one is known.
  * Refuel: requested by "Your drill is out of fuel!" and run after a human-like reaction delay.
  * Messages that arrive right after a refuel are treated as in-flight; later ones count as a
  * failed refuel.
  */
 public final class DrillActions {
-	public enum Kind { NONE, ABILITY, REFUEL }
+	/** CHECK: a right-click right after the ability only to get the server's cooldown reply. */
+	public enum Kind { NONE, ABILITY, CHECK, REFUEL }
 	public enum Message { NONE, COOLDOWN, OUT_OF_FUEL }
 
 	/** Base cooldown without reductions; used until the drill's lore has been read. */
 	static final long DEFAULT_ABILITY_COOLDOWN_MS = 240_000;
 	static final long MARGIN_MS = 3_000;
+	/** Default gap between the ability and its cooldown check. */
+	static final long CHECK_DELAY_MS = 3_000;
+	/** A cooldown message this soon after a right-click is that click's reply. */
+	static final long REPLY_MS = 2_000;
 	/** Out-of-fuel messages this soon after a refuel were already on their way. */
 	static final long REFUEL_GRACE_MS = 750;
 	/** Out-of-fuel messages within this window after a refuel mean it did not work. */
@@ -35,6 +42,12 @@ public final class DrillActions {
 
 	private long abilityCooldownMs = DEFAULT_ABILITY_COOLDOWN_MS;
 	private long nextAbilityAt = Long.MAX_VALUE;
+	private long checkAt = Long.MAX_VALUE;
+	/** Last ability click that got no refusal; MIN when unknown. */
+	private long abilityUsedAt = Long.MIN_VALUE;
+	private Kind lastClick = Kind.NONE;
+	private long lastClickAt = Long.MIN_VALUE;
+	private long measuredCooldownMs = -1;
 	private boolean refuelWanted;
 	private long refuelAt;
 	private long lastRefuelAt = Long.MIN_VALUE;
@@ -43,6 +56,10 @@ public final class DrillActions {
 
 	public void start(long now, boolean useAbility) {
 		nextAbilityAt = useAbility ? now : Long.MAX_VALUE;
+		checkAt = Long.MAX_VALUE;
+		abilityUsedAt = Long.MIN_VALUE;
+		lastClick = Kind.NONE;
+		lastClickAt = Long.MIN_VALUE;
 		refuelWanted = false;
 		refuelAt = 0;
 		lastRefuelAt = Long.MIN_VALUE;
@@ -70,7 +87,17 @@ public final class DrillActions {
 			} catch (NumberFormatException e) {
 				return Message.NONE;
 			}
-			nextAbilityAt = now + Math.round(seconds * 1000.0) + MARGIN_MS;
+			long remainingMs = Math.round(seconds * 1000.0);
+			nextAbilityAt = now + remainingMs + MARGIN_MS;
+			boolean reply = lastClickAt != Long.MIN_VALUE && now - lastClickAt <= REPLY_MS;
+			if (reply && lastClick == Kind.ABILITY) {
+				// The use itself was refused (still on cooldown): the reply already says how long.
+				checkAt = Long.MAX_VALUE;
+				abilityUsedAt = Long.MIN_VALUE;
+			} else if (reply && lastClick == Kind.CHECK && abilityUsedAt != Long.MIN_VALUE) {
+				measuredCooldownMs = remainingMs + (lastClickAt - abilityUsedAt);
+				abilityCooldownMs = measuredCooldownMs;
+			}
 			return Message.COOLDOWN;
 		}
 		if (text.contains(OUT_OF_FUEL_TEXT)) {
@@ -92,6 +119,7 @@ public final class DrillActions {
 		if (running != Kind.NONE) return Kind.NONE;
 		if (autoRefuel && refuelWanted && now >= refuelAt) return Kind.REFUEL;
 		if (autoAbility && now >= nextAbilityAt) return Kind.ABILITY;
+		if (autoAbility && now >= checkAt) return Kind.CHECK;
 		return Kind.NONE;
 	}
 
@@ -99,11 +127,25 @@ public final class DrillActions {
 		running = kind;
 	}
 
-	/** Called when the right-click was actually sent (or the sequence ended). */
 	public void finish(Kind kind, long now) {
+		finish(kind, now, CHECK_DELAY_MS);
+	}
+
+	/** Called when the right-click was actually sent; {@code checkDelayMs}: ability → cooldown check. */
+	public void finish(Kind kind, long now, long checkDelayMs) {
 		running = Kind.NONE;
+		if (kind == Kind.ABILITY || kind == Kind.CHECK) {
+			lastClick = kind;
+			lastClickAt = now;
+		}
 		if (kind == Kind.ABILITY) {
 			nextAbilityAt = now + abilityCooldownMs + MARGIN_MS;
+			abilityUsedAt = now;
+			checkAt = now + Math.max(0, checkDelayMs);
+		} else if (kind == Kind.CHECK) {
+			// No reply means this click used the ability itself: count the cooldown from here.
+			nextAbilityAt = now + abilityCooldownMs + MARGIN_MS;
+			checkAt = Long.MAX_VALUE;
 		} else if (kind == Kind.REFUEL) {
 			refuelWanted = false;
 			lastRefuelAt = now;
@@ -115,6 +157,8 @@ public final class DrillActions {
 		running = Kind.NONE;
 		if (kind == Kind.ABILITY) {
 			nextAbilityAt = now + MARGIN_MS;
+		} else if (kind == Kind.CHECK) {
+			checkAt = now + MARGIN_MS;
 		} else if (kind == Kind.REFUEL) {
 			refuelFailures++;
 			lastRefuelAt = now;
@@ -128,14 +172,21 @@ public final class DrillActions {
 
 	public void disarmAbility() {
 		nextAbilityAt = Long.MAX_VALUE;
+		checkAt = Long.MAX_VALUE;
 	}
 
-	/** Cooldown read from the drill; values <= 0 (no lore line) keep the last one. Kept across starts. */
+	/**
+	 * Cooldown read from the drill; values <= 0 (no lore line) keep the last one. Once a check has
+	 * measured the cooldown the lore is ignored. Kept across starts.
+	 */
 	public void setAbilityCooldownMs(long ms) {
-		if (ms > 0) abilityCooldownMs = ms;
+		if (ms > 0 && measuredCooldownMs < 0) abilityCooldownMs = ms;
 	}
 
+	/** Full cooldown: measured by the last check, else from the lore / default. */
 	public long abilityCooldownMs() { return abilityCooldownMs; }
+	/** Full cooldown measured by the last check; -1 before the first one. */
+	public long measuredCooldownMs() { return measuredCooldownMs; }
 	public boolean refuelGaveUp() { return refuelFailures >= MAX_REFUEL_FAILURES; }
 	public boolean isRefuelWanted() { return refuelWanted; }
 	public Kind running() { return running; }
