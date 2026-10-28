@@ -52,7 +52,7 @@ public final class DrillFuel {
 	}
 
 	/** Colour codes removed; icon glyphs and odd spaces become plain spaces. */
-	private static String plain(String raw) {
+	static String plain(String raw) {
 		String text = FORMATTING.matcher(raw == null ? "" : raw).replaceAll("");
 		StringBuilder out = new StringBuilder(text.length());
 		text.codePoints().forEach(cp -> {

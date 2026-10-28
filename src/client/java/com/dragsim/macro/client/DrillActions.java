@@ -7,8 +7,10 @@ import java.util.regex.Pattern;
 /**
  * Minecraft-independent schedule for drill right-click actions during the Mining Bot.
  *
- * Ability: used once when the bot starts, then every 240s. A server cooldown message
- * ("This ability is on cooldown for 86.6s") moves the next try to that time + 3s.
+ * Ability: used once when the bot starts, then again after the drill's cooldown + 3s. The cooldown
+ * comes from the drill's lore ({@link DrillAbilityCooldown}, it shrinks as the gear improves);
+ * 240s until one has been read. A server cooldown message ("This ability is on cooldown for 86.6s")
+ * moves the next try to that time + 3s.
  * Refuel: requested by "Your drill is out of fuel!" and run after a human-like reaction delay.
  * Messages that arrive right after a refuel are treated as in-flight; later ones count as a
  * failed refuel.
@@ -17,7 +19,8 @@ public final class DrillActions {
 	public enum Kind { NONE, ABILITY, REFUEL }
 	public enum Message { NONE, COOLDOWN, OUT_OF_FUEL }
 
-	static final long ABILITY_COOLDOWN_MS = 240_000;
+	/** Base cooldown without reductions; used until the drill's lore has been read. */
+	static final long DEFAULT_ABILITY_COOLDOWN_MS = 240_000;
 	static final long MARGIN_MS = 3_000;
 	/** Out-of-fuel messages this soon after a refuel were already on their way. */
 	static final long REFUEL_GRACE_MS = 750;
@@ -30,6 +33,7 @@ public final class DrillActions {
 			"this ability is on cooldown for (\\d+(?:\\.\\d+)?)\\s*s");
 	private static final Pattern FORMATTING = Pattern.compile("§.");
 
+	private long abilityCooldownMs = DEFAULT_ABILITY_COOLDOWN_MS;
 	private long nextAbilityAt = Long.MAX_VALUE;
 	private boolean refuelWanted;
 	private long refuelAt;
@@ -99,7 +103,7 @@ public final class DrillActions {
 	public void finish(Kind kind, long now) {
 		running = Kind.NONE;
 		if (kind == Kind.ABILITY) {
-			nextAbilityAt = now + ABILITY_COOLDOWN_MS + MARGIN_MS;
+			nextAbilityAt = now + abilityCooldownMs + MARGIN_MS;
 		} else if (kind == Kind.REFUEL) {
 			refuelWanted = false;
 			lastRefuelAt = now;
@@ -126,6 +130,12 @@ public final class DrillActions {
 		nextAbilityAt = Long.MAX_VALUE;
 	}
 
+	/** Cooldown read from the drill; values <= 0 (no lore line) keep the last one. Kept across starts. */
+	public void setAbilityCooldownMs(long ms) {
+		if (ms > 0) abilityCooldownMs = ms;
+	}
+
+	public long abilityCooldownMs() { return abilityCooldownMs; }
 	public boolean refuelGaveUp() { return refuelFailures >= MAX_REFUEL_FAILURES; }
 	public boolean isRefuelWanted() { return refuelWanted; }
 	public Kind running() { return running; }

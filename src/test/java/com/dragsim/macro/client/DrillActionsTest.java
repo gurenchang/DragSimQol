@@ -160,6 +160,35 @@ class DrillActionsTest {
 	}
 
 	@Test
+	void abilityUsesTheCooldownReadFromTheDrill() {
+		DrillActions a = new DrillActions();
+		a.setAbilityCooldownMs(204_000);
+		a.start(0, true);
+		a.begin(ABILITY);
+		a.finish(ABILITY, 1_000);
+		assertEquals(NONE, a.due(1_000 + 206_000, true, true));
+		assertEquals(ABILITY, a.due(1_000 + 207_000, true, true));
+		assertEquals(204_000, a.abilityCooldownMs());
+		a.setAbilityCooldownMs(-1);
+		assertEquals(204_000, a.abilityCooldownMs(), "no lore line keeps the last value");
+		a.start(500_000, true);
+		assertEquals(204_000, a.abilityCooldownMs(), "kept across restarts");
+	}
+
+	@Test
+	void abilityCooldownLoreLine() {
+		assertEquals(234_000, DrillAbilityCooldown.parse(List.of(
+				"§a-2% §7Pickaxe Ability Cooldown",
+				"Void Infusion RIGHT CLICK",
+				"§7Doubles your §d✧ Pristine §7and the §5Void",
+				"§5Powder §7you mine for §a30s§7.",
+				"§8Cooldown: §a234s",
+				"Refuel SNEAK RIGHT CLICK")));
+		assertEquals(1_200, DrillAbilityCooldown.parse(List.of("§8Cooldown: §a1.2s")));
+		assertEquals(-1, DrillAbilityCooldown.parse(List.of("§a-2% §7Pickaxe Ability Cooldown", "§c4x §7Fuel Usage")));
+	}
+
+	@Test
 	void sequenceTimesOutAndReleasesKeys() {
 		FakeIo io = new FakeIo();
 		io.destroying = true;

@@ -150,6 +150,8 @@ public final class MiningBotController {
 	public String getStopReasonDisplay() { return "-".equals(stopReason) ? "-" : displayReason(stopReason); }
 	/** Milliseconds until the next drill ability use; -1 when not scheduled. */
 	public long msUntilAbility() { return drillActions.msUntilAbility(MacroClock.nowMs()); }
+	/** Full ability cooldown (from the drill's lore), for the HUD gauge. */
+	public long abilityCooldownMs() { return drillActions.abilityCooldownMs(); }
 	public DrillActions.Kind runningDrillAction() { return drillActions.running(); }
 	public boolean isRefuelPending() { return drillActions.isRefuelWanted(); }
 	public String adaptiveStatus() {
@@ -304,6 +306,7 @@ public final class MiningBotController {
 					state = State.AIMING;
 					MiningCameraSmoothing.publishMiningBot(rotation.yaw(), rotation.yaw(),
 							rotation.pitch(), rotation.pitch());
+					drillActions.setAbilityCooldownMs(DrillAbilityCooldown.read(mc.player.getMainHandItem()));
 					drillActions.start(MacroClock.nowMs(), settings.isAutoAbilityEnabled());
 					drillSequence = null;
 					// Ability is used first on start: do not press Attack before that right-click.
@@ -523,12 +526,18 @@ public final class MiningBotController {
 		DrillUseSequence finished = drillSequence;
 		drillSequence = null;
 		if (finished.clicked()) {
+			if (finished.kind() == DrillActions.Kind.ABILITY) {
+				// Cooldown reductions change with the gear: take the drill's current value each use.
+				drillActions.setAbilityCooldownMs(DrillAbilityCooldown.read(mc.player.getMainHandItem()));
+			}
 			drillActions.finish(finished.kind(), now);
 		} else {
 			drillActions.abort(finished.kind(), now);
 		}
 		MacroLogger.get().log("MINING_BOT_DRILL_ACTION_END kind=" + finished.kind()
-				+ " clicked=" + finished.clicked() + " timedOut=" + finished.timedOut());
+				+ " clicked=" + finished.clicked() + " timedOut=" + finished.timedOut()
+				+ (finished.kind() == DrillActions.Kind.ABILITY
+						? " cooldownMs=" + drillActions.abilityCooldownMs() : ""));
 		input.update(keyInput, attackWanted(), mc.isWindowActive());
 	}
 

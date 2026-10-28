@@ -117,7 +117,7 @@ public final class MiningBotHud implements HudElement {
 			} else if (ability == 0) {
 				gauges.add(new Gauge("Ability", "ready", 1f, GuiTheme.SUCCESS));
 			} else if (ability > 0) {
-				float charged = 1f - Math.min(1f, ability / (float) DrillActions.ABILITY_COOLDOWN_MS);
+				float charged = 1f - Math.min(1f, ability / (float) bot.abilityCooldownMs());
 				gauges.add(new Gauge("Ability", MiningBotStats.duration(ability), charged, GuiTheme.ACCENT));
 			}
 		}
