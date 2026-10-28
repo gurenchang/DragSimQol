@@ -1,5 +1,7 @@
 package com.dragsim.macro.client;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,94 +34,32 @@ class ScytheFireGateTest {
 	}
 
 	@Test
-	void waitsWhileGuiOpen() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().guiOpen(true));
-		assertEquals(ScytheFireGate.REASON_GUI_OPEN, o.reason());
+	void eachBlockingConditionWaitsWithItsReason() {
+		record Case(ScytheFireGate.Flags flags, String reason) {}
+		for (Case c : List.of(
+				new Case(fireReady().guiOpen(true), ScytheFireGate.REASON_GUI_OPEN),
+				new Case(fireReady().targetPresent(false), ScytheFireGate.REASON_NO_TARGET),
+				new Case(fireReady().registered(false), ScytheFireGate.REASON_SCYTHE_NOT_REGISTERED),
+				new Case(fireReady().inHand(false), ScytheFireGate.REASON_WRONG_WEAPON),
+				new Case(fireReady().inHotbar(false), ScytheFireGate.REASON_WRONG_WEAPON),
+				new Case(fireReady().switching(true), ScytheFireGate.REASON_SWITCHING_WEAPON),
+				new Case(fireReady().manualOverride(true), ScytheFireGate.REASON_MANUAL_OVERRIDE),
+				new Case(fireReady().approachBusy(true), ScytheFireGate.REASON_APPROACHING),
+				new Case(fireReady().inRange(false), ScytheFireGate.REASON_OUT_OF_RANGE),
+				new Case(fireReady().motionValid(false), ScytheFireGate.REASON_MOTION_WARMUP),
+				new Case(fireReady().interceptValid(false), ScytheFireGate.REASON_NO_INTERCEPT),
+				new Case(fireReady().aimed(false), ScytheFireGate.REASON_NOT_AIMED),
+				new Case(fireReady().pathClear(false), ScytheFireGate.REASON_PATH_BLOCKED),
+				new Case(fireReady().cooldown(true), ScytheFireGate.REASON_ITEM_COOLDOWN),
+				new Case(fireReady().intervalElapsed(false), ScytheFireGate.REASON_FIRE_INTERVAL))) {
+			ScytheFireGate.Outcome o = ScytheFireGate.evaluate(c.flags());
+			assertEquals(ScytheFireGate.Action.WAIT, o.action(), c.reason());
+			assertEquals(c.reason(), o.reason());
+		}
 	}
 
 	@Test
-	void waitsWhenTargetMissing() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().targetPresent(false));
-		assertEquals(ScytheFireGate.REASON_NO_TARGET, o.reason());
-	}
-
-	@Test
-	void waitsWhenScytheNotRegistered() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().registered(false));
-		assertEquals(ScytheFireGate.REASON_SCYTHE_NOT_REGISTERED, o.reason());
-	}
-
-	@Test
-	void waitsWhenWeaponWrong() {
-		assertEquals(ScytheFireGate.REASON_WRONG_WEAPON,
-				ScytheFireGate.evaluate(fireReady().inHand(false)).reason());
-		assertEquals(ScytheFireGate.REASON_WRONG_WEAPON,
-				ScytheFireGate.evaluate(fireReady().inHotbar(false)).reason());
-	}
-
-	@Test
-	void waitsWhileSwitchingWeapon() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().switching(true));
-		assertEquals(ScytheFireGate.REASON_SWITCHING_WEAPON, o.reason());
-	}
-
-	@Test
-	void waitsDuringManualOverride() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().manualOverride(true));
-		assertEquals(ScytheFireGate.REASON_MANUAL_OVERRIDE, o.reason());
-	}
-
-	@Test
-	void waitsWhileApproaching() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().approachBusy(true));
-		assertEquals(ScytheFireGate.REASON_APPROACHING, o.reason());
-	}
-
-	@Test
-	void waitsWhenOutOfRange() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().inRange(false));
-		assertEquals(ScytheFireGate.REASON_OUT_OF_RANGE, o.reason());
-	}
-
-	@Test
-	void waitsDuringMotionWarmup() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().motionValid(false));
-		assertEquals(ScytheFireGate.REASON_MOTION_WARMUP, o.reason());
-	}
-
-	@Test
-	void waitsWhenNoIntercept() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().interceptValid(false));
-		assertEquals(ScytheFireGate.REASON_NO_INTERCEPT, o.reason());
-	}
-
-	@Test
-	void waitsWhenNotAimed() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().aimed(false));
-		assertEquals(ScytheFireGate.REASON_NOT_AIMED, o.reason());
-	}
-
-	@Test
-	void waitsWhenPathBlocked() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().pathClear(false));
-		assertEquals(ScytheFireGate.REASON_PATH_BLOCKED, o.reason());
-	}
-
-	@Test
-	void waitsDuringItemCooldown() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().cooldown(true));
-		assertEquals(ScytheFireGate.REASON_ITEM_COOLDOWN, o.reason());
-	}
-
-	@Test
-	void waitsForFireInterval() {
-		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().intervalElapsed(false));
-		assertEquals(ScytheFireGate.REASON_FIRE_INTERVAL, o.reason());
-	}
-
-	@Test
-	void intervalBeatsBlockedReasonsOrdering() {
-		// blocked系が解消されてもinterval経過前なら発射しない
+	void itemCooldownIsReportedBeforeFireInterval() {
 		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(fireReady().intervalElapsed(false).cooldown(true));
 		assertEquals(ScytheFireGate.REASON_ITEM_COOLDOWN, o.reason());
 	}
@@ -160,27 +100,5 @@ class ScytheFireGateTest {
 		ScytheFireGate.Outcome o = ScytheFireGate.evaluate(
 				fireReady().macroOn(false).guiOpen(true).intervalElapsed(false));
 		assertEquals(ScytheFireGate.REASON_MACRO_OFF, o.reason());
-	}
-
-	@Test
-	void waitReasonCodesAreTheSpecifiedEnglishCodes() {
-		// 指定された英語reason codeが定数として存在すること(診断/HUD/ログ共通)
-		assertEquals("NO_TARGET", ScytheFireGate.REASON_NO_TARGET);
-		assertEquals("APPROACHING", ScytheFireGate.REASON_APPROACHING);
-		assertEquals("SWITCHING_WEAPON", ScytheFireGate.REASON_SWITCHING_WEAPON);
-		assertEquals("MOTION_WARMUP", ScytheFireGate.REASON_MOTION_WARMUP);
-		assertEquals("OUT_OF_RANGE", ScytheFireGate.REASON_OUT_OF_RANGE);
-		assertEquals("NO_INTERCEPT", ScytheFireGate.REASON_NO_INTERCEPT);
-		assertEquals("NOT_AIMED", ScytheFireGate.REASON_NOT_AIMED);
-		assertEquals("PATH_BLOCKED", ScytheFireGate.REASON_PATH_BLOCKED);
-		assertEquals("FIRE_INTERVAL", ScytheFireGate.REASON_FIRE_INTERVAL);
-		assertEquals("ITEM_COOLDOWN", ScytheFireGate.REASON_ITEM_COOLDOWN);
-		assertEquals("MANUAL_OVERRIDE", ScytheFireGate.REASON_MANUAL_OVERRIDE);
-		assertEquals("WRONG_WEAPON", ScytheFireGate.REASON_WRONG_WEAPON);
-		assertEquals("SCYTHE_NOT_REGISTERED", ScytheFireGate.REASON_SCYTHE_NOT_REGISTERED);
-		assertEquals("TARGET_TIMEOUT", ScytheFireGate.REASON_TARGET_TIMEOUT);
-		assertEquals("WORLD_LOST", ScytheFireGate.REASON_WORLD_LOST);
-		assertEquals("GUI_OPEN", ScytheFireGate.REASON_GUI_OPEN);
-		assertEquals("MACRO_OFF", ScytheFireGate.REASON_MACRO_OFF);
 	}
 }

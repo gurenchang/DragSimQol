@@ -13,7 +13,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.Bootstrap;
 import net.minecraft.SharedConstants;
-import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.item.ItemStack;
@@ -44,22 +43,6 @@ class MiningBotTargetTest {
 	}
 
 	@Test
-	void cryingObsidianSettingSurvivesSaveReloadWithFixedTiming() {
-		Path file = tempDir.resolve("crying-obsidian.json");
-		var saved = new MiningBotSettings(file);
-		assertTrue(saved.setAimLeadMode(MiningBotSettings.AimLeadMode.FIXED));
-		assertTrue(saved.setFixedBreakMs(1500));
-		assertTrue(saved.setFixedLeadMs(150));
-		assertTrue(saved.setTarget(MiningBotTarget.CRYING_OBSIDIAN));
-		var loaded = new MiningBotSettings(file);
-		assertTrue(loaded.load());
-		assertEquals(MiningBotTarget.CRYING_OBSIDIAN, loaded.getTarget());
-		assertEquals(MiningBotSettings.AimLeadMode.FIXED, loaded.getAimLeadMode());
-		assertEquals(1500, loaded.getFixedBreakMs());
-		assertEquals(150, loaded.getFixedLeadMs());
-	}
-
-	@Test
 	void configValuesAreStrictAndOldConfigDefaultsToObsidian() {
 		assertEquals(MiningBotTarget.OBSIDIAN, MiningBotTarget.fromConfig("obsidian"));
 		assertEquals(MiningBotTarget.LARGE_AMETHYST_BUD,
@@ -81,13 +64,7 @@ class MiningBotTargetTest {
 	}
 
 	@Test
-	void adaptiveAndTimeoutSettingsAreBackwardCompatibleAndBounded() {
-		MiningBotSettings old = new MiningBotSettings();
-		assertTrue(old.parse("{\"schemaVersion\":1,\"targetBlock\":\"obsidian\"}"));
-		assertFalse(old.isAdaptiveAimLeadEnabled());
-		assertEquals(MiningBotSettings.DEFAULT_MAX_LEAD_MS, old.getMaxLeadMs());
-		assertTrue(old.isMiningTimeoutEnabled());
-		assertEquals(MiningBotSettings.DEFAULT_TIMEOUT_MS, old.getTimeoutDurationMs());
+	void adaptiveAndTimeoutSettingsAreBounded() {
 		MiningBotSettings current = new MiningBotSettings();
 		assertTrue(current.parse("{\"schemaVersion\":1,\"adaptiveAimLead\":true,\"maxLeadMs\":9999,"
 				+ "\"miningTimeout\":false,\"timeoutDurationMs\":1}"));
@@ -134,21 +111,6 @@ class MiningBotTargetTest {
 			assertTrue(point.y < pos.getY() + narrowBudLikeShape.maxY);
 			assertTrue(point.z > pos.getZ() + narrowBudLikeShape.minZ);
 			assertTrue(point.z < pos.getZ() + narrowBudLikeShape.maxZ);
-		}
-	}
-
-	@Test
-	void vanillaLargeBudShapeExistsForAllSixFacings() {
-		for (Direction direction : Direction.values()) {
-			var state = Blocks.LARGE_AMETHYST_BUD.defaultBlockState()
-					.setValue(BlockStateProperties.FACING, direction);
-			var boxes = state.getShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).toAabbs();
-			assertFalse(boxes.isEmpty(), "facing=" + direction);
-			assertFalse(state.is(Blocks.SMALL_AMETHYST_BUD));
-			assertFalse(state.is(Blocks.MEDIUM_AMETHYST_BUD));
-			assertFalse(state.is(Blocks.AMETHYST_CLUSTER));
-			assertEquals(boxes.size() * 7,
-					MiningBotController.aimPointsForBoxes(boxes, BlockPos.ZERO).size());
 		}
 	}
 

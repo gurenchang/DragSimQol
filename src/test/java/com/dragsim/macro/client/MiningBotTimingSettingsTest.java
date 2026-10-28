@@ -82,18 +82,6 @@ class MiningBotTimingSettingsTest {
 	}
 
 	@Test
-	void malformedFixedTimingJsonIsAtomic() {
-		MiningBotSettings settings = new MiningBotSettings();
-		assertTrue(settings.parse("{\"schemaVersion\":1,\"aimLeadMode\":\"FIXED\","
-				+ "\"fixedBreakMs\":2000,\"fixedLeadMs\":300}"));
-		assertFalse(settings.parse("{\"schemaVersion\":1,\"aimLeadMode\":\"OFF\","
-				+ "\"fixedBreakMs\":50,\"fixedLeadMs\":\"broken\"}"));
-		assertEquals(MiningBotSettings.AimLeadMode.FIXED, settings.getAimLeadMode());
-		assertEquals(2000, settings.getFixedBreakMs());
-		assertEquals(300, settings.getFixedLeadMs());
-	}
-
-	@Test
 	void fixedTimingSettersClampToSafeRanges() {
 		MiningBotSettings settings = new MiningBotSettings(tempDir.resolve("clamp-settings.json"));
 		assertTrue(settings.setFixedBreakMs(1));

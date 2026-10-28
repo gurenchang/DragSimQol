@@ -16,7 +16,7 @@ class DrillActionsTest {
 	private static final DrillActions.Kind REFUEL = DrillActions.Kind.REFUEL;
 
 	@Test
-	void abilityRunsOnStartThenEvery240sPlusMargin() {
+	void abilityRunsOnStartThenAfterDefaultCooldownPlusMargin() {
 		DrillActions a = new DrillActions();
 		a.start(1_000, true);
 		assertEquals(ABILITY, a.due(1_000, true, true));

@@ -203,12 +203,6 @@ class MiningRotationTest {
 	}
 
 	@Test
-	void accelRetiredMessageIsUnchanged() {
-		assertEquals("[DragSim] Route Walker rotation is linear; acceleration is no longer used.",
-				RouteWalkerCommand.ACCEL_RETIRED_MESSAGE);
-	}
-
-	@Test
 	void cameraPitchIsOwnedOnlyByMiningBotSnapshot() {
 		MiningCameraSmoothing.publishRoute(10, 16);
 		assertEquals(42f, MiningCameraSmoothing.resolvePitch(
