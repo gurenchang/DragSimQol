@@ -76,6 +76,7 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `MiningBotMouseSteps` (view changes rounded to whole mouse counts at the player's sensitivity),
     `MiningBotLandingPoint` (near-side random landing point), `MiningBotTargetOrder` (sweep-direction habits),
     `MiningBotAreaAvoid` (skip neighbours of a block still breaking — the server's area break may take them),
+    `MiningBotAimGuard` (settled crosshair on another block, e.g. bedrock in front: re-aim, then drop),
     `MiningBotAdaptiveAim` / `MiningBotFixedAim` / `MiningBotTickAim` (break-timing lead),
     `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps),
     `DrillAbilityCooldown` / `DrillFuel` (read from the held drill's lore — the ability cooldown there already
