@@ -146,6 +146,8 @@ public final class MacroConfig {
 	public boolean dragonSpawnMarker = true;
 	/** Waypoint on the best Amethyst Block mining spot; fades out as you arrive. Also in recording mode. */
 	public boolean amethystWaypoint = true;
+	/** Waypoint on the best Crying Obsidian mining spot; fades out as you arrive. Also in recording mode. */
+	public boolean cryingObsidianWaypoint = true;
 	/** Cosmetic cape on your own player (a {@code Cosmetics.Cape} name; OFF = vanilla). Only you see it. */
 	public String cosmeticCape = "OFF";
 	/** Cosmetic china hat on your own player. Only you see it. */

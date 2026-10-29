@@ -225,10 +225,10 @@ public class DragsimMacroClient implements ClientModInitializer {
 		DragonSpawnOverlay dragonSpawn = new DragonSpawnOverlay();
 		HudElementRegistry.addLast(DragsimMacroMod.id("dragon_spawn"), dragonSpawn);
 		LevelRenderEvents.BEFORE_GIZMOS.register(dragonSpawn::renderWorld);
-		// Amethyst mining spot waypoint. Also shown in recording mode (own toggle, user's choice).
-		AmethystWaypointOverlay amethystWaypoint = new AmethystWaypointOverlay();
-		HudElementRegistry.addLast(DragsimMacroMod.id("amethyst_waypoint"), amethystWaypoint);
-		LevelRenderEvents.BEFORE_GIZMOS.register(amethystWaypoint::renderWorld);
+		// Mining spot waypoints. Also shown in recording mode (own toggles, user's choice).
+		MiningSpotWaypointOverlay spotWaypoints = new MiningSpotWaypointOverlay();
+		HudElementRegistry.addLast(DragsimMacroMod.id("mining_spot_waypoints"), spotWaypoints);
+		LevelRenderEvents.BEFORE_GIZMOS.register(spotWaypoints::renderWorld);
 		// Cosmetics: the china hat rides on player renderers (it only draws on the local player).
 		LivingEntityRenderLayerRegistrationCallback.EVENT.register((type, renderer, helper, context) -> {
 			if (renderer instanceof AvatarRenderer<?> avatar) helper.register(new ChinaHatLayer(avatar));

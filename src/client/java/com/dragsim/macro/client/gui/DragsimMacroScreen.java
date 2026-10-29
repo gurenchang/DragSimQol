@@ -527,6 +527,9 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Amethyst Waypoint", "Marks the best Amethyst Block spot (-718, 1, -308); fades out as you arrive. Also shown in recording mode",
 				() -> MacroConfig.get().amethystWaypoint,
 				v -> updateConfig(c -> c.amethystWaypoint = v)));
+		s.add(new ToggleSetting("Crying Obsidian Waypoint", "Marks the best Crying Obsidian spot (-608, 161, -319); fades out as you arrive. Also shown in recording mode",
+				() -> MacroConfig.get().cryingObsidianWaypoint,
+				v -> updateConfig(c -> c.cryingObsidianWaypoint = v)));
 		s.add(new InfoSetting("Route Display", "Configured on the Route Walker page",
 				() -> routeWalkerController.getSettings().isShowRoute() ? "ON" : "OFF"));
 		s.add(header("Cosmetics"));

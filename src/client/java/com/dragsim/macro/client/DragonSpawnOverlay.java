@@ -58,7 +58,7 @@ public final class DragonSpawnOverlay implements HudElement {
 
 	/**
 	 * Lines and faces that ignore depth (the vanilla translucent lines / debug quads pipelines, depth test off).
-	 * Shared with other markers that must show through blocks ({@link AmethystWaypointOverlay}).
+	 * Shared with other markers that must show through blocks ({@link MiningSpotWaypointOverlay}).
 	 */
 	static final RenderType LINES_SEE_THROUGH = RenderType.create("dragsimmacro_lines_see_through",
 			RenderSetup.builder(RenderPipelines.register(RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
