@@ -18,6 +18,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
@@ -45,6 +46,8 @@ public final class MiningBotController {
 	private static final double AIM_EPSILON_DEG = 0.75;
 	private static final double MAX_POSITION_CHANGE_SQR = 1.0;
 	static final double MAX_DRIFT_TURN_SPEED_DPS = 10.0;
+	/** Crosshair clearance kept around an aim point, in blocks across the line of sight (see clearShot). */
+	static final double AIM_CLEARANCE = 0.05;
 	private static MiningBotController instance;
 
 	private final MiningBotSettings settings = new MiningBotSettings();
@@ -58,6 +61,7 @@ public final class MiningBotController {
 	private final MiningBotAdaptiveAim adaptiveAim = new MiningBotAdaptiveAim();
 	private final MiningBotTimeoutPolicy<BlockPos> timeoutPolicy = new MiningBotTimeoutPolicy<>(64);
 	private final MiningBotAttemptLedger attempts = new MiningBotAttemptLedger(32);
+	private final MiningBotAimGuard aimGuard = new MiningBotAimGuard();
 	private final Random reactionRandom = new Random();
 	private final DrillActions drillActions = new DrillActions();
 	private final MiningBotStats stats = new MiningBotStats();
@@ -466,9 +470,37 @@ public final class MiningBotController {
 				? actualHitMatches(mc, target.pos()) || aligned
 				: aligned;
 		state = miningReady ? State.MINING : State.AIMING;
+		guardAim(mc, now);
 		// KeyMapping remains held; the Mixin gate independently controls vanilla destruction.
 		input.update(keyInput, attackWanted(), mc.isWindowActive());
 		return true;
+	}
+
+	/** Settled aim with the crosshair on another block: aim afresh, then drop the target. */
+	private void guardAim(Minecraft mc, long now) {
+		BlockPos hitPos = mc.hitResult instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK
+				? hit.getBlockPos() : null;
+		boolean onTarget = mc.crosshairPickEntity == null && target.pos().equals(hitPos);
+		MiningBotAimGuard.Action action = aimGuard.update(target.pos(), driftEngaged && drillSequence == null, onTarget);
+		if (action == MiningBotAimGuard.Action.NONE) return;
+		BlockPos pos = target.pos();
+		MacroLogger.get().log("MINING_BOT_AIM_OFF pos=" + pos.toShortString() + " action=" + action
+				+ " hit=" + (hitPos == null ? "-" : hitPos.toShortString() + " "
+						+ BuiltInRegistries.BLOCK.getKey(mc.level.getBlockState(hitPos).getBlock()).getPath())
+				+ (mc.crosshairPickEntity != null ? " entity=" + BuiltInRegistries.ENTITY_TYPE.getKey(mc.crosshairPickEntity.getType()).getPath() : "")
+				+ String.format(Locale.ROOT, " yawErr=%.2f pitchErr=%.2f",
+						MiningRotationController.angleError(target.yaw(), mc.player.getYRot()),
+						target.pitch() - mc.player.getXRot()));
+		if (action == MiningBotAimGuard.Action.REAIM) {
+			Candidate fresh = candidateFor(mc, pos);
+			if (fresh != null) {
+				target = takeTarget(mc, fresh);
+				return;
+			}
+		}
+		timeoutPolicy.cooldown(pos, now, 5000);
+		attempts.remove(pos);
+		loseTarget();
 	}
 
 	/** Attack stays released while a drill right-click is in progress. */
@@ -552,6 +584,9 @@ public final class MiningBotController {
 				+ (finished.kind() == DrillActions.Kind.REFUEL ? " clicks=" + finished.clicks() : "")
 				+ (finished.kind() == DrillActions.Kind.ABILITY
 						? " cooldownMs=" + drillActions.abilityCooldownMs() + " loreMs=" + loreMs : ""));
+		// The right-click let go of the target mid-break: time it afresh from the next start, or the
+		// pause runs out its timeout (and the interrupted attempt never switches early).
+		if (target != null) attempts.remove(target.pos());
 		input.update(keyInput, attackWanted(), mc.isWindowActive());
 	}
 
@@ -566,6 +601,7 @@ public final class MiningBotController {
 
 	private void loseTarget() {
 		target = null;
+		aimGuard.reset();
 		aimDrift.reset();
 		driftEngaged = false;
 		state = State.SEARCHING;
@@ -733,6 +769,7 @@ public final class MiningBotController {
 			if (hit.getType() != HitResult.Type.BLOCK || !hit.getBlockPos().equals(pos)) continue;
 			if (!withinActualReach(mc, eye, hit.getLocation())) continue;
 			if (entityOccludes(mc, eye, hit.getLocation())) continue;
+			if (!clearShot(mc, eye, aim, pos)) continue;
 			Vec3 delta = hit.getLocation().subtract(eye);
 			double yaw = Math.toDegrees(Math.atan2(-delta.x, delta.z));
 			double pitch = -Math.toDegrees(Math.atan2(delta.y, Math.hypot(delta.x, delta.z)));
@@ -960,6 +997,7 @@ public final class MiningBotController {
 		if (hit.getType() != HitResult.Type.BLOCK || !hit.getBlockPos().equals(pos)) return null;
 		if (!withinActualReach(mc, eye, hit.getLocation())) return null;
 		if (entityOccludes(mc, eye, hit.getLocation())) return null;
+		if (!clearShot(mc, eye, desiredAim, pos)) return null;
 		Vec3 delta = desiredAim.subtract(eye);
 		double yaw = Math.toDegrees(Math.atan2(-delta.x, delta.z));
 		double pitch = -Math.toDegrees(Math.atan2(delta.y, Math.hypot(delta.x, delta.z)));
@@ -983,6 +1021,28 @@ public final class MiningBotController {
 		y = Math.max(bounds.minY + inset, Math.min(bounds.maxY - inset, y));
 		z = Math.max(bounds.minZ + inset, Math.min(bounds.maxZ - inset, z));
 		return new Vec3(x, y, z);
+	}
+
+	/**
+	 * Rays {@link #AIM_CLEARANCE} to each side of the aim point must hit the target first too. A point just past
+	 * the edge of a mined-out bedrock block in front passes the single clip, while the real crosshair (half a mouse
+	 * step, drift lag) lands on the bedrock and mines nothing until the timeout (2026-10-29, Amethyst).
+	 */
+	private boolean clearShot(Minecraft mc, Vec3 eye, Vec3 aim, BlockPos pos) {
+		Vec3 dir = aim.subtract(eye);
+		double len = dir.length();
+		if (len < 1.0e-6) return false;
+		dir = dir.scale(1.0 / len);
+		Vec3 side = dir.cross(Math.abs(dir.y) < 0.99 ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0)).normalize();
+		Vec3 up = side.cross(dir).normalize();
+		for (Vec3 offset : new Vec3[] {side, side.reverse(), up, up.reverse()}) {
+			// Past the point by half a block, so a ray that misses the target's edge still reports what it hits.
+			Vec3 end = eye.add(aim.add(offset.scale(AIM_CLEARANCE)).subtract(eye).scale(1.0 + 0.5 / len));
+			BlockHitResult hit = mc.level.clip(new ClipContext(eye, end,
+					ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, mc.player));
+			if (hit.getType() != HitResult.Type.BLOCK || !hit.getBlockPos().equals(pos)) return false;
+		}
+		return true;
 	}
 
 	private boolean entityOccludes(Minecraft mc, Vec3 from, Vec3 to) {
