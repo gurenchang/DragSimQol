@@ -22,7 +22,7 @@ feature — e.g. changing how the drill ability timing is obtained, even when it
 Minor (`1.8.0` → `1.9.0`) only for a clearly new feature (a new automation, page, overlay or alert type).
 When unsure, it's a patch.
 Then `./gradlew clean build`, tag `v<version>`, push `main` and the tag to `origin`, and
-`gh release create v<version> build/libs/dragsimmacro-<version>.jar --repo gurenchang/DragSimQol`
+`gh release create v<version> build/libs/DragSimQol-<version>.jar --repo gurenchang/DragSimQol`
 (main jar only, notes in Japanese; cover every change since the last GitHub release). Always pass `--repo`: gh's
 default repo here is the upstream fork parent, and without it the release fails or lands on the wrong repo.
 Never reuse a released version — a jar that went into the play instance counts as released even without a tag.

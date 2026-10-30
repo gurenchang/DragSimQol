@@ -73,6 +73,11 @@ java {
 	targetCompatibility = JavaVersion.VERSION_25
 }
 
+// Jar named after the GitHub repo; the mod id stays dragsimmacro (config files, keybinds, mixin config).
+base {
+	archivesName = 'DragSimQol'
+}
+
 jar {
 	def projectName = project.name
 	inputs.property "projectName", projectName
