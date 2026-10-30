@@ -362,6 +362,7 @@ public final class MiningBotController {
 		AutomationCoordinator.release(AutomationCoordinator.Owner.MINING_BOT);
 		if ("MANUAL_STOP".equals(stopReason)) StopInertia.onManualStop(mc);
 		MacroLogger.get().log("MINING_BOT_STOP reason=" + stopReason);
+		AlertMonitor.onMacroStopped(mc, "Mining Bot", stopReason, displayReason(stopReason));
 		if (!"SILENT".equals(reason)) {
 			notify(mc, "[DragSim] Mining Bot OFF — " + displayReason(stopReason));
 		}

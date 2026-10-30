@@ -615,6 +615,9 @@ public class DragsimMacroScreen extends Screen {
 				4, 48, 1, () -> MacroConfig.get().alertNewEntityRadius,
 				v -> updateConfig(c -> c.alertNewEntityRadius = v),
 				v -> String.format(Locale.ROOT, "%.0f blocks", v)));
+		s.add(new ToggleSetting("Particle Check", "While mining: notify when the server shows particles next to you (e.g. a staff check with End Rune particles)",
+				() -> MacroConfig.get().alertParticle,
+				v -> updateConfig(c -> c.alertParticle = v)));
 		s.add(new ToggleSetting("Block Check", "While the Mining Bot runs: notify when a block next to you turns into something other than the target, air or bedrock",
 				() -> MacroConfig.get().alertBlockChange,
 				v -> updateConfig(c -> c.alertBlockChange = v)));
@@ -627,6 +630,9 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("World Change", "Notify when a running macro stops because of a world change, respawn, death or disconnect",
 				() -> MacroConfig.get().alertWorldChange,
 				v -> updateConfig(c -> c.alertWorldChange = v)));
+		s.add(new ToggleSetting("Macro Stopped", "Notify when the Mining Bot or Route Walker stops by itself (out of fuel, stuck, a GUI opened ...)",
+				() -> MacroConfig.get().alertMacroStopped,
+				v -> updateConfig(c -> c.alertMacroStopped = v)));
 		s.add(new ToggleSetting("Screen Flash", "Pulse the screen edge red when an alert fires",
 				() -> MacroConfig.get().alertScreenFlash,
 				v -> updateConfig(c -> c.alertScreenFlash = v)));

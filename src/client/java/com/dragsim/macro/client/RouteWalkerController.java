@@ -432,6 +432,7 @@ public final class RouteWalkerController {
 		boolean focused = mc != null && mc.isWindowActive();
 		session.update(sessionInput, RouteWalkerInputSession.Want.none(), stopReason, focused);
 		MacroLogger.get().log("MINING_STOP reason=" + stopReason + " laps=" + follower.getLaps());
+		AlertMonitor.onMacroStopped(mc, "Route Walker", stopReason, stopReasonDisplay(stopReason));
 		if (!"SILENT".equals(reason)) {
 			notify(mc, "[DragSim] Route Walker OFF — " + stopReasonDisplay(stopReason));
 		}

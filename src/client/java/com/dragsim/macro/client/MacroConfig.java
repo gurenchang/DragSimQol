@@ -188,6 +188,8 @@ public final class MacroConfig {
 	/** While the Mining Bot / Route Walker runs: desktop notification when an entity spawns within alertNewEntityRadius blocks (horizontal). */
 	public boolean alertNewEntity = true;
 	public double alertNewEntityRadius = 16.0;
+	/** While the Mining Bot / Route Walker runs: desktop notification when the server shows particles next to you. */
+	public boolean alertParticle = true;
 	/** While the Mining Bot runs: desktop notification when a block next to you becomes something other than the target, air or bedrock. */
 	public boolean alertBlockChange = true;
 	/** While a macro runs: desktop notification when the server gives you a new harmful effect (blindness, levitation ...). */
@@ -196,6 +198,8 @@ public final class MacroConfig {
 	public boolean alertDamage = true;
 	/** Desktop notification when a running macro is stopped by a world change, respawn, death or disconnect. */
 	public boolean alertWorldChange = true;
+	/** Desktop notification when the Mining Bot / Route Walker stops by itself (out of fuel, stuck, server GUI ...). */
+	public boolean alertMacroStopped = true;
 
 	// ==== Target filters(Phase 7.0) ====
 	public boolean targetNormalZealot = true;

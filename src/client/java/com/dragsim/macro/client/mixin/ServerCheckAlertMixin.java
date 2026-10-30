@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
 import net.minecraft.network.protocol.game.ClientboundExplodePacket;
+import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
@@ -21,8 +22,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Feeds server-side staff checks to the alert monitor: teleport / rotate / held-slot / inventory
- * packets (before/after state), velocity applied to the player, effects and damage on the player, and staff
- * check text in titles or container names.
+ * packets (before/after state), velocity applied to the player, effects and damage on the player, server particles,
+ * and staff check text in titles or container names.
  * The handlers first run on the network thread and bail out at ensureRunningOnSameThread, so
  * "before" captures inject after it, and TAIL injections only ever run on the main thread.
  */
@@ -109,6 +110,16 @@ abstract class ServerCheckAlertMixin {
 		AlertMonitor monitor = AlertMonitor.get();
 		if (monitor == null || mc.player == null || mc.level == null || packet.entityId() != mc.player.getId()) return;
 		monitor.onServerDamage(mc, packet.getSource(mc.level));
+	}
+
+	// Particles the server shows (a staff check may put some next to you).
+	@Inject(method = "handleParticleEvent",
+			at = @At(value = "INVOKE", target = ENSURE_SAME_THREAD, shift = At.Shift.AFTER))
+	private void dragsim$beforeParticles(ClientboundLevelParticlesPacket packet, CallbackInfo ci) {
+		AlertMonitor monitor = AlertMonitor.get();
+		if (monitor == null) return;
+		monitor.onServerParticles(Minecraft.getInstance(), packet.getParticle(), packet.getX(), packet.getY(),
+				packet.getZ(), packet.getCount());
 	}
 
 	// Staff check text shown as a title, subtitle or container (terminal) name.

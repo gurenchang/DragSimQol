@@ -5,10 +5,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.BooleanSupplier;
 
+import com.dragsim.macro.client.gui.DragsimMacroScreen;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.PauseScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffect;
@@ -30,8 +37,9 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * Watches for nearby players, chat mentions, staff checks, entities spawned next to you, blocks swapped next to
- * you, harmful effects, damage, world changes and server-forced teleports / view changes / hotbar slot and held
- * item changes / knockback, and raises desktop notifications.
+ * you, server particles next to you, harmful effects, damage, world changes and server-forced teleports / view changes / hotbar slot and held
+ * item changes / knockback, and raises desktop notifications. Also tells you when the Mining Bot or Route Walker
+ * stopped by itself (out of fuel, stuck, a GUI the server opened ...) unless an alert already said why.
  */
 public final class AlertMonitor {
 	private static final int SCAN_INTERVAL_TICKS = 10;
@@ -50,6 +58,17 @@ public final class AlertMonitor {
 	private static final long NEW_ENTITY_COOLDOWN_MS = 10_000;
 	/** Server block changes within this distance of the player count as next to you (mining reach plus a margin). */
 	private static final double BLOCK_CHANGE_RADIUS = 6.0;
+	/**
+	 * Server particles within this distance of your eyes count as shown to you. Replays of normal play had none
+	 * closer than ~70 blocks while mining (only the altar's portal particles).
+	 */
+	private static final double PARTICLE_RADIUS = 12.0;
+	/** One check streams particles for seconds; alert once. */
+	private static final long PARTICLE_COOLDOWN_MS = 10_000;
+	/** Wait this long after a stop for the alert that explains it (the world change one comes a tick later). */
+	private static final long STOP_SETTLE_MS = 1_000;
+	/** A sticky alert this soon before the stop (staff check text, server GUI) already told you. */
+	private static final long STOP_EXPLAINED_MS = 5_000;
 	private static final String TITLE = "Minecraft";
 
 	private final PlayerAlertPolicy policy = new PlayerAlertPolicy();
@@ -68,15 +87,23 @@ public final class AlertMonitor {
 	private long lastStaffCheckAlert = Long.MIN_VALUE;
 	private long lastNewEntityAlert = Long.MIN_VALUE;
 	private long lastBlockChangeAlert = Long.MIN_VALUE;
+	private long lastParticleAlert = Long.MIN_VALUE;
 	private long lastEffectAlert = Long.MIN_VALUE;
 	private long lastDamageAlert = Long.MIN_VALUE;
 	/** Level and player seen on the last tick a macro ran; null while none runs. */
 	private Object watchLevel;
 	private Object watchPlayer;
 	private static long expectTeleportUntil = Long.MIN_VALUE;
+	private static long lastRaise = Long.MIN_VALUE;
+	private static String lastRaiseTitle = "";
+	private static long lastStickyRaise = Long.MIN_VALUE;
+	private PendingStop pendingStop;
 	private static AlertMonitor instance;
 
 	private record PendingEntity(Entity entity, Vec3 spawnPos, double distance, double dy, long dueTick) {
+	}
+
+	private record PendingStop(String macro, String reason, String display, long atMs) {
 	}
 
 	public AlertMonitor(BooleanSupplier macroRunning, BooleanSupplier miningRunning) {
@@ -96,6 +123,7 @@ public final class AlertMonitor {
 	public void tick(Minecraft mc) {
 		clientTicks++;
 		checkWorldChange(mc);
+		flushMacroStop();
 		if (mc == null || mc.player == null || mc.level == null || !macroRunning.getAsBoolean()) {
 			lastLevel = null;
 			policy.reset();
@@ -225,7 +253,7 @@ public final class AlertMonitor {
 			if (change != null) {
 				String where = mc != null && mc.level != null ? mc.level.dimension().identifier().toString() : "-";
 				MacroLogger.get().log("ALERT_WORLD_CHANGE " + change + " level=" + where);
-				raise(change + " during macro", "Macro stopped (" + change.toLowerCase(Locale.ROOT) + ")", true);
+				raise(change + " during macro", "Macro stopped (" + change.toLowerCase(Locale.ROOT) + ")", true, true);
 				running = false;
 			}
 		}
@@ -272,6 +300,33 @@ public final class AlertMonitor {
 		lastBlockChangeAlert = now;
 		raise("Block changed next to you", oldState.getBlock().getName().getString() + " -> "
 				+ newState.getBlock().getName().getString(), true);
+	}
+
+	/**
+	 * Main thread, a server particle packet (before it is spawned). While the Mining Bot or Route Walker runs the
+	 * server sends no particles near you, so particles next to you are likely a staff check showing an effect
+	 * (seen: End Rune particles) to see whether you react. Particles at another player count too.
+	 */
+	public void onServerParticles(Minecraft mc, ParticleOptions particle, double x, double y, double z, int count) {
+		if (!MacroConfig.get().alertParticle || mc == null || mc.player == null) return;
+		if (!miningRunning.getAsBoolean() || !macroRunning.getAsBoolean()) return;
+		Vec3 at = new Vec3(x, y, z);
+		Vec3 eyes = mc.player.getEyePosition();
+		double distance = at.distanceTo(eyes);
+		if (distance > PARTICLE_RADIUS) return;
+		String detail = String.format(Locale.ROOT, "type=%s count=%d at (%.1f, %.1f, %.1f) %.1fm dy=%.1f",
+				BuiltInRegistries.PARTICLE_TYPE.getKey(particle.getType()), count, x, y, z, distance, y - eyes.y);
+		if (mc.player.tickCount < SERVER_MOVE_GRACE_TICKS) {
+			MacroLogger.get().log("ALERT_PARTICLE_SKIPPED spawn " + detail);
+			return;
+		}
+		long now = MacroClock.nowMs();
+		boolean repeat = lastParticleAlert != Long.MIN_VALUE && now - lastParticleAlert < PARTICLE_COOLDOWN_MS;
+		MacroLogger.get().log("ALERT_PARTICLE" + (repeat ? " (repeat) " : " ") + detail);
+		if (repeat) return;
+		lastParticleAlert = now;
+		raise("Particles next to you", String.format(Locale.ROOT, "%s (%.0fm)",
+				BuiltInRegistries.PARTICLE_TYPE.getKey(particle.getType()).getPath(), distance), true);
 	}
 
 	/**
@@ -462,7 +517,7 @@ public final class AlertMonitor {
 		MacroLogger.get().log("ALERT_STAFF_CHECK source=" + source + (repeat ? " (repeat)" : "") + " text=" + text);
 		if (repeat) return;
 		lastStaffCheckAlert = now;
-		raise("STAFF CHECK", text, true);
+		raise("STAFF CHECK", text, true, true);
 	}
 
 	/** Main thread, a server container screen is about to open (before it stops the macros). */
@@ -481,13 +536,77 @@ public final class AlertMonitor {
 		}
 		lastStaffCheckAlert = now;
 		MacroLogger.get().log("ALERT_SERVER_GUI title=" + title);
-		raise("Server opened a GUI during macro", title.isBlank() ? "(untitled)" : title, true);
+		raise("Server opened a GUI during macro", title.isBlank() ? "(untitled)" : title, true, true);
 	}
 
-	/** Desktop notification, screen-edge flash and an on-screen toast (only the notification in recording mode). */
+	/**
+	 * Called by the Mining Bot / Route Walker as they stop. Stops you made yourself (toggle key, target change,
+	 * opening your inventory / chat / pause menu / this mod's GUI) are skipped; the rest alert a moment later
+	 * unless a sticky alert (world change, staff check, server GUI) already explained it.
+	 */
+	public static void onMacroStopped(Minecraft mc, String macro, String reason, String display) {
+		AlertMonitor monitor = instance;
+		if (monitor == null || !MacroConfig.get().alertMacroStopped) return;
+		boolean own = switch (reason) {
+			case "MANUAL_STOP", "TARGET_CHANGED", "CLIENT_STOPPING", "OWNERSHIP_LOST", "COMBAT_ACTIVE", "SILENT" -> true;
+			case "GUI_OPENED" -> mc == null || isPlayerScreen(mc.screen);
+			default -> false;
+		};
+		String screen = mc == null || mc.screen == null ? "-" : mc.screen.getClass().getSimpleName();
+		if (own) {
+			MacroLogger.get().log("ALERT_MACRO_STOPPED_SKIPPED own macro=" + macro + " reason=" + reason + " screen=" + screen);
+			return;
+		}
+		if ("GUI_OPENED".equals(reason)) display += " (" + screen + ")";
+		monitor.pendingStop = new PendingStop(macro, reason, display, MacroClock.nowMs());
+	}
+
+	/** Screens you open yourself; the mod's own GUI stops the macros before it is set, so mc.screen is still null. */
+	private static boolean isPlayerScreen(Screen screen) {
+		return screen == null || screen instanceof PauseScreen || screen instanceof ChatScreen
+				|| screen instanceof InventoryScreen || screen instanceof CreativeModeInventoryScreen
+				|| screen instanceof DragsimMacroScreen;
+	}
+
+	private void flushMacroStop() {
+		PendingStop stop = pendingStop;
+		if (stop == null) return;
+		long now = MacroClock.nowMs();
+		if (now - stop.atMs() < STOP_SETTLE_MS) return;
+		pendingStop = null;
+		String detail = "macro=" + stop.macro() + " reason=" + stop.reason();
+		if (macroRunning.getAsBoolean()) {
+			MacroLogger.get().log("ALERT_MACRO_STOPPED_SKIPPED restarted " + detail);
+			return;
+		}
+		if (lastStickyRaise != Long.MIN_VALUE && lastStickyRaise >= stop.atMs() - STOP_EXPLAINED_MS) {
+			MacroLogger.get().log("ALERT_MACRO_STOPPED_SKIPPED explained " + detail + " by=" + lastRaiseTitle);
+			return;
+		}
+		// A plain alert just before (teleport, knockback ...) is likely the cause: name it.
+		String body = stop.display();
+		if (lastRaise != Long.MIN_VALUE && lastRaise >= stop.atMs() - STOP_EXPLAINED_MS) {
+			body += " - after: " + lastRaiseTitle;
+		}
+		MacroLogger.get().log("ALERT_MACRO_STOPPED " + detail);
+		raise(stop.macro() + " stopped", body, true, true);
+	}
+
 	private static void raise(String title, String body, boolean urgent) {
+		raise(title, body, urgent, false);
+	}
+
+	/**
+	 * Desktop notification, screen-edge flash and an on-screen toast (only the notification in recording mode).
+	 * Sticky (the macro stopped or is about to): the notification stays until dismissed, see DesktopNotifier.
+	 */
+	private static void raise(String title, String body, boolean urgent, boolean sticky) {
 		MacroConfig config = MacroConfig.get();
-		if (!config.stealthMode || config.stealthDesktopAlerts) DesktopNotifier.notify(TITLE + " - " + title, body);
+		long now = MacroClock.nowMs();
+		lastRaise = now;
+		lastRaiseTitle = title;
+		if (sticky) lastStickyRaise = now;
+		if (!config.stealthMode || config.stealthDesktopAlerts) DesktopNotifier.notify(TITLE + " - " + title, body, sticky);
 		// Recording mode: nothing in the game window.
 		if (config.stealthMode) return;
 		AlertFlash.trigger(urgent);
