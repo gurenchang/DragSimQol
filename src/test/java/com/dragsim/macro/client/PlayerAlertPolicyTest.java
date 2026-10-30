@@ -67,6 +67,10 @@ class PlayerAlertPolicyTest {
 				PlayerAlertPolicy.classifyChat("Your drill is out of fuel!", me));
 		assertEquals(PlayerAlertPolicy.Chat.MENTION,
 				PlayerAlertPolicy.classifyChat("Guild > [MVP+] Steve [Officer]: @Guren_73 come here", me));
+		assertEquals(PlayerAlertPolicy.Chat.INSTANCE,
+				PlayerAlertPolicy.classifyChat("Instance > [ADMIN] Steve: are you there?", me), "staff in instance chat");
+		assertEquals(PlayerAlertPolicy.Chat.NONE,
+				PlayerAlertPolicy.classifyChat("Instance > [DRAGON] Guren_73: aa", me), "own instance message");
 	}
 
 	@Test

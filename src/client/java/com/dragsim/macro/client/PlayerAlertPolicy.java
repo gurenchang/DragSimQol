@@ -17,8 +17,9 @@ import java.util.regex.Pattern;
  * enters the radius. The same player is alerted at most once per cooldown, and must
  * leave radius + hysteresis before counting as "entered" again.
  *
- * Chat: alert on direct messages ("From ...: ...") and on messages whose body (after
- * the first ": ") contains your name as a whole word. Your own messages are skipped.
+ * Chat: alert on direct messages ("From ...: ..."), on instance chat ("Instance > ...: ...", only staff
+ * can talk to you there) and on messages whose body (after the first ": ") contains your name as a whole
+ * word. Your own messages are skipped.
  *
  * Rotation: alert when a server packet (teleport or rotate) turns your view by more than
  * the threshold, e.g. a staff member running /tp or /rotate on you.
@@ -29,7 +30,7 @@ public final class PlayerAlertPolicy {
 	public record Seen(UUID id, String name, double distance) {
 	}
 
-	public enum Chat { NONE, MENTION, DIRECT_MESSAGE }
+	public enum Chat { NONE, MENTION, DIRECT_MESSAGE, INSTANCE }
 
 	static final long PLAYER_COOLDOWN_MS = 60_000;
 	static final double LEAVE_HYSTERESIS = 2.0;
@@ -109,6 +110,7 @@ public final class PlayerAlertPolicy {
 		Pattern name = Pattern.compile("(?<![A-Za-z0-9_])" + Pattern.quote(myName) + "(?![A-Za-z0-9_])",
 				Pattern.CASE_INSENSITIVE);
 		if (name.matcher(prefix).find()) return Chat.NONE;
+		if (prefix.toLowerCase(Locale.ROOT).startsWith("instance > ")) return Chat.INSTANCE;
 		return name.matcher(body).find() ? Chat.MENTION : Chat.NONE;
 	}
 }

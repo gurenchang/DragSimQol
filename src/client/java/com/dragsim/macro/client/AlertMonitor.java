@@ -96,6 +96,7 @@ public final class AlertMonitor {
 	private int ticks;
 	private long clientTicks;
 	private long lastChatAlert = Long.MIN_VALUE;
+	private long lastInstanceChatAlert = Long.MIN_VALUE;
 	private long lastServerMoveAlert = Long.MIN_VALUE;
 	private long lastSlotAlert = Long.MIN_VALUE;
 	private long lastKnockbackAlert = Long.MIN_VALUE;
@@ -471,8 +472,13 @@ public final class AlertMonitor {
 	/** Chat or system message text received from the server. */
 	public void onMessage(Minecraft mc, String text) {
 		MacroConfig config = MacroConfig.get();
-		if (!config.alertMention || mc == null || mc.getUser() == null || !macroRunning.getAsBoolean()) return;
+		if (mc == null || mc.getUser() == null) return;
 		PlayerAlertPolicy.Chat kind = PlayerAlertPolicy.classifyChat(text, mc.getUser().getName());
+		if (kind == PlayerAlertPolicy.Chat.INSTANCE) {
+			onInstanceChat(text);
+			return;
+		}
+		if (!config.alertMention || !macroRunning.getAsBoolean()) return;
 		if (kind == PlayerAlertPolicy.Chat.NONE) return;
 		long now = MacroClock.nowMs();
 		if (lastChatAlert != Long.MIN_VALUE && now - lastChatAlert < CHAT_COOLDOWN_MS) return;
@@ -480,6 +486,20 @@ public final class AlertMonitor {
 		String title = kind == PlayerAlertPolicy.Chat.DIRECT_MESSAGE ? "Direct message" : "You were mentioned";
 		MacroLogger.get().log("ALERT_CHAT kind=" + kind);
 		raise(title, text, false);
+	}
+
+	/**
+	 * Instance chat ("Instance > [RANK] name: ..."): only staff can talk to you there, so it counts as a staff check.
+	 * Like the staff check text, not gated on a running macro (the check may come right after it stopped).
+	 */
+	private void onInstanceChat(String text) {
+		if (!MacroConfig.get().alertStaffCheck) return;
+		long now = MacroClock.nowMs();
+		boolean repeat = lastInstanceChatAlert != Long.MIN_VALUE && now - lastInstanceChatAlert < CHAT_COOLDOWN_MS;
+		MacroLogger.get().log("ALERT_INSTANCE_CHAT" + (repeat ? " (repeat)" : "") + " text=" + text);
+		if (repeat) return;
+		lastInstanceChatAlert = now;
+		raise("Staff instance chat", text, true, true);
 	}
 
 	/**

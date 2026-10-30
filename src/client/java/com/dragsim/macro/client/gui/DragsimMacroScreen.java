@@ -605,7 +605,7 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Knockback Check", "While a macro runs: notify when the server pushes you without damage",
 				() -> MacroConfig.get().alertKnockback,
 				v -> updateConfig(c -> c.alertKnockback = v)));
-		s.add(new ToggleSetting("Staff Check", "Notify on a staff check message (\"QUICK CHECK!\") or a server GUI opening mid-macro",
+		s.add(new ToggleSetting("Staff Check", "Notify on a staff check message (\"QUICK CHECK!\"), instance chat (\"Instance >\") or a server GUI opening mid-macro",
 				() -> MacroConfig.get().alertStaffCheck,
 				v -> updateConfig(c -> c.alertStaffCheck = v)));
 		s.add(new ToggleSetting("New Entity Check", "While mining: notify when an entity spawns next to you (e.g. a staff check casting Giant's Sword)",
