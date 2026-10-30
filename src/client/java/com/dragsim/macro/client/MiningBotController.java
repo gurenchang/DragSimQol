@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
+import com.dragsim.macro.client.mixin.MultiPlayerGameModeAccessor;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
@@ -634,7 +635,23 @@ public final class MiningBotController {
 			// Stop only here; all other false cases use vanilla's own cleanup path.
 			mc.gameMode.stopDestroyBlock();
 		}
+		if (allowed) clearStaleBreak(mc);
 		return allowed;
+	}
+
+	/**
+	 * Letting go of Attack (drill right-click) aborts the break but leaves vanilla's destroyBlockPos and the stack
+	 * it started with. Holding Attack on that same block again then "continues" a break the server never started
+	 * (continueDestroyBlock checks only the position and stack): no START goes out, so no attempt begins and the
+	 * timeout never fires, and the bot sat on the block for 9 s after an ability click. With no break running,
+	 * forgetting the stack makes vanilla send a fresh START.
+	 */
+	private static void clearStaleBreak(Minecraft mc) {
+		if (mc.gameMode == null || mc.gameMode.isDestroying()) return;
+		MultiPlayerGameModeAccessor gameMode = (MultiPlayerGameModeAccessor) mc.gameMode;
+		if (gameMode.dragsim$getDestroyingItem().isEmpty()) return;
+		gameMode.dragsim$setDestroyingItem(ItemStack.EMPTY);
+		MacroLogger.get().detail("MINING_BOT_STALE_BREAK_CLEARED pos=" + gameMode.dragsim$getDestroyBlockPos().toShortString());
 	}
 
 	/** Own breaks and their regens, which the block-change alert skips. */

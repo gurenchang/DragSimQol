@@ -1,6 +1,7 @@
 package com.dragsim.macro.client.mixin;
 
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
@@ -13,4 +14,7 @@ public interface MultiPlayerGameModeAccessor {
 
 	@Accessor("destroyingItem")
 	void dragsim$setDestroyingItem(ItemStack stack);
+
+	@Accessor("destroyBlockPos")
+	BlockPos dragsim$getDestroyBlockPos();
 }
