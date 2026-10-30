@@ -27,16 +27,24 @@ Then `./gradlew clean build`, tag `v<version>`, push `main` and the tag to `orig
 default repo here is the upstream fork parent, and without it the release fails or lands on the wrong repo.
 Never reuse a released version — a jar that went into the play instance counts as released even without a tag.
 Compile checks and test runs don't need a bump.
+The jar is named after the repo (`base.archivesName`), the mod id stays `dragsimmacro` (config files, keybinds,
+mixin config, lang keys). Jars up to 1.12.1 were `dragsimmacro-<version>.jar`: when installing, the old file must
+be deleted from `mods/` — two jars with the same mod id stop the game from starting.
 `./gradlew runClient` starts a dev client (game dir `run/`, git-ignored; assets already cached).
 
 ## Play instance & replays
 
 The user plays in PrismLauncher: `C:\Users\guren\AppData\Roaming\PrismLauncher\instances\26.1.2 dragsim\minecraft\`
-(`mods/` — installed jar plus NoFrills, Recorder etc.; `config/` — live settings; `logs/zealotmacro.log` — the mod's
-debug log, `MINING_BOT_*` events with timestamps; `recordings/`). Read these to check what the user actually ran.
+(`mods/` — installed jar plus NoFrills, Recorder, ExploitPreventer etc.; `config/` — live settings;
+`logs/zealotmacro.log` — the mod's debug log, `MINING_BOT_*` / `ALERT_*` events with timestamps, previous session in
+`zealotmacro.old.log`; `logs/latest.log` — game log with chat; `recordings/`). Read these to check what the user
+actually ran.
 
 - `recordings/*.mcrc` come from the Recorder mod (`mods/recorder.jar`, format spec `RECORDING_FORMAT.md` inside it):
-  every play packet in both directions plus local key/mouse input, with ms timestamps.
+  every play packet in both directions plus local key/mouse input, with ms timestamps. `*-buffer.mcrc` are saved
+  from the replay buffer (the last minutes before saving); the header's start time maps row times to log times.
+  Input rows hold physical keys/buttons only — the mod's own KeyMapping presses show up as packets (START/ABORT,
+  SWING, USE_ITEM), not as input rows.
 - **`python -I tools/mcrc_report.py`** reports mining from them: blocks/s, break events, own vs area breaks,
   same-block restarts, START cadence, area-break hits, plus the mod log lines in the recording's time window.
   No args = newest recording of at least 3 s; `-n 2` compares the two newest side by side; file names or pasted
@@ -78,10 +86,13 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `MiningBotAreaAvoid` (skip neighbours of a block still breaking — the server's area break may take them),
     `MiningBotAimGuard` (settled crosshair on another block, e.g. bedrock in front: re-aim, then drop),
     `MiningBotAdaptiveAim` / `MiningBotFixedAim` / `MiningBotTickAim` (break-timing lead),
-    `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps),
+    `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps; the server
+    ignores a refuel click within ~1 s of the last one; the view holds still while refuelling),
     `DrillAbilityCooldown` / `DrillFuel` (read from the held drill's lore — the ability cooldown there already
     includes the player's reductions and changes with their gear, so don't hard-code it),
     `MiningBotHud` + `MiningBotStats` (HUD panel), `BreakTickMeter` (per-block break time).
+    Attempts (and so the mining timeout) start only when vanilla sends START; vanilla's `continueDestroyBlock` keeps
+    "continuing" an aborted break on the same block without one, so `allowVanillaAttack` clears that stale state.
   - Route Walker (`/mining`): `RouteWalkerController`, `RouteStore` / `RouteFile` / `RouteNode`, `RouteFollower`,
     `RouteOverlay`, `RouteWalkerSettings`.
   - Combat (Zealot, `/zealot*`): `MacroController`, `TargetSelector`, `RotationController`, `CombatController`,
@@ -95,10 +106,13 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
   - Visuals: `TargetBlockHighlight` (in-world, `LevelRenderEvents.BEFORE_GIZMOS`), `CornerEspOverlay`, `EspOverlay`,
     `DebugHud`, fullbright (`FullbrightLightmapPolicy` + mixin), hit/break particle hiding (`BlockParticlesMixin`).
   - Alerts/feedback: `AlertMonitor` (players, mentions, staff check text/GUI, server TP/rotate/slot/item/knockback,
-    entities spawned nearby, block swaps, server particles / sounds next to you, Mining Bot stalls (no block mined), harmful effects, damage, world change, Mining Bot / Route Walker stopping by itself; `OwnMiningTrace` keeps your own
-    breaks, area breaks and their regens out of the block-swap alert), `PlayerAlertPolicy`,
-    `DesktopNotifier`, `AlertFlash` (red screen-edge pulse), `MacroToasts` → `ToastOverlay`, `ChatFormat`
-    (chat colours), `MacroNotifications`. `/spawnlog` (`SpawnLogCommand`) prints nearby entity spawns.
+    entities spawned nearby, block swaps, server particles / sounds next to you, Mining Bot stalls (no block mined),
+    harmful effects, damage, world change, Mining Bot / Route Walker stopping by itself; `OwnMiningTrace` keeps your
+    own breaks, area breaks and their regens out of the block-swap alert), `PlayerAlertPolicy`,
+    `DesktopNotifier` (Windows toasts via PowerShell; sticky alerts — the macro stopped or can't mine — are reminder
+    toasts that stay until dismissed), `AlertFlash` (red screen-edge pulse), `MacroToasts` → `ToastOverlay`,
+    `ChatFormat` (chat colours), `MacroNotifications`. `/spawnlog` (`SpawnLogCommand`) prints nearby entity spawns.
+    Alert thresholds come from replays / logs of normal play (comments say which); measure again before changing them.
   - Dragon summon: `DragonSpawnTimer` (8th Summoning Eye → dragon in 170 server ticks, spawn point from the frame
     ring; spec measured from replays in `docs/DRAGON_SPAWN_TIMER.ja.md`) → `DragonSpawnOverlay` (countdown HUD,
     marker on the exact spawn point, drawn with depth-test-off render types since the point sits inside the altar's
