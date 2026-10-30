@@ -11,9 +11,9 @@ import java.util.Random;
  *          human-like pause -> Use down 1 tick -> Use up -> wait for the "Refuelled" reply ->
  *          not full: pause, click again (sneak stays down) / full or no reply: pause -> Sneak up.
  *          The server silently ignores a refuel click less than about 1 s after the last one (seen
- *          2026-10-29: clicks 0.6-0.9 s apart got no reply), so clicks are kept at least
- *          {@link #MIN_CLICK_GAP_TICKS} apart, and a click left unanswered after a "not full" reply
- *          is tried again a few times.
+ *          2026-10-29: clicks 0.6-0.9 s apart got no reply; 1.1 s and more always answered), so clicks
+ *          are kept just over {@link #MIN_CLICK_GAP_TICKS} apart, and a click left unanswered after a
+ *          "not full" reply is tried again a few times, soon (replies come 0.2-0.35 s after a click).
  */
 public final class DrillUseSequence {
 	public interface Io {
@@ -30,8 +30,10 @@ public final class DrillUseSequence {
 	static final int REPLY_TIMEOUT_TICKS = 20;
 	/** Safety cap on refuel clicks in one sequence. */
 	static final int MAX_REFUEL_CLICKS = 10;
-	/** Shortest gap between two refuel clicks (1.1 s); a random 0-0.4 s is added. */
-	static final int MIN_CLICK_GAP_TICKS = 22;
+	/** No reply this long after a click that followed a "not full" reply: it was ignored, click again. */
+	static final int RETRY_REPLY_TIMEOUT_TICKS = 10;
+	/** Shortest gap between two refuel clicks (1.0 s, the server's cooldown); a random 0-0.1 s is added. */
+	static final int MIN_CLICK_GAP_TICKS = 20;
 	/** Unanswered clicks in a row, after the tank was reported not full, before giving up. */
 	static final int MAX_UNANSWERED = 2;
 
@@ -88,7 +90,7 @@ public final class DrillUseSequence {
 			case PRESSED -> {
 				io.use(false);
 				if (kind == DrillActions.Kind.REFUEL) {
-					wait = REPLY_TIMEOUT_TICKS;
+					wait = moreWanted ? RETRY_REPLY_TIMEOUT_TICKS : REPLY_TIMEOUT_TICKS;
 					phase = Phase.AWAIT_REPLY;
 					if (earlyReplyFull != null) onRefuelled(earlyReplyFull);
 					earlyReplyFull = null;
@@ -131,14 +133,14 @@ public final class DrillUseSequence {
 			releaseSneakSoon();
 			return;
 		}
-		// Read the chat, then right-click again with sneak still held, not before the server takes it.
-		wait = Math.max(6 + random.nextInt(9), clickGapTicks());
+		// Right-click again with sneak still held, as soon as the server takes it.
+		wait = Math.max(4 + random.nextInt(4), clickGapTicks());
 		phase = Phase.PREPARE;
 	}
 
 	/** Ticks to wait from now so the next click is at least {@link #MIN_CLICK_GAP_TICKS} after the last. */
 	private int clickGapTicks() {
-		return Math.max(1, MIN_CLICK_GAP_TICKS + random.nextInt(9) - ticks);
+		return Math.max(1, MIN_CLICK_GAP_TICKS + random.nextInt(3) - ticks);
 	}
 
 	private void releaseSneakSoon() {
