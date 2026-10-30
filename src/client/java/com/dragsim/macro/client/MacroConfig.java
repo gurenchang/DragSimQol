@@ -190,6 +190,10 @@ public final class MacroConfig {
 	public double alertNewEntityRadius = 16.0;
 	/** While the Mining Bot / Route Walker runs: desktop notification when the server shows particles next to you. */
 	public boolean alertParticle = true;
+	/** While the Mining Bot / Route Walker runs: desktop notification when the server plays a non-mining sound next to you. */
+	public boolean alertSound = true;
+	/** While the Mining Bot runs: desktop notification when no block was mined for 3 s (15 s with nothing left to mine). */
+	public boolean alertMiningStall = true;
 	/** While the Mining Bot runs: desktop notification when a block next to you becomes something other than the target, air or bedrock. */
 	public boolean alertBlockChange = true;
 	/** While a macro runs: desktop notification when the server gives you a new harmful effect (blindness, levitation ...). */

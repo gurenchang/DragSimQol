@@ -129,6 +129,10 @@ public final class MiningBotController {
 	public boolean isActive() { return state != State.OFF; }
 	public String getStopReason() { return stopReason; }
 	public int getCandidateCount() { return candidateCount; }
+	/** A drill right-click is running, or the drill ran dry and the auto refuel is on its way: no blocks break meanwhile. */
+	public boolean isDrillBusy() {
+		return drillSequence != null || drillActions.isRefuelWanted() && settings.isAutoRefuelEnabled();
+	}
 	public int getWaitingCount() { return waiting.size(); }
 	public BlockPos getTargetPos() { return target == null ? null : target.pos(); }
 	public MiningBotTarget getSelectedTarget() { return settings.getTarget(); }

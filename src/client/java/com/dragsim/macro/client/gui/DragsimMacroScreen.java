@@ -618,6 +618,12 @@ public class DragsimMacroScreen extends Screen {
 		s.add(new ToggleSetting("Particle Check", "While mining: notify when the server shows particles next to you (e.g. a staff check with End Rune particles)",
 				() -> MacroConfig.get().alertParticle,
 				v -> updateConfig(c -> c.alertParticle = v)));
+		s.add(new ToggleSetting("Sound Check", "While mining: notify when the server plays a sound next to you other than block breaks and XP pickups",
+				() -> MacroConfig.get().alertSound,
+				v -> updateConfig(c -> c.alertSound = v)));
+		s.add(new ToggleSetting("Mining Stall", "While the Mining Bot runs: notify when no block was mined for 3 seconds, refuels aside (15 s with nothing left to mine)",
+				() -> MacroConfig.get().alertMiningStall,
+				v -> updateConfig(c -> c.alertMiningStall = v)));
 		s.add(new ToggleSetting("Block Check", "While the Mining Bot runs: notify when a block next to you turns into something other than the target, air or bedrock",
 				() -> MacroConfig.get().alertBlockChange,
 				v -> updateConfig(c -> c.alertBlockChange = v)));

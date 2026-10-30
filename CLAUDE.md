@@ -95,7 +95,7 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
   - Visuals: `TargetBlockHighlight` (in-world, `LevelRenderEvents.BEFORE_GIZMOS`), `CornerEspOverlay`, `EspOverlay`,
     `DebugHud`, fullbright (`FullbrightLightmapPolicy` + mixin), hit/break particle hiding (`BlockParticlesMixin`).
   - Alerts/feedback: `AlertMonitor` (players, mentions, staff check text/GUI, server TP/rotate/slot/item/knockback,
-    entities spawned nearby, block swaps, server particles next to you, harmful effects, damage, world change, Mining Bot / Route Walker stopping by itself; `OwnMiningTrace` keeps your own
+    entities spawned nearby, block swaps, server particles / sounds next to you, Mining Bot stalls (no block mined), harmful effects, damage, world change, Mining Bot / Route Walker stopping by itself; `OwnMiningTrace` keeps your own
     breaks, area breaks and their regens out of the block-swap alert), `PlayerAlertPolicy`,
     `DesktopNotifier`, `AlertFlash` (red screen-edge pulse), `MacroToasts` → `ToastOverlay`, `ChatFormat`
     (chat colours), `MacroNotifications`. `/spawnlog` (`SpawnLogCommand`) prints nearby entity spawns.

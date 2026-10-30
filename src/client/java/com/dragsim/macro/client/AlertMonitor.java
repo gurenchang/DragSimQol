@@ -16,6 +16,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffect;
@@ -33,11 +35,12 @@ import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
  * Watches for nearby players, chat mentions, staff checks, entities spawned next to you, blocks swapped next to
- * you, server particles next to you, harmful effects, damage, world changes and server-forced teleports / view changes / hotbar slot and held
+ * you, server particles and sounds next to you, the Mining Bot no longer mining, harmful effects, damage, world changes and server-forced teleports / view changes / hotbar slot and held
  * item changes / knockback, and raises desktop notifications. Also tells you when the Mining Bot or Route Walker
  * stopped by itself (out of fuel, stuck, a GUI the server opened ...) unless an alert already said why.
  */
@@ -65,6 +68,19 @@ public final class AlertMonitor {
 	private static final double PARTICLE_RADIUS = 12.0;
 	/** One check streams particles for seconds; alert once. */
 	private static final long PARTICLE_COOLDOWN_MS = 10_000;
+	/** Server sounds within this distance of your eyes count as played to you (vanilla's default hearing range). */
+	private static final double SOUND_RADIUS = 16.0;
+	/** A sound this close to a mob (Zealot, Watcher ...) is that mob's. */
+	private static final double SOUND_MOB_RADIUS = 2.0;
+	private static final long SOUND_COOLDOWN_MS = 10_000;
+	/**
+	 * Mining Bot running with blocks to mine but none mined for this long. Normal sessions (3.6 h): 99.9% of gaps
+	 * under 1.6 s; the 4-7 s ones were all drill refuels (out of fuel right after a break, next break 0.4-1.8 s
+	 * after the refuel), so the clock waits while the drill is busy.
+	 */
+	private static final long MINING_STALL_MS = 3_000;
+	/** Same with nothing left to mine: waiting for the regen took up to 9.2 s. */
+	private static final long MINING_STALL_NO_TARGET_MS = 15_000;
 	/** Wait this long after a stop for the alert that explains it (the world change one comes a tick later). */
 	private static final long STOP_SETTLE_MS = 1_000;
 	/** A sticky alert this soon before the stop (staff check text, server GUI) already told you. */
@@ -88,6 +104,11 @@ public final class AlertMonitor {
 	private long lastNewEntityAlert = Long.MIN_VALUE;
 	private long lastBlockChangeAlert = Long.MIN_VALUE;
 	private long lastParticleAlert = Long.MIN_VALUE;
+	private long lastSoundAlert = Long.MIN_VALUE;
+	/** Session start / last mined block time the stall alert already fired for; re-arms when it changes. */
+	private long stallAlertedFor = Long.MIN_VALUE;
+	/** Last tick the drill was busy (refuel, ability): the stall clock restarts from here. */
+	private long drillBusyAt = Long.MIN_VALUE;
 	private long lastEffectAlert = Long.MIN_VALUE;
 	private long lastDamageAlert = Long.MIN_VALUE;
 	/** Level and player seen on the last tick a macro ran; null while none runs. */
@@ -136,6 +157,7 @@ public final class AlertMonitor {
 			pendingEntities.clear();
 		}
 		flushNewEntities();
+		checkMiningStall(mc);
 		if (++ticks < SCAN_INTERVAL_TICKS) return;
 		ticks = 0;
 		MacroConfig config = MacroConfig.get();
@@ -327,6 +349,74 @@ public final class AlertMonitor {
 		lastParticleAlert = now;
 		raise("Particles next to you", String.format(Locale.ROOT, "%s (%.0fm)",
 				BuiltInRegistries.PARTICLE_TYPE.getKey(particle.getType()).getPath(), distance), true);
+	}
+
+	/**
+	 * Main thread, a server sound at a position (entity == null) or on an entity, before it plays. While the Mining
+	 * Bot or Route Walker runs the server only sends mining sounds (PlayerAlertPolicy.isMiningSound), so another
+	 * sound next to you is likely a staff check playing one to see whether you react. Mob sounds are skipped.
+	 */
+	public void onServerSound(Minecraft mc, SoundEvent sound, SoundSource source, Vec3 at, Entity entity) {
+		if (!MacroConfig.get().alertSound || mc == null || mc.player == null || mc.level == null) return;
+		if (!miningRunning.getAsBoolean() || !macroRunning.getAsBoolean()) return;
+		String path = sound.location().getPath();
+		if (PlayerAlertPolicy.isMiningSound(path)) return;
+		Vec3 eyes = mc.player.getEyePosition();
+		double distance = at.distanceTo(eyes);
+		if (distance > SOUND_RADIUS) return;
+		String detail = String.format(Locale.ROOT, "sound=%s source=%s%s at (%.1f, %.1f, %.1f) %.1fm dy=%.1f",
+				sound.location(), source.getName(), entity == null ? "" : " entity=" + EntityType.getKey(entity.getType()),
+				at.x, at.y, at.z, distance, at.y - eyes.y);
+		if (mc.player.tickCount < SERVER_MOVE_GRACE_TICKS) {
+			MacroLogger.get().log("ALERT_SOUND_SKIPPED spawn " + detail);
+			return;
+		}
+		Entity mob = entity != null ? entity : nearestMob(mc, at);
+		if (mob instanceof LivingEntity && !(mob instanceof Player)) {
+			MacroLogger.get().log("ALERT_SOUND_SKIPPED mob " + detail);
+			return;
+		}
+		long now = MacroClock.nowMs();
+		boolean repeat = lastSoundAlert != Long.MIN_VALUE && now - lastSoundAlert < SOUND_COOLDOWN_MS;
+		MacroLogger.get().log("ALERT_SOUND" + (repeat ? " (repeat) " : " ") + detail);
+		if (repeat) return;
+		lastSoundAlert = now;
+		raise("Sound next to you", String.format(Locale.ROOT, "%s (%.0fm)", path, distance), true);
+	}
+
+	/** Nearest non-player living entity within SOUND_MOB_RADIUS of the point, or null. */
+	private static Entity nearestMob(Minecraft mc, Vec3 at) {
+		AABB box = new AABB(at, at).inflate(SOUND_MOB_RADIUS);
+		List<LivingEntity> mobs = mc.level.getEntitiesOfClass(LivingEntity.class, box, e -> !(e instanceof Player));
+		return mobs.isEmpty() ? null : mobs.getFirst();
+	}
+
+	/**
+	 * Every tick: the Mining Bot runs but has not mined a block for MINING_STALL_MS (MINING_STALL_NO_TARGET_MS
+	 * with nothing left to mine), not counting drill refuels / ability clicks. Catches checks that keep the bot
+	 * from mining without any other sign: target blocks swapped for look-alikes it can't break, adventure mode,
+	 * a barrier in the line of sight, mining speed turned way down. Once per stall.
+	 */
+	private void checkMiningStall(Minecraft mc) {
+		MiningBotController bot = MiningBotController.get();
+		if (!MacroConfig.get().alertMiningStall || bot == null || !bot.isActive()) return;
+		long now = MacroClock.nowMs();
+		if (bot.isDrillBusy()) drillBusyAt = now;
+		MiningBotStats stats = bot.getStats();
+		long idle = stats.idleMs(now);
+		if (idle < 0) return;
+		long since = Math.max(now - idle, drillBusyAt);
+		boolean hasTargets = bot.getCandidateCount() > 0;
+		if (now - since < (hasTargets ? MINING_STALL_MS : MINING_STALL_NO_TARGET_MS)) return;
+		if (since == stallAlertedFor) return;
+		stallAlertedFor = since;
+		MacroLogger.get().log(String.format(Locale.ROOT,
+				"ALERT_MINING_STALL idle=%dms sinceDrill=%dms candidates=%d mined=%d gameMode=%s held=%s pos=%s",
+				idle, now - since, bot.getCandidateCount(), stats.mined(),
+				mc.gameMode == null ? "-" : mc.gameMode.getPlayerMode().getName(),
+				itemLabel(mc.player.getMainHandItem()), mc.player.blockPosition().toShortString()));
+		raise("Mining Bot stalled", String.format(Locale.ROOT, "No block mined for %.0fs%s", (now - since) / 1000.0,
+				hasTargets ? "" : " (nothing to mine)"), true, true);
 	}
 
 	/**

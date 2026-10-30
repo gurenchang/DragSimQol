@@ -76,6 +76,16 @@ class PlayerAlertPolicyTest {
 	}
 
 	@Test
+	void onlyBreakAndXpPickupSoundsAreMiningSounds() {
+		assertTrue(PlayerAlertPolicy.isMiningSound("block.stone.break"));
+		assertTrue(PlayerAlertPolicy.isMiningSound("block.amethyst_block.break"));
+		assertTrue(PlayerAlertPolicy.isMiningSound("entity.experience_orb.pickup"));
+		assertFalse(PlayerAlertPolicy.isMiningSound("block.stone.place"));
+		assertFalse(PlayerAlertPolicy.isMiningSound("entity.villager.ambient"));
+		assertFalse(PlayerAlertPolicy.isMiningSound("block.note_block.bell"));
+	}
+
+	@Test
 	void rotationChangeWrapsYawAndTakesLargerAxis() {
 		assertEquals(0, PlayerAlertPolicy.rotationChange(90, 10, 90, 10), 1e-6);
 		assertEquals(20, PlayerAlertPolicy.rotationChange(170, 0, -170, 0), 1e-6, "wraps across ±180");

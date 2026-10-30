@@ -50,6 +50,12 @@ public final class MiningBotStats {
 	/** Time of the last mined block; -1 before the first. */
 	public long lastMinedAt() { return lastMinedAt; }
 
+	/** How long the running session has gone without a mined block (since start before the first); -1 when stopped. */
+	public long idleMs(long now) {
+		if (startedAt < 0 || stoppedAt >= 0) return -1;
+		return now - Math.max(startedAt, lastMinedAt);
+	}
+
 	/**
 	 * Blocks per minute for each bucket, oldest first; the newest (still filling) bucket is
 	 * left out. Buckets from before the session started are NaN.

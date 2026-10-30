@@ -36,6 +36,18 @@ class MiningBotHudLogicTest {
 	}
 
 	@Test
+	void idleCountsFromStartThenLastBlockAndStopsWithSession() {
+		MiningBotStats stats = new MiningBotStats();
+		assertEquals(-1, stats.idleMs(5_000));
+		stats.start(1_000);
+		assertEquals(4_000, stats.idleMs(5_000));
+		stats.recordMined(20_000);
+		assertEquals(5_000, stats.idleMs(25_000));
+		stats.stop(30_000);
+		assertEquals(-1, stats.idleMs(60_000));
+	}
+
+	@Test
 	void durationFormat() {
 		assertEquals("0:00", MiningBotStats.duration(0));
 		assertEquals("1:05", MiningBotStats.duration(65_400));

@@ -69,6 +69,15 @@ public final class PlayerAlertPolicy {
 		return alerts;
 	}
 
+	/**
+	 * Sounds the server sends while you mine (3.5 minutes of Mining Bot replay had only these): block break sounds
+	 * (your own and area breaks) and picking up the XP orbs. Anything else next to you is worth an alert.
+	 */
+	public static boolean isMiningSound(String soundPath) {
+		return soundPath.startsWith("block.") && soundPath.endsWith(".break")
+				|| soundPath.equals("entity.experience_orb.pickup");
+	}
+
 	/** Largest of |yaw change| (wrapped to ±180) and |pitch change|, in degrees. */
 	public static double rotationChange(float fromYaw, float fromPitch, float toYaw, float toPitch) {
 		double yaw = (toYaw - fromYaw) % 360.0;
