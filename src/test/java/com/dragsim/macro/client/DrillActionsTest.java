@@ -179,30 +179,24 @@ class DrillActionsTest {
 	}
 
 	@Test
-	void refuelSequenceKeepsSneakingAndClickingUntilTheTankIsFull() {
-		// Replies per click: 1 not full, 2 ignored by the server, 3 not full, 4 full.
+	void refuelHoldsUseUntilTheTankIsFull() {
 		for (long seed = 0; seed < 20; seed++) {
 			FakeIo io = new FakeIo();
 			DrillUseSequence seq = new DrillUseSequence(REFUEL, new Random(seed));
 			int tick = 0;
-			int lastClick = -1;
-			boolean wasDown = false;
+			int held = 0;
 			while (!seq.tick(io)) {
 				tick++;
 				if (io.use) {
-					assertTrue(io.sneak, "sneak is held while clicking");
-					if (lastClick >= 0) assertTrue(tick - lastClick >= DrillUseSequence.MIN_CLICK_GAP_TICKS,
-							"clicks are spaced for the server's refuel cooldown");
-					lastClick = tick;
+					assertTrue(io.sneak, "sneak is held while using");
+					// Vanilla repeats the held use every 4 ticks; the server answers each, the 5th fills the tank.
+					if (++held % 4 == 0) seq.onRefuelled(held / 4 >= 5);
 				}
-				// Server replies a few ticks after each click.
-				if (wasDown && !io.use && seq.clicks() != 2) seq.onRefuelled(seq.clicks() >= 4);
-				wasDown = io.use;
 				assertTrue(tick < 200);
 			}
-			assertEquals(List.of("sneak+", "use+", "use-", "use+", "use-", "use+", "use-", "use+", "use-", "sneak-"),
-					io.events);
-			assertEquals(4, seq.clicks());
+			assertEquals(List.of("sneak+", "use+", "use-", "sneak-"), io.events);
+			assertEquals(5, seq.clicks());
+			assertTrue(held <= 21, "lets go right after the full reply");
 			assertFalse(seq.timedOut());
 		}
 	}

@@ -80,8 +80,8 @@ public final class MiningBotController {
 	/** Stray crack packets logged per session; later ones are only counted. */
 	private static final int MAX_UNMATCHED_LOGS = 20;
 	private DrillUseSequence drillSequence;
-	/** Last refuel right-click of the running refuel sequence (log only); -1 before the first. */
-	private long lastRefuelClickMs = -1;
+	/** Refuel: when Use was pressed or the last "Refuelled" reply came (log only); -1 before. */
+	private long lastRefuelEventMs = -1;
 	private final DrillUseSequence.Io drillIo = new DrillUseSequence.Io() {
 		@Override public boolean destroying() {
 			Minecraft mc = Minecraft.getInstance();
@@ -91,10 +91,8 @@ public final class MiningBotController {
 			Minecraft mc = Minecraft.getInstance();
 			if (mc != null && mc.options != null) mc.options.keyUse.setDown(down);
 			if (down && drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL) {
-				long now = MacroClock.nowMs();
-				MacroLogger.get().log("MINING_BOT_REFUEL_CLICK n=" + (drillSequence.clicks() + 1)
-						+ (lastRefuelClickMs < 0 ? "" : " sinceLastMs=" + (now - lastRefuelClickMs)));
-				lastRefuelClickMs = now;
+				MacroLogger.get().log("MINING_BOT_REFUEL_HOLD");
+				lastRefuelEventMs = MacroClock.nowMs();
 			}
 		}
 		@Override public void sneak(boolean down) {
@@ -543,7 +541,9 @@ public final class MiningBotController {
 			boolean full = drillActions.refuelTankFull();
 			boolean refueling = drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL;
 			if (refueling) drillSequence.onRefuelled(full);
-			MacroLogger.get().log("MINING_BOT_REFUELLED full=" + full + " refueling=" + refueling);
+			MacroLogger.get().log("MINING_BOT_REFUELLED full=" + full + " refueling=" + refueling
+					+ (refueling && lastRefuelEventMs >= 0 ? " sinceLastMs=" + (now - lastRefuelEventMs) : ""));
+			if (refueling) lastRefuelEventMs = now;
 		}
 	}
 
@@ -582,7 +582,7 @@ public final class MiningBotController {
 			}
 			drillActions.begin(kind);
 			drillSequence = new DrillUseSequence(kind, reactionRandom);
-			lastRefuelClickMs = -1;
+			lastRefuelEventMs = -1;
 			MacroLogger.get().log("MINING_BOT_DRILL_ACTION_START kind=" + kind);
 			// Vanilla ignores Use while destroying, so let go of Attack first.
 			input.update(keyInput, false, mc.isWindowActive());
