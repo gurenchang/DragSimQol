@@ -388,6 +388,13 @@ public final class MiningBotController {
 		runDrill(mc);
 		if (!isActive()) return;
 		loot.tick(mc);
+		if (drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL) {
+			// Refuelling (sneak + right-clicks, a few seconds): the view comes to rest, no aiming, drift or
+			// tremor, like a player whose hand is on the keys. Aiming picks up from here afterwards.
+			applyRotation(mc, rotation.coast(), false);
+			input.update(keyInput, attackWanted(), mc.isWindowActive());
+			return;
+		}
 		if (!advance(mc) && isActive() && mc.player != null) {
 			// No target this tick. Ease the view out and publish a fresh camera snapshot;
 			// a stale snapshot would replay the last tick's turn every tick (view stutter).
@@ -1099,7 +1106,12 @@ public final class MiningBotController {
 	 * server and the crosshair); the planner keeps its own clean angles.
 	 */
 	private void applyRotation(Minecraft mc, MiningBotRotation.Angles angles) {
-		tremor.update(settings.isHandTremorEnabled(), settings.getTremorAmount(),
+		applyRotation(mc, angles, true);
+	}
+
+	/** shake false: the hand tremor fades out (refuel). */
+	private void applyRotation(Minecraft mc, MiningBotRotation.Angles angles, boolean shake) {
+		tremor.update(shake && settings.isHandTremorEnabled(), settings.getTremorAmount(),
 				Math.hypot(angles.yaw() - rotation.previousYaw(), angles.pitch() - rotation.previousPitch()));
 		double wantedYaw = angles.yaw() + tremor.yaw();
 		double wantedPitch = angles.pitch() + tremor.pitch();
