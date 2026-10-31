@@ -86,8 +86,8 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `MiningBotAreaAvoid` (skip neighbours of a block still breaking — the server's area break may take them),
     `MiningBotAimGuard` (settled crosshair on another block, e.g. bedrock in front: re-aim, then drop),
     `MiningBotAdaptiveAim` / `MiningBotFixedAim` / `MiningBotTickAim` (break-timing lead),
-    `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps; refuel holds
-    right-click like a player, vanilla repeats it every 4 ticks; the view holds still while refuelling),
+    `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps; the server
+    ignores a refuel click within ~1 s of the last one; the view holds still while refuelling),
     `DrillAbilityCooldown` / `DrillFuel` (read from the held drill's lore — the ability cooldown there already
     includes the player's reductions and changes with their gear, so don't hard-code it),
     `MiningBotHud` + `MiningBotStats` (HUD panel), `BreakTickMeter` (per-block break time).

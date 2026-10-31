@@ -179,38 +179,42 @@ class DrillActionsTest {
 	}
 
 	@Test
-	void refuelHoldsUseUntilTheTankIsFull() {
+	void refuelSequenceKeepsSneakingAndClickingUntilTheTankIsFull() {
+		// Replies per click: 1 not full, 2 ignored by the server, 3 not full, 4 full.
 		for (long seed = 0; seed < 20; seed++) {
 			FakeIo io = new FakeIo();
 			DrillUseSequence seq = new DrillUseSequence(REFUEL, new Random(seed));
 			int tick = 0;
-			int held = 0;
+			int lastClick = -1;
+			boolean wasDown = false;
 			while (!seq.tick(io)) {
 				tick++;
 				if (io.use) {
-					assertTrue(io.sneak, "sneak is held while using");
-					// Vanilla repeats the held use every 4 ticks; the server answers each, the 5th fills the tank.
-					if (++held % 4 == 0) seq.onRefuelled(held / 4 >= 5);
+					assertTrue(io.sneak, "sneak is held while clicking");
+					if (lastClick >= 0) assertTrue(tick - lastClick >= DrillUseSequence.MIN_CLICK_GAP_TICKS,
+							"clicks are spaced for the server's refuel cooldown");
+					lastClick = tick;
 				}
+				// Server replies a few ticks after each click.
+				if (wasDown && !io.use && seq.clicks() != 2) seq.onRefuelled(seq.clicks() >= 4);
+				wasDown = io.use;
 				assertTrue(tick < 200);
 			}
-			assertEquals(List.of("sneak+", "use+", "use-", "sneak-"), io.events);
-			assertEquals(5, seq.clicks());
-			assertTrue(held <= 21, "lets go right after the full reply");
+			assertEquals(List.of("sneak+", "use+", "use-", "use+", "use-", "use+", "use-", "use+", "use-", "sneak-"),
+					io.events);
+			assertEquals(4, seq.clicks());
 			assertFalse(seq.timedOut());
 		}
 	}
 
 	@Test
-	void refuelPressesAgainWhileNoReplyComesThenGivesUp() {
+	void refuelWithoutReplyReleasesSneakAfterOneClick() {
 		FakeIo io = new FakeIo();
 		DrillUseSequence seq = new DrillUseSequence(REFUEL, new Random(1));
 		int ticks = 0;
 		while (!seq.tick(io) && ticks++ < 100) { }
-		assertTrue(seq.presses() > 2, "no repeat from vanilla: let go and press again");
-		assertEquals(seq.presses(), io.events.stream().filter("use+"::equals).count());
-		assertEquals(List.of("use-", "sneak-"), io.events.subList(io.events.size() - 2, io.events.size()));
-		assertEquals(0, seq.clicks());
+		assertEquals(List.of("sneak+", "use+", "use-", "sneak-"), io.events);
+		assertTrue(seq.clicked());
 		assertFalse(seq.timedOut());
 	}
 

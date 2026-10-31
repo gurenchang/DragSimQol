@@ -10,7 +10,6 @@ import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
-import com.dragsim.macro.client.mixin.MinecraftAccessor;
 import com.dragsim.macro.client.mixin.MultiPlayerGameModeAccessor;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -81,8 +80,8 @@ public final class MiningBotController {
 	/** Stray crack packets logged per session; later ones are only counted. */
 	private static final int MAX_UNMATCHED_LOGS = 20;
 	private DrillUseSequence drillSequence;
-	/** Refuel: when Use was pressed or the last "Refuelled" reply came (log only); -1 before. */
-	private long lastRefuelEventMs = -1;
+	/** Last refuel right-click of the running refuel sequence (log only); -1 before the first. */
+	private long lastRefuelClickMs = -1;
 	private final DrillUseSequence.Io drillIo = new DrillUseSequence.Io() {
 		@Override public boolean destroying() {
 			Minecraft mc = Minecraft.getInstance();
@@ -90,20 +89,13 @@ public final class MiningBotController {
 		}
 		@Override public void use(boolean down) {
 			Minecraft mc = Minecraft.getInstance();
-			if (mc == null || mc.options == null) return;
-			boolean refuel = drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL;
-			if (down && refuel && mc.player != null && mc.gameMode != null) {
-				// State before the press, to see what keeps vanilla from repeating the use.
-				MacroLogger.get().log("MINING_BOT_REFUEL_PRESS n=" + (drillSequence.presses() + 1)
-						+ " useDown=" + mc.options.keyUse.isDown() + " usingItem=" + mc.player.isUsingItem()
-						+ " destroying=" + mc.gameMode.isDestroying()
-						+ " rightClickDelay=" + ((MinecraftAccessor) mc).dragsim$getRightClickDelay()
-						+ " hit=" + (mc.hitResult == null ? "-" : mc.hitResult.getType()));
-				lastRefuelEventMs = MacroClock.nowMs();
+			if (mc != null && mc.options != null) mc.options.keyUse.setDown(down);
+			if (down && drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL) {
+				long now = MacroClock.nowMs();
+				MacroLogger.get().log("MINING_BOT_REFUEL_CLICK n=" + (drillSequence.clicks() + 1)
+						+ (lastRefuelClickMs < 0 ? "" : " sinceLastMs=" + (now - lastRefuelClickMs)));
+				lastRefuelClickMs = now;
 			}
-			mc.options.keyUse.setDown(down);
-			// A refuel press is a click, as a player's: vanilla uses the item for it whatever the repeat delay.
-			if (down && refuel) KeyMapping.click(KeyMappingHelper.getBoundKeyOf(mc.options.keyUse));
 		}
 		@Override public void sneak(boolean down) {
 			Minecraft mc = Minecraft.getInstance();
@@ -551,9 +543,7 @@ public final class MiningBotController {
 			boolean full = drillActions.refuelTankFull();
 			boolean refueling = drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL;
 			if (refueling) drillSequence.onRefuelled(full);
-			MacroLogger.get().log("MINING_BOT_REFUELLED full=" + full + " refueling=" + refueling
-					+ (refueling && lastRefuelEventMs >= 0 ? " sinceLastMs=" + (now - lastRefuelEventMs) : ""));
-			if (refueling) lastRefuelEventMs = now;
+			MacroLogger.get().log("MINING_BOT_REFUELLED full=" + full + " refueling=" + refueling);
 		}
 	}
 
@@ -592,7 +582,7 @@ public final class MiningBotController {
 			}
 			drillActions.begin(kind);
 			drillSequence = new DrillUseSequence(kind, reactionRandom);
-			lastRefuelEventMs = -1;
+			lastRefuelClickMs = -1;
 			MacroLogger.get().log("MINING_BOT_DRILL_ACTION_START kind=" + kind);
 			// Vanilla ignores Use while destroying, so let go of Attack first.
 			input.update(keyInput, false, mc.isWindowActive());
