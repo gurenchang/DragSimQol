@@ -202,13 +202,15 @@ class DrillActionsTest {
 	}
 
 	@Test
-	void refuelWithoutReplyReleasesSneakAfterOneClick() {
+	void refuelPressesAgainWhileNoReplyComesThenGivesUp() {
 		FakeIo io = new FakeIo();
 		DrillUseSequence seq = new DrillUseSequence(REFUEL, new Random(1));
 		int ticks = 0;
 		while (!seq.tick(io) && ticks++ < 100) { }
-		assertEquals(List.of("sneak+", "use+", "use-", "sneak-"), io.events);
-		assertTrue(seq.clicked());
+		assertTrue(seq.presses() > 2, "no repeat from vanilla: let go and press again");
+		assertEquals(seq.presses(), io.events.stream().filter("use+"::equals).count());
+		assertEquals(List.of("use-", "sneak-"), io.events.subList(io.events.size() - 2, io.events.size()));
+		assertEquals(0, seq.clicks());
 		assertFalse(seq.timedOut());
 	}
 

@@ -14,6 +14,7 @@
     "BreakResetFixMixin",
     "MultiPlayerGameModeAccessor",
     "ItemInHandRendererAccessor",
+    "MinecraftAccessor",
     "ServerTickTimeSyncMixin",
     "ServerTickPingMixin",
     "ServerCheckAlertMixin",

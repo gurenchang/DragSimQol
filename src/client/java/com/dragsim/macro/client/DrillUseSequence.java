@@ -13,6 +13,10 @@ import java.util.Random;
  *          second) -> the "full" reply, or no reply for {@link #REPLY_TIMEOUT_TICKS} -> Use up -> pause
  *          -> Sneak up. Earlier versions clicked once per reply and waited 1 s between clicks (a
  *          misread server cooldown); a 50,000 tank took 4.5 s, holding takes about 1 s.
+ *          The repeat does not always come: after the first refuel of a hold, the client sent nothing for
+ *          the next 2 s (replay 2026-10-31 16:51), and a player's clicks right after a refuel were not sent
+ *          either until they pressed again later. So with no reply for {@link #REPRESS_TICKS}, Use is let go
+ *          for a tick and pressed again, as a player clicking again would.
  */
 public final class DrillUseSequence {
 	public interface Io {
@@ -21,7 +25,7 @@ public final class DrillUseSequence {
 		void sneak(boolean down);
 	}
 
-	enum Phase { START, PREPARE, PRESSED, HOLD, RELEASE_SNEAK, DONE }
+	enum Phase { START, PREPARE, PRESSED, HOLD, REPRESS, RELEASE_SNEAK, DONE }
 
 	/** From the start, the right-click or the last refuel reply until the sequence must be over. */
 	static final int TIMEOUT_TICKS = 40;
@@ -30,6 +34,8 @@ public final class DrillUseSequence {
 	 * so a server that did turn out to answer only once a second still fills the tank.
 	 */
 	static final int REPLY_TIMEOUT_TICKS = 30;
+	/** Refuel: no reply this long after a press or the last reply: let go of Use for a tick and press again. */
+	static final int REPRESS_TICKS = 6;
 	/** Safety cap on refuel replies in one sequence. */
 	static final int MAX_REFUELS = 10;
 
@@ -43,6 +49,10 @@ public final class DrillUseSequence {
 	private int refuels;
 	/** The tank was reported full (or the cap was hit): let go of Use on the next tick. */
 	private boolean letGo;
+	/** Ticks since Use was pressed or the last reply came. */
+	private int sinceProgress;
+	/** Presses of Use in this refuel (the first one included). */
+	private int presses;
 	private boolean timedOut;
 
 	public DrillUseSequence(DrillActions.Kind kind, Random random) {
@@ -55,6 +65,8 @@ public final class DrillUseSequence {
 	/** Refuel replies received (refuel) / right-clicks (ability, check). */
 	public int clicks() { return kind == DrillActions.Kind.REFUEL ? refuels : clicked ? 1 : 0; }
 	public boolean timedOut() { return timedOut; }
+	/** Refuel: presses of Use so far (the first one included). */
+	public int presses() { return presses; }
 	public boolean done() { return phase == Phase.DONE; }
 
 	/** Advances one tick. Returns true once the sequence has finished. */
@@ -80,6 +92,8 @@ public final class DrillUseSequence {
 				clicked = true;
 				ticks = 0;
 				if (kind == DrillActions.Kind.REFUEL) {
+					presses = 1;
+					sinceProgress = 0;
 					wait = REPLY_TIMEOUT_TICKS;
 					phase = Phase.HOLD;
 				} else {
@@ -92,9 +106,23 @@ public final class DrillUseSequence {
 				return true;
 			}
 			case HOLD -> {
-				if (!letGo && --wait > 0) return false;
-				io.use(false);
-				releaseSneakSoon();
+				if (letGo || --wait <= 0) {
+					io.use(false);
+					releaseSneakSoon();
+				} else if (++sinceProgress >= REPRESS_TICKS) {
+					io.use(false);
+					phase = Phase.REPRESS;
+				}
+			}
+			case REPRESS -> {
+				if (letGo || --wait <= 0) {
+					releaseSneakSoon();
+					return false;
+				}
+				presses++;
+				sinceProgress = 0;
+				io.use(true);
+				phase = Phase.HOLD;
 			}
 			case RELEASE_SNEAK -> {
 				if (--wait > 0) return false;
@@ -111,9 +139,10 @@ public final class DrillUseSequence {
 
 	/** Server reply to a refuel use: keep holding while the tank is not full. */
 	public void onRefuelled(boolean full) {
-		if (phase != Phase.HOLD) return;
+		if (phase != Phase.HOLD && phase != Phase.REPRESS) return;
 		refuels++;
 		ticks = 0;
+		sinceProgress = 0;
 		wait = REPLY_TIMEOUT_TICKS;
 		if (full || refuels >= MAX_REFUELS) letGo = true;
 	}

@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
+import com.dragsim.macro.client.mixin.MinecraftAccessor;
 import com.dragsim.macro.client.mixin.MultiPlayerGameModeAccessor;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -89,11 +90,20 @@ public final class MiningBotController {
 		}
 		@Override public void use(boolean down) {
 			Minecraft mc = Minecraft.getInstance();
-			if (mc != null && mc.options != null) mc.options.keyUse.setDown(down);
-			if (down && drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL) {
-				MacroLogger.get().log("MINING_BOT_REFUEL_HOLD");
+			if (mc == null || mc.options == null) return;
+			boolean refuel = drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL;
+			if (down && refuel && mc.player != null && mc.gameMode != null) {
+				// State before the press, to see what keeps vanilla from repeating the use.
+				MacroLogger.get().log("MINING_BOT_REFUEL_PRESS n=" + (drillSequence.presses() + 1)
+						+ " useDown=" + mc.options.keyUse.isDown() + " usingItem=" + mc.player.isUsingItem()
+						+ " destroying=" + mc.gameMode.isDestroying()
+						+ " rightClickDelay=" + ((MinecraftAccessor) mc).dragsim$getRightClickDelay()
+						+ " hit=" + (mc.hitResult == null ? "-" : mc.hitResult.getType()));
 				lastRefuelEventMs = MacroClock.nowMs();
 			}
+			mc.options.keyUse.setDown(down);
+			// A refuel press is a click, as a player's: vanilla uses the item for it whatever the repeat delay.
+			if (down && refuel) KeyMapping.click(KeyMappingHelper.getBoundKeyOf(mc.options.keyUse));
 		}
 		@Override public void sneak(boolean down) {
 			Minecraft mc = Minecraft.getInstance();
