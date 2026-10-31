@@ -490,10 +490,10 @@ public final class AlertMonitor {
 
 	/**
 	 * Instance chat ("Instance > [RANK] name: ..."): only staff can talk to you there, so it counts as a staff check.
-	 * Like the staff check text, not gated on a running macro (the check may come right after it stopped).
+	 * Only while a macro runs: without one it is just staff talking to you while you play.
 	 */
 	private void onInstanceChat(String text) {
-		if (!MacroConfig.get().alertStaffCheck) return;
+		if (!MacroConfig.get().alertStaffCheck || !macroRunning.getAsBoolean()) return;
 		long now = MacroClock.nowMs();
 		boolean repeat = lastInstanceChatAlert != Long.MIN_VALUE && now - lastInstanceChatAlert < CHAT_COOLDOWN_MS;
 		MacroLogger.get().log("ALERT_INSTANCE_CHAT" + (repeat ? " (repeat)" : "") + " text=" + text);

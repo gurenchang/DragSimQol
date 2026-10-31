@@ -183,7 +183,7 @@ public final class MacroConfig {
 	public boolean alertHeldItem = true;
 	/** While a macro runs: desktop notification when the server pushes you without damage (knockback check). */
 	public boolean alertKnockback = true;
-	/** Desktop notification on a staff check message ("QUICK CHECK! ..."), instance chat (staff only) and a server GUI opening mid-macro. */
+	/** Desktop notification on a staff check message ("QUICK CHECK! ..."), and mid-macro on instance chat (staff only) or a server GUI opening. */
 	public boolean alertStaffCheck = true;
 	/** While the Mining Bot / Route Walker runs: desktop notification when an entity spawns within alertNewEntityRadius blocks (horizontal). */
 	public boolean alertNewEntity = true;
