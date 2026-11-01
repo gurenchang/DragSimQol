@@ -6,7 +6,8 @@ public final class AutomationCoordinator {
 		NONE("none"),
 		COMBAT("Combat Macro"),
 		ROUTE_WALKER("Route Walker"),
-		MINING_BOT("Mining Bot");
+		MINING_BOT("Mining Bot"),
+		BONEMERANG("Bonemerang Throw");
 
 		private final String displayName;
 

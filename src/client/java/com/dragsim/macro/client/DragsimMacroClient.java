@@ -160,6 +160,13 @@ public class DragsimMacroClient implements ClientModInitializer {
 				GLFW.GLFW_KEY_UNKNOWN,
 				DRAGSIM_CATEGORY));
 
+		// Bonemerang Throw: unbound by default (set it in Controls).
+		KeyMapping bonemerangKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.dragsimmacro.bonemerang_throw",
+				InputConstants.Type.KEYSYM,
+				GLFW.GLFW_KEY_UNKNOWN,
+				DRAGSIM_CATEGORY));
+
 		// GをvanillaのUse読み取りより前に処理する。OFFしたtickの自動使用を止める。
 		// 開始・停止キーはフォーカス中にだけ受け付ける。非フォーカス中の残留clickは実行しない。
 		ClientTickEvents.START_CLIENT_TICK.register(mc -> {
@@ -193,6 +200,9 @@ public class DragsimMacroClient implements ClientModInitializer {
 		// Auto Clicker: queue attack clicks before vanilla's handleKeybinds reads them this tick.
 		AutoClicker autoClicker = new AutoClicker();
 		ClientTickEvents.START_CLIENT_TICK.register(autoClicker::tickStart);
+		// Bonemerang Throw: select the slot and queue the use click before handleKeybinds reads them this tick.
+		BonemerangThrow bonemerangThrow = new BonemerangThrow(bonemerangKey);
+		ClientTickEvents.START_CLIENT_TICK.register(bonemerangThrow::tickStart);
 
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_hud"), StealthMode.hide(new DebugHud(controller, aimSolver, rotationController, attackGate, combatController, approachPlanner, scytheHoldUse)));
 		HudElementRegistry.addLast(DragsimMacroMod.id("zealotdebug_esp"), StealthMode.hide(new EspOverlay(controller, aimSolver)));

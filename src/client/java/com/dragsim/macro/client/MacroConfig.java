@@ -136,6 +136,12 @@ public final class MacroConfig {
 	/** Pause while the crosshair is on a block, so holding the button still mines it. */
 	public boolean autoClickerBreakBlocks = true;
 
+	// ==== Bonemerang Throw(key only; see BonemerangThrow) ====
+	/** Hotbar slot (1-9, as shown in the GUI) selected after the last throw. */
+	public int bonemerangReturnSlot = 1;
+	/** Ticks between throws; 1 = one per tick, the fastest a vanilla client can switch slots. */
+	public int bonemerangThrowIntervalTicks = 1;
+
 	/** GUI / HUD / ESP accent colour: a {@code GuiTheme.Accent} name (PURPLE, CYAN, CRIMSON, EMERALD, GOLD). */
 	public String themeAccent = "PURPLE";
 	/** Glowing outline on the block the running macro is targeting. */
@@ -602,6 +608,28 @@ public final class MacroConfig {
 	public void setAutoClickerMaxCps(double value) {
 		autoClickerMaxCps = AutoClickerSchedule.clampCps(value);
 		autoClickerMinCps = Math.min(AutoClickerSchedule.clampCps(autoClickerMinCps), autoClickerMaxCps);
+		save();
+	}
+
+	// ==== Bonemerang Throw typed accessors ====
+
+	/** Clamped 1〜9. */
+	public int getBonemerangReturnSlot() {
+		return Math.max(1, Math.min(9, bonemerangReturnSlot));
+	}
+
+	public void setBonemerangReturnSlot(double value) {
+		bonemerangReturnSlot = (int) Math.max(1, Math.min(9, Math.round(value)));
+		save();
+	}
+
+	/** Clamped 1〜10 ticks. */
+	public int getBonemerangThrowIntervalTicks() {
+		return Math.max(1, Math.min(10, bonemerangThrowIntervalTicks));
+	}
+
+	public void setBonemerangThrowIntervalTicks(double value) {
+		bonemerangThrowIntervalTicks = (int) Math.max(1, Math.min(10, Math.round(value)));
 		save();
 	}
 

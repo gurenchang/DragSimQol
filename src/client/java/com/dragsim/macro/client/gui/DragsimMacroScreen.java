@@ -492,6 +492,17 @@ public class DragsimMacroScreen extends Screen {
 					() -> MacroConfig.get().autoClickerBreakBlocks,
 					v -> updateConfig(c -> c.autoClickerBreakBlocks = v)));
 		}
+		s.add(header("Bonemerang"));
+		s.add(new InfoSetting("Throw Key", "One press throws every Bonemerang in the hotbar, left to right. Change it in Minecraft Controls",
+				() -> keyName("key.dragsimmacro.bonemerang_throw")));
+		s.add(new SliderSetting("Return Slot", "Hotbar slot selected after the last throw", 1, 9, 1,
+				() -> MacroConfig.get().getBonemerangReturnSlot(),
+				v -> MacroConfig.get().setBonemerangReturnSlot(v),
+				v -> String.format(Locale.ROOT, "Slot %.0f", v)));
+		s.add(new SliderSetting("Throw Interval", "Ticks between throws. 1 = one per tick, the fastest; raise it if throws get dropped", 1, 10, 1,
+				() -> MacroConfig.get().getBonemerangThrowIntervalTicks(),
+				v -> MacroConfig.get().setBonemerangThrowIntervalTicks(v),
+				v -> String.format(Locale.ROOT, "%.0f tick%s (%.0f ms)", v, v == 1 ? "" : "s", v * 50)));
 	}
 
 	private void buildVisuals(List<Setting> s) {

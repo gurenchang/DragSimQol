@@ -101,6 +101,9 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `ApproachPlanner` (+ `LocalPathPlanner`/`Path*` A*), `AttackGate`, Frozen Scythe hold-use (`ScytheHold*`).
   - Auto Clicker (GUI toggle on the Combat page): `AutoClicker` queues attack clicks on the vanilla KeyMapping while
     the button is physically held; `AutoClickerSchedule` = random min–max CPS timing.
+  - Bonemerang Throw (key only, settings on the Combat page): `BonemerangThrow` throws every hotbar Bonemerang left
+    to right — per tick it selects the slot and queues a use click on the vanilla KeyMapping — then selects the
+    return slot; `BonemerangVolley` = the tick plan. The server's behaviour is in `BonemerangThrow`'s class comment.
   - Shared: `AutomationCoordinator` (only one automation owns input at a time — `tryAcquire`/`release`),
     `LifecycleSafety` (resets on disconnect/join), `ServerTickClock` (server TPS / tick clock from packets),
     `MacroClock` (monotonic ms clock for client-side timers), `StopInertia` (view coasts to a halt on a manual
