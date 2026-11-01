@@ -86,8 +86,10 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `MiningBotAreaAvoid` (skip neighbours of a block still breaking — the server's area break may take them),
     `MiningBotAimGuard` (settled crosshair on another block, e.g. bedrock in front: re-aim, then drop),
     `MiningBotAdaptiveAim` / `MiningBotFixedAim` / `MiningBotTickAim` (break-timing lead),
-    `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps; the server
-    ignores a refuel click within ~1 s of the last one; the view holds still while refuelling),
+    `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps; the view holds
+    still while refuelling). Refuel clicks once per "Refuelled" reply, 1.0-1.1 s apart: a player holding
+    right-click refuels every 4 ticks, but the mod's held Use (1.12.5) and re-presses (1.12.6) got only the
+    first refuel — the client sent no further use for ~2 s (replay 2026-10-31 16:51); cause not found yet.
     `DrillAbilityCooldown` / `DrillFuel` (read from the held drill's lore — the ability cooldown there already
     includes the player's reductions and changes with their gear, so don't hard-code it),
     `MiningBotHud` + `MiningBotStats` (HUD panel), `BreakTickMeter` (per-block break time).
@@ -105,7 +107,8 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     Mining Bot / Route Walker stop), `BreakResetFix` (a server update of the held drill doesn't restart the break).
   - Visuals: `TargetBlockHighlight` (in-world, `LevelRenderEvents.BEFORE_GIZMOS`), `CornerEspOverlay`, `EspOverlay`,
     `DebugHud`, fullbright (`FullbrightLightmapPolicy` + mixin), hit/break particle hiding (`BlockParticlesMixin`).
-  - Alerts/feedback: `AlertMonitor` (players, mentions, staff check text/GUI, server TP/rotate/slot/item/knockback,
+  - Alerts/feedback: `AlertMonitor` (players, mentions, staff check text/GUI, instance chat (`Instance >`, staff
+    only; while a macro runs), server TP/rotate/slot/item/knockback,
     entities spawned nearby, block swaps, server particles / sounds next to you, Mining Bot stalls (no block mined),
     harmful effects, damage, world change, Mining Bot / Route Walker stopping by itself; `OwnMiningTrace` keeps your
     own breaks, area breaks and their regens out of the block-swap alert), `PlayerAlertPolicy`,
