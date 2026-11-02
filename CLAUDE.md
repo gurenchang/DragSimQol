@@ -112,7 +112,7 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `DebugHud`, fullbright (`FullbrightLightmapPolicy` + mixin), hit/break particle hiding (`BlockParticlesMixin`).
   - Alerts/feedback: `AlertMonitor` (players, mentions, staff check text/GUI, instance chat (`Instance >`, staff
     only; while a macro runs), server TP/rotate/slot/item/knockback,
-    entities spawned nearby, block swaps, server particles / sounds next to you, Mining Bot stalls (no block mined),
+    entities spawned / items dropped nearby, block swaps, server particles / sounds next to you, Mining Bot stalls (no block mined),
     harmful effects, damage, world change, Mining Bot / Route Walker stopping by itself; `OwnMiningTrace` keeps your
     own breaks, area breaks and their regens out of the block-swap alert), `PlayerAlertPolicy`,
     `DesktopNotifier` (Windows toasts via PowerShell; sticky alerts — the macro stopped or can't mine — are reminder

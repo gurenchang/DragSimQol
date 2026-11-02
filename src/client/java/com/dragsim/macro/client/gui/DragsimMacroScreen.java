@@ -626,6 +626,13 @@ public class DragsimMacroScreen extends Screen {
 				4, 48, 1, () -> MacroConfig.get().alertNewEntityRadius,
 				v -> updateConfig(c -> c.alertNewEntityRadius = v),
 				v -> String.format(Locale.ROOT, "%.0f blocks", v)));
+		s.add(new ToggleSetting("Item Drop Check", "While a macro runs: notify when an item drops next to you (drops normally go straight to your inventory)",
+				() -> MacroConfig.get().alertItemDrop,
+				v -> { updateConfig(c -> c.alertItemDrop = v); rebuildPages(); }));
+		if (MacroConfig.get().alertItemDrop) s.add(new SliderSetting("Item Radius", "Horizontal distance that counts as next to you",
+				4, 48, 1, () -> MacroConfig.get().alertItemDropRadius,
+				v -> updateConfig(c -> c.alertItemDropRadius = v),
+				v -> String.format(Locale.ROOT, "%.0f blocks", v)));
 		s.add(new ToggleSetting("Particle Check", "While mining: notify when the server shows particles next to you (e.g. a staff check with End Rune particles)",
 				() -> MacroConfig.get().alertParticle,
 				v -> updateConfig(c -> c.alertParticle = v)));

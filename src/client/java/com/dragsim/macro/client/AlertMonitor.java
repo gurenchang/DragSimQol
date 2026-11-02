@@ -39,7 +39,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Watches for nearby players, chat mentions, staff checks, entities spawned next to you, blocks swapped next to
+ * Watches for nearby players, chat mentions, staff checks, entities spawned and items dropped next to you, blocks swapped next to
  * you, server particles and sounds next to you, the Mining Bot no longer mining, harmful effects, damage, world changes and server-forced teleports / view changes / hotbar slot and held
  * item changes / knockback, and raises desktop notifications. Also tells you when the Mining Bot or Route Walker
  * stopped by itself (out of fuel, stuck, a GUI the server opened ...) unless an alert already said why.
@@ -103,6 +103,7 @@ public final class AlertMonitor {
 	private long lastHeldItemAlert = Long.MIN_VALUE;
 	private long lastStaffCheckAlert = Long.MIN_VALUE;
 	private long lastNewEntityAlert = Long.MIN_VALUE;
+	private long lastItemDropAlert = Long.MIN_VALUE;
 	private long lastBlockChangeAlert = Long.MIN_VALUE;
 	private long lastParticleAlert = Long.MIN_VALUE;
 	private long lastSoundAlert = Long.MIN_VALUE;
@@ -185,23 +186,31 @@ public final class AlertMonitor {
 	 * Main thread, an entity was added to the client level (Fabric ENTITY_LOAD). While the Mining Bot or Route
 	 * Walker runs, an entity that appears within the radius (horizontal, so one dropped from the sky counts)
 	 * is likely server-spawned next to you, e.g. a staff check casting an ability such as Giant's Sword on you.
-	 * Players have their own alert; items, XP orbs, projectiles and effect clouds are routine and skipped.
+	 * Players have their own alert; XP orbs, projectiles and effect clouds are routine and skipped.
+	 * Dropped items have their own alert (any macro, combat included): drops go straight to the inventory on this
+	 * server, so an item entity is likely dropped by staff. Replays of normal play (mining and combat, 14 recordings,
+	 * 2026-10-27..11-01) had none.
 	 */
 	public void onEntityLoad(Minecraft mc, Entity entity) {
 		MacroConfig config = MacroConfig.get();
-		if (!config.alertNewEntity || mc == null || mc.player == null || entity == mc.player) return;
-		if (!miningRunning.getAsBoolean() || !macroRunning.getAsBoolean()) return;
-		if (entity instanceof Player || entity instanceof ItemEntity || entity instanceof ExperienceOrb
-				|| entity instanceof Projectile || entity instanceof AreaEffectCloud) return;
+		if (mc == null || mc.player == null || entity == mc.player || !macroRunning.getAsBoolean()) return;
+		boolean item = entity instanceof ItemEntity;
+		if (item) {
+			if (!config.alertItemDrop) return;
+		} else {
+			if (!config.alertNewEntity || !miningRunning.getAsBoolean()) return;
+			if (entity instanceof Player || entity instanceof ExperienceOrb || entity instanceof Projectile
+					|| entity instanceof AreaEffectCloud) return;
+		}
 		double dx = entity.getX() - mc.player.getX();
 		double dz = entity.getZ() - mc.player.getZ();
 		double distance = Math.sqrt(dx * dx + dz * dz);
-		if (distance > config.alertNewEntityRadius) return;
+		if (distance > (item ? config.alertItemDropRadius : config.alertNewEntityRadius)) return;
 		double dy = entity.getY() - mc.player.getY();
 		// Join / respawn / server switch: everything around you loads at once.
 		if (mc.player.tickCount < SERVER_MOVE_GRACE_TICKS) {
-			MacroLogger.get().log(String.format(Locale.ROOT, "ALERT_NEW_ENTITY_SKIPPED spawn type=%s %.1fm dy=%.1f",
-					EntityType.getKey(entity.getType()), distance, dy));
+			MacroLogger.get().log(String.format(Locale.ROOT, "%s_SKIPPED spawn type=%s %.1fm dy=%.1f",
+					item ? "ALERT_ITEM_DROP" : "ALERT_NEW_ENTITY", EntityType.getKey(entity.getType()), distance, dy));
 			return;
 		}
 		pendingEntities.add(new PendingEntity(entity, entity.position(), distance, dy,
@@ -216,27 +225,42 @@ public final class AlertMonitor {
 			due.add(p);
 			return true;
 		});
-		if (due.isEmpty()) return;
+		List<PendingEntity> items = new ArrayList<>();
+		due.removeIf(p -> p.entity() instanceof ItemEntity && items.add(p));
 		long now = MacroClock.nowMs();
-		boolean repeat = lastNewEntityAlert != Long.MIN_VALUE && now - lastNewEntityAlert < NEW_ENTITY_COOLDOWN_MS;
+		if (!due.isEmpty()) {
+			boolean repeat = lastNewEntityAlert != Long.MIN_VALUE && now - lastNewEntityAlert < NEW_ENTITY_COOLDOWN_MS;
+			if (!repeat) lastNewEntityAlert = now;
+			raiseSpawned(due, repeat, "ALERT_NEW_ENTITY", "Entity spawned nearby", " entities spawned nearby");
+		}
+		if (!items.isEmpty()) {
+			boolean repeat = lastItemDropAlert != Long.MIN_VALUE && now - lastItemDropAlert < NEW_ENTITY_COOLDOWN_MS;
+			if (!repeat) lastItemDropAlert = now;
+			raiseSpawned(items, repeat, "ALERT_ITEM_DROP", "Item dropped nearby", " items dropped nearby");
+		}
+	}
+
+	private void raiseSpawned(List<PendingEntity> spawned, boolean repeat, String event, String titleOne,
+			String titleMany) {
 		StringBuilder body = new StringBuilder();
-		for (PendingEntity p : due) {
+		for (PendingEntity p : spawned) {
 			MacroLogger.get().log(String.format(Locale.ROOT,
-					"ALERT_NEW_ENTITY%s type=%s %s at (%.1f, %.1f, %.1f) %.1fm dy=%.1f",
-					repeat ? " (repeat)" : "", EntityType.getKey(p.entity().getType()), entityDetail(p.entity()),
+					"%s%s type=%s %s at (%.1f, %.1f, %.1f) %.1fm dy=%.1f",
+					event, repeat ? " (repeat)" : "", EntityType.getKey(p.entity().getType()), entityDetail(p.entity()),
 					p.spawnPos().x, p.spawnPos().y, p.spawnPos().z, p.distance(), p.dy()));
 			if (!body.isEmpty()) body.append(", ");
 			body.append(entityLabel(p.entity())).append(String.format(Locale.ROOT, " (%.0fm", p.distance()))
 					.append(Math.abs(p.dy()) >= 5 ? String.format(Locale.ROOT, ", %+.0f up)", p.dy()) : ")");
 		}
 		if (repeat) return;
-		lastNewEntityAlert = now;
-		String title = due.size() == 1 ? "Entity spawned nearby" : due.size() + " entities spawned nearby";
-		raise(title, body.toString(), true);
+		raise(spawned.size() == 1 ? titleOne : spawned.size() + titleMany, body.toString(), true);
 	}
 
-	/** Short label for the notification: custom name if any, else the entity type. */
+	/** Short label for the notification: custom name if any, else the entity type (dropped items: item and count). */
 	private static String entityLabel(Entity entity) {
+		if (entity instanceof ItemEntity drop && !drop.getItem().isEmpty()) {
+			return itemLabel(drop.getItem()) + (drop.getItem().getCount() > 1 ? " x" + drop.getItem().getCount() : "");
+		}
 		if (entity.hasCustomName()) return entity.getCustomName().getString();
 		String type = entity.getType().getDescription().getString();
 		// Giant's Sword is an item_display of a Golden Sword dropped from ~24 blocks up: name the item.
@@ -253,6 +277,8 @@ public final class AlertMonitor {
 		ItemStack item = ItemStack.EMPTY;
 		if (entity instanceof Display.ItemDisplay display) {
 			item = display.getItemStack();
+		} else if (entity instanceof ItemEntity drop) {
+			item = drop.getItem();
 		} else if (entity instanceof LivingEntity living) {
 			item = living.getMainHandItem();
 			if (item.isEmpty()) item = living.getItemBySlot(EquipmentSlot.HEAD);

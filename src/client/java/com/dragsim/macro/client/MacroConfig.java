@@ -194,6 +194,9 @@ public final class MacroConfig {
 	/** While the Mining Bot / Route Walker runs: desktop notification when an entity spawns within alertNewEntityRadius blocks (horizontal). */
 	public boolean alertNewEntity = true;
 	public double alertNewEntityRadius = 16.0;
+	/** While a macro runs: desktop notification when an item drops within alertItemDropRadius blocks (horizontal). */
+	public boolean alertItemDrop = true;
+	public double alertItemDropRadius = 16.0;
 	/** While the Mining Bot / Route Walker runs: desktop notification when the server shows particles next to you. */
 	public boolean alertParticle = true;
 	/** While the Mining Bot / Route Walker runs: desktop notification when the server plays a non-mining sound next to you. */
