@@ -366,6 +366,7 @@ public final class MiningBotController {
 		startTarget = null;
 		if (drillSequence != null) drillSequence.release(drillIo);
 		drillSequence = null;
+		RefuelTrace.setBotRefuelling(false);
 		drillActions.reset();
 		input.update(keyInput, false, mc != null && mc.isWindowActive());
 		if (mc != null && mc.gameMode != null) {
@@ -386,6 +387,7 @@ public final class MiningBotController {
 		clientTicks++;
 		if (!validateOrStop(mc)) return;
 		runDrill(mc);
+		RefuelTrace.setBotRefuelling(drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL);
 		if (!isActive()) return;
 		loot.tick(mc);
 		if (drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL) {

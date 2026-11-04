@@ -17,7 +17,11 @@
     "ServerTickTimeSyncMixin",
     "ServerTickPingMixin",
     "ServerCheckAlertMixin",
-    "CosmeticCapeMixin"
+    "CosmeticCapeMixin",
+    "MinecraftAccessor",
+    "KeyMappingAccessor",
+    "RefuelTraceMixin",
+    "RefuelTraceGameModeMixin"
   ],
   "injectors": {
     "defaultRequire": 1
