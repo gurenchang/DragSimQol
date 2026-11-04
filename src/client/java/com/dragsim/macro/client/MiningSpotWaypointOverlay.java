@@ -29,8 +29,8 @@ import org.joml.Vector4f;
  * reaches the most visible target blocks with the 4.5 block reach. The points sit on block edges where that
  * reaches more, like a player standing at the edge.
  * <ul>
- *   <li>Amethyst Block, y <= 5 (2026-10-28): (-718.0, 1, -308.0), 49 blocks, against 41 at the previous spot
- *       (-699.7, -5, -259.7).</li>
+ *   <li>Amethyst Block: (-673.0, -6, -300.0), the user's pick as the spot with the most amethyst (2026-11-04).
+ *       Before: (-718.0, 1, -308.0), 49 blocks in reach of y <= 5 in the replays (2026-10-28).</li>
  *   <li>Crying Obsidian (2026-10-29): (-608.0, 161, -318.7), 59 blocks. A spot with 70, (-766.7, 74, -237.7), is
  *       inside a sealed pocket of obsidian and end stone, so it was skipped.</li>
  * </ul>
@@ -44,7 +44,7 @@ public final class MiningSpotWaypointOverlay implements HudElement {
 	}
 
 	static final List<Spot> SPOTS = List.of(
-			new Spot("Amethyst", -718.0, 1.0, -308.0, () -> MacroConfig.get().amethystWaypoint),
+			new Spot("Amethyst", -673.0, -6.0, -300.0, () -> MacroConfig.get().amethystWaypoint),
 			new Spot("Crying Obsidian", -608.0, 161.0, -318.7, () -> MacroConfig.get().cryingObsidianWaypoint));
 
 	/** Hidden within this distance; fully visible from {@link #FADE_END} on. */
