@@ -179,31 +179,39 @@ class DrillActionsTest {
 	}
 
 	@Test
-	void refuelSequenceKeepsSneakingAndClickingUntilTheTankIsFull() {
-		// Replies per click: 1 not full, 2 ignored by the server, 3 not full, 4 full.
-		for (long seed = 0; seed < 20; seed++) {
-			FakeIo io = new FakeIo();
-			DrillUseSequence seq = new DrillUseSequence(REFUEL, new Random(seed));
-			int tick = 0;
-			int lastClick = -1;
-			boolean wasDown = false;
-			while (!seq.tick(io)) {
-				tick++;
-				if (io.use) {
-					assertTrue(io.sneak, "sneak is held while clicking");
-					if (lastClick >= 0) assertTrue(tick - lastClick >= DrillUseSequence.MIN_CLICK_GAP_TICKS,
-							"clicks are spaced for the server's refuel cooldown");
-					lastClick = tick;
+	void refuelHoldsUseUntilTheTankIsFull() {
+		// Held Use repeats every 4 ticks. Repeats answered: the server refuels on each and one hold fills the tank.
+		// Repeats blocked (Endsight's eye guard): only a fresh press is answered, so press again after the guard.
+		record Case(boolean repeatsAnswered, List<String> events) { }
+		for (Case c : List.of(
+				new Case(true, List.of("sneak+", "use+", "use-", "sneak-")),
+				new Case(false, List.of("sneak+", "use+", "use-", "use+", "use-", "use+", "use-", "use+", "use-", "sneak-")))) {
+			for (long seed = 0; seed < 20; seed++) {
+				FakeIo io = new FakeIo();
+				DrillUseSequence seq = new DrillUseSequence(REFUEL, new Random(seed));
+				int tick = 0;
+				int heldTicks = 0;
+				int lastRelease = -1;
+				while (!seq.tick(io)) {
+					tick++;
+					if (io.use) {
+						assertTrue(io.sneak, "sneak is held while right-clicking");
+						if (heldTicks == 0 && lastRelease >= 0) {
+							assertTrue(tick - lastRelease >= DrillUseSequence.REPRESS_GAP_TICKS, "a new press waits out the guard");
+						}
+						// The server answers a use 3 ticks later; a held Use sends one every 4 ticks.
+						if (heldTicks % 4 == 3 && (c.repeatsAnswered() || heldTicks == 3)) seq.onRefuelled(seq.clicks() >= 3);
+						heldTicks++;
+					} else if (heldTicks > 0) {
+						heldTicks = 0;
+						lastRelease = tick;
+					}
+					assertTrue(tick < 300);
 				}
-				// Server replies a few ticks after each click.
-				if (wasDown && !io.use && seq.clicks() != 2) seq.onRefuelled(seq.clicks() >= 4);
-				wasDown = io.use;
-				assertTrue(tick < 200);
+				assertEquals(c.events(), io.events, "repeatsAnswered=" + c.repeatsAnswered());
+				assertEquals(4, seq.clicks());
+				assertFalse(seq.timedOut());
 			}
-			assertEquals(List.of("sneak+", "use+", "use-", "use+", "use-", "use+", "use-", "use+", "use-", "sneak-"),
-					io.events);
-			assertEquals(4, seq.clicks());
-			assertFalse(seq.timedOut());
 		}
 	}
 

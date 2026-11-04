@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * Refuel: requested by "Your drill is out of fuel!" and run after a human-like reaction delay.
  * Messages that arrive right after a refuel are treated as in-flight; later ones count as a
  * failed refuel. Upgrades raise the tank size and each refuel adds a fixed amount, so the
- * sequence keeps clicking until the reply "Refuelled +10,000 (25,000/25,000)" shows a full tank.
+ * sequence holds right-click until the reply "Refuelled +10,000 (25,000/25,000)" shows a full tank.
  */
 public final class DrillActions {
 	/** CHECK: a right-click right after the ability only to get the server's cooldown reply. */

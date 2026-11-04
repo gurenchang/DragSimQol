@@ -92,7 +92,7 @@ public final class MiningBotController {
 			if (mc != null && mc.options != null) mc.options.keyUse.setDown(down);
 			if (down && drillSequence != null && drillSequence.kind() == DrillActions.Kind.REFUEL) {
 				long now = MacroClock.nowMs();
-				MacroLogger.get().log("MINING_BOT_REFUEL_CLICK n=" + (drillSequence.clicks() + 1)
+				MacroLogger.get().log("MINING_BOT_REFUEL_CLICK n=" + (drillSequence.presses() + 1)
 						+ (lastRefuelClickMs < 0 ? "" : " sinceLastMs=" + (now - lastRefuelClickMs)));
 				lastRefuelClickMs = now;
 			}
@@ -605,7 +605,8 @@ public final class MiningBotController {
 		}
 		MacroLogger.get().log("MINING_BOT_DRILL_ACTION_END kind=" + finished.kind()
 				+ " clicked=" + finished.clicked() + " timedOut=" + finished.timedOut()
-				+ (finished.kind() == DrillActions.Kind.REFUEL ? " clicks=" + finished.clicks() : "")
+				+ (finished.kind() == DrillActions.Kind.REFUEL
+						? " presses=" + finished.presses() + " refuels=" + finished.clicks() : "")
 				+ (finished.kind() == DrillActions.Kind.ABILITY
 						? " cooldownMs=" + drillActions.abilityCooldownMs() + " loreMs=" + loreMs : ""));
 		// The right-click let go of the target mid-break: time it afresh from the next start, or the

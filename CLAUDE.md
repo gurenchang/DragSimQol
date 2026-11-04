@@ -87,12 +87,12 @@ on-disk names (config files, commands, keybind IDs, log event names) were kept f
     `MiningBotAimGuard` (settled crosshair on another block, e.g. bedrock in front: re-aim, then drop),
     `MiningBotAdaptiveAim` / `MiningBotFixedAim` / `MiningBotTickAim` (break-timing lead),
     `DrillActions` (ability/refuel schedule) / `DrillUseSequence` (right-click + sneak key steps; the view holds
-    still while refuelling). Refuel clicks once per "Refuelled" reply, 1.0-1.1 s apart: a player holding
-    right-click refuels every 4 ticks, but the mod's held Use (1.12.5) and re-presses (1.12.6) got only the
-    first refuel — the client sent no further use for ~2 s (replay 2026-10-31 16:51); cause not found yet.
-    The player's fast hold sent a main-hand + off-hand (glass bottle) use every 4 ticks; clicks while looking at a
-    block sent only the main-hand use, and manual clicks under 1 s apart sent no packet at all (same replay, 16:54).
-    `RefuelTrace` (1.14.1, log only) logs vanilla's use state (`REFUEL_TRACE`) during bot and manual refuels.
+    still while refuelling). Refuel holds right-click until the "full" reply, as a player does: vanilla repeats
+    the use every 4 ticks (main + off-hand glass bottle) and the server refuels on each. The "1 s server cooldown"
+    of older versions was Endsight's "Protect Placed Eyes" (`com.endsight.qol.EyeGuard`, a Fabric UseBlockCallback):
+    it FAILs every right-click on the block clicked < 0.9 s ago and restarts the guard, so a held Use while looking
+    at a block refuels once (found 2026-11-04 with `RefuelTrace`, which logs `REFUEL_TRACE` during refuels). The
+    user turns that off; if it is on, the sequence falls back to one press per refuel, 1 s apart.
     `DrillAbilityCooldown` / `DrillFuel` (read from the held drill's lore — the ability cooldown there already
     includes the player's reductions and changes with their gear, so don't hard-code it),
     `MiningBotHud` + `MiningBotStats` (HUD panel), `BreakTickMeter` (per-block break time).
